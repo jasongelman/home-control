@@ -1,0 +1,5 @@
+{
+  "name": "lutron-home",
+  "private": true,
+  "workspaces": ["server", "web"]
+}

@@ -1,0 +1,33 @@
+# Build artifacts
+build/
+DerivedData/
+*.xcuserstate
+*.xcscmblueprint
+
+# Xcode user-specific
+xcuserdata/
+
+# Certificates and secrets (stored in iCloud Drive)
+*.p12
+*.pem
+*.key
+*.cer
+*.der
+*.pfx
+secrets.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# CocoaPods / SPM
+Pods/
+.build/
+Package.resolved
+
+# IDE
+*.swp
+*.swo
+*~
+.idea/
+.vscode/

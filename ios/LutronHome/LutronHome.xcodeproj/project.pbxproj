@@ -1,0 +1,464 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A1000001 /* LutronHomeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000001 /* LutronHomeApp.swift */; };
+		A1000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000002 /* ContentView.swift */; };
+		A1000003 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000003 /* Models.swift */; };
+		A1000004 /* LutronStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000004 /* LutronStore.swift */; };
+		A1000005 /* RoomDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000005 /* RoomDetailView.swift */; };
+		A1000006 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000006 /* SettingsView.swift */; };
+		A1000007 /* LEAPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000007 /* LEAPClient.swift */; };
+		A1000008 /* HomeKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000008 /* HomeKitManager.swift */; };
+		A100000A /* HomeConnectManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000A /* HomeConnectManager.swift */; };
+		A100000B /* MyUplinkManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000B /* MyUplinkManager.swift */; };
+		A100000D /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000D /* KeychainHelper.swift */; };
+		A1000009 /* CameraStreamView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000009 /* CameraStreamView.swift */; };
+		A1000010 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2000010 /* Assets.xcassets */; };
+		A1000011 /* lutron_client.p12 in Resources */ = {isa = PBXBuildFile; fileRef = A2000011 /* lutron_client.p12 */; };
+		B1000001 /* ModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000001 /* ModelTests.swift */; };
+		B1000002 /* AnyCodableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000002 /* AnyCodableTests.swift */; };
+		B1000003 /* StoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000003 /* StoreTests.swift */; };
+		A100000C /* AuthenticationServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A200000C /* AuthenticationServices.framework */; };
+		A100000E /* secrets.json in Resources */ = {isa = PBXBuildFile; fileRef = A200000E /* secrets.json */; };
+		A100000F /* SunCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000F /* SunCalculator.swift */; };
+		A1000020 /* SmartHQManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000020 /* SmartHQManager.swift */; };
+		A1000021 /* AppliancesTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000021 /* AppliancesTab.swift */; };
+		A1000022 /* MyQManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000022 /* MyQManager.swift */; };
+		A1000030 /* UsageTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000030 /* UsageTracker.swift */; };
+		A1000031 /* PersonalizationInsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000031 /* PersonalizationInsightsView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		B4000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A9000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A6000001;
+			remoteInfo = LutronHome;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		A2000001 /* LutronHomeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LutronHomeApp.swift; sourceTree = "<group>"; };
+		A2000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A2000003 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		A2000004 /* LutronStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LutronStore.swift; sourceTree = "<group>"; };
+		A2000005 /* RoomDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomDetailView.swift; sourceTree = "<group>"; };
+		A2000006 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A2000007 /* LEAPClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LEAPClient.swift; sourceTree = "<group>"; };
+		A2000008 /* HomeKitManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeKitManager.swift; sourceTree = "<group>"; };
+		A200000A /* HomeConnectManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeConnectManager.swift; sourceTree = "<group>"; };
+		A200000B /* MyUplinkManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyUplinkManager.swift; sourceTree = "<group>"; };
+		A200000D /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
+		A200000E /* secrets.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = secrets.json; sourceTree = "<group>"; };
+		A2000009 /* CameraStreamView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraStreamView.swift; sourceTree = "<group>"; };
+		A2000010 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A2000012 /* LutronHome.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LutronHome.entitlements; sourceTree = "<group>"; };
+		A2000011 /* lutron_client.p12 */ = {isa = PBXFileReference; lastKnownFileType = file; path = lutron_client.p12; sourceTree = "<group>"; };
+		A3000001 /* LutronHome.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LutronHome.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B2000001 /* ModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelTests.swift; sourceTree = "<group>"; };
+		B2000002 /* AnyCodableTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnyCodableTests.swift; sourceTree = "<group>"; };
+		B2000003 /* StoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreTests.swift; sourceTree = "<group>"; };
+		B3000001 /* LutronHomeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LutronHomeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A200000C /* AuthenticationServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AuthenticationServices.framework; path = System/Library/Frameworks/AuthenticationServices.framework; sourceTree = SDKROOT; };
+		A200000F /* SunCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SunCalculator.swift; sourceTree = "<group>"; };
+		A2000020 /* SmartHQManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartHQManager.swift; sourceTree = "<group>"; };
+		A2000021 /* AppliancesTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppliancesTab.swift; sourceTree = "<group>"; };
+		A2000030 /* UsageTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageTracker.swift; sourceTree = "<group>"; };
+		A2000031 /* PersonalizationInsightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalizationInsightsView.swift; sourceTree = "<group>"; };
+		A2000022 /* MyQManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyQManager.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A4000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+							A100000C /* AuthenticationServices.framework in Frameworks */,
+);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B4000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A5000001 = {
+			isa = PBXGroup;
+			children = (
+				A5000002 /* LutronHome */,
+				B5000001 /* LutronHomeTests */,
+				A5000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A5000002 /* LutronHome */ = {
+			isa = PBXGroup;
+			children = (
+				A2000001 /* LutronHomeApp.swift */,
+				A2000002 /* ContentView.swift */,
+				A2000003 /* Models.swift */,
+				A2000004 /* LutronStore.swift */,
+				A2000005 /* RoomDetailView.swift */,
+				A2000006 /* SettingsView.swift */,
+				A2000007 /* LEAPClient.swift */,
+				A2000008 /* HomeKitManager.swift */,
+				A200000A /* HomeConnectManager.swift */,
+				A200000B /* MyUplinkManager.swift */,
+				A200000D /* KeychainHelper.swift */,
+				A200000E /* secrets.json */,
+				A2000009 /* CameraStreamView.swift */,
+				A200000F /* SunCalculator.swift */,
+				A2000020 /* SmartHQManager.swift */,
+				A2000021 /* AppliancesTab.swift */,
+				A2000030 /* UsageTracker.swift */,
+				A2000031 /* PersonalizationInsightsView.swift */,
+				A2000022 /* MyQManager.swift */,
+				A2000012 /* LutronHome.entitlements */,
+				A2000010 /* Assets.xcassets */,
+				A2000011 /* lutron_client.p12 */,
+			);
+			path = LutronHome;
+			sourceTree = "<group>";
+		};
+		A5000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A3000001 /* LutronHome.app */,
+				B3000001 /* LutronHomeTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		B5000001 /* LutronHomeTests */ = {
+			isa = PBXGroup;
+			children = (
+				B2000001 /* ModelTests.swift */,
+				B2000002 /* AnyCodableTests.swift */,
+				B2000003 /* StoreTests.swift */,
+			);
+			path = LutronHomeTests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A6000001 /* LutronHome */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A8000001 /* Build configuration list for PBXNativeTarget "LutronHome" */;
+			buildPhases = (
+				A7000001 /* Sources */,
+				A4000001 /* Frameworks */,
+				A7000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = LutronHome;
+			productName = LutronHome;
+			productReference = A3000001 /* LutronHome.app */;
+			productType = "com.apple.product-type.application";
+		};
+		B6000001 /* LutronHomeTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B8000001 /* Build configuration list for PBXNativeTarget "LutronHomeTests" */;
+			buildPhases = (
+				B7000001 /* Sources */,
+				B4000002 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B4000003 /* PBXTargetDependency */,
+			);
+			name = LutronHomeTests;
+			productName = LutronHomeTests;
+			productReference = B3000001 /* LutronHomeTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A9000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					A6000001 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					B6000001 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = A6000001;
+					};
+				};
+			};
+			buildConfigurationList = A8000003 /* Build configuration list for PBXProject "LutronHome" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A5000001;
+			productRefGroup = A5000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A6000001 /* LutronHome */,
+				B6000001 /* LutronHomeTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A7000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+								A100000E /* secrets.json in Resources */,
+A1000010 /* Assets.xcassets in Resources */,
+				A1000011 /* lutron_client.p12 in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A7000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000001 /* LutronHomeApp.swift in Sources */,
+				A1000002 /* ContentView.swift in Sources */,
+				A1000003 /* Models.swift in Sources */,
+				A1000004 /* LutronStore.swift in Sources */,
+				A1000005 /* RoomDetailView.swift in Sources */,
+				A1000006 /* SettingsView.swift in Sources */,
+				A1000007 /* LEAPClient.swift in Sources */,
+				A1000008 /* HomeKitManager.swift in Sources */,
+				A100000A /* HomeConnectManager.swift in Sources */,
+				A100000B /* MyUplinkManager.swift in Sources */,
+				A100000D /* KeychainHelper.swift in Sources */,
+				A1000009 /* CameraStreamView.swift in Sources */,
+				A100000F /* SunCalculator.swift in Sources */,
+				A1000020 /* SmartHQManager.swift in Sources */,
+				A1000021 /* AppliancesTab.swift in Sources */,
+				A1000030 /* UsageTracker.swift in Sources */,
+				A1000031 /* PersonalizationInsightsView.swift in Sources */,
+				A1000022 /* MyQManager.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B7000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B1000001 /* ModelTests.swift in Sources */,
+				B1000002 /* AnyCodableTests.swift in Sources */,
+				B1000003 /* StoreTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B4000003 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A6000001 /* LutronHome */;
+			targetProxy = B4000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		AB000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		AB000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		AB000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = LutronHome/LutronHome.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = WRS5YQAAC6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LutronHome/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Home Control";
+				INFOPLIST_KEY_NSHomeKitUsageDescription = "Home Control needs HomeKit access to show your camera feeds.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "LutronHome needs local network access to communicate with your Lutron processor.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jasongelman.LutronHome;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AB000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = LutronHome/LutronHome.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = WRS5YQAAC6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LutronHome/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Home Control";
+				INFOPLIST_KEY_NSHomeKitUsageDescription = "Home Control needs HomeKit access to show your camera feeds.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "LutronHome needs local network access to communicate with your Lutron processor.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jasongelman.LutronHome;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		BB000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = WRS5YQAAC6;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jasongelman.LutronHomeTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LutronHome.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/LutronHome";
+			};
+			name = Debug;
+		};
+		BB000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = WRS5YQAAC6;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jasongelman.LutronHomeTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LutronHome.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/LutronHome";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A8000001 /* Build configuration list for PBXNativeTarget "LutronHome" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AB000003 /* Debug */,
+				AB000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A8000003 /* Build configuration list for PBXProject "LutronHome" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AB000001 /* Debug */,
+				AB000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B8000001 /* Build configuration list for PBXNativeTarget "LutronHomeTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BB000001 /* Debug */,
+				BB000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A9000001 /* Project object */;
+}

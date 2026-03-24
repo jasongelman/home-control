@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build output
+dist/
+**/dist/
+*.tsbuildinfo
+
+# iOS build artifacts
+ios/LutronHome/LutronHome.xcodeproj/xcuserdata/
+ios/LutronHome/LutronHome.xcodeproj/project.xcworkspace/xcuserdata/
+ios/LutronHome/LutronHome.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+*.xcuserstate
+DerivedData/
+ios/LutronHome/build/
+
+# Secrets & credentials
+ios/LutronHome/LutronHome/lutron_client.p12
+ios/LutronHome/LutronHome/secrets.json
+server/data/*.json
+*.env
+.env.*
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Large files
+*.pdf

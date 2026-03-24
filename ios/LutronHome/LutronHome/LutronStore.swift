@@ -1,0 +1,594 @@
+import Foundation
+import Network
+import Observation
+
+enum ConnectionState: Equatable {
+    case connected
+    case connecting
+    case disconnectedProcessorDown   // On WiFi, processor not responding
+    case disconnectedNeedsVPN        // On cellular or non-home WiFi
+    case disconnectedNoNetwork       // No network at all
+}
+
+@Observable
+class LutronStore: @unchecked Sendable {
+    var devices: [Int: DeviceState] = [:]
+    var isConnected = false
+    var isLoading = false
+    var scenes: [LightScene] = []
+    var statusMessage = ""
+    var connectionState: ConnectionState = .connecting
+
+    var processorHost: String {
+        get { UserDefaults.standard.string(forKey: "processorHost") ?? "192.168.1.191" }
+        set { UserDefaults.standard.set(newValue, forKey: "processorHost") }
+    }
+
+    /// Usage tracker for personalization — set externally from App entry point
+    var usageTracker: UsageTracker?
+
+    private var leapClient: LEAPClient?
+    private var reconnectTimer: Timer?
+    private var reconnectAttempt = 0
+    private let maxReconnectDelay: TimeInterval = 60
+    private var started = false
+    private var pathMonitor: NWPathMonitor?
+    private var currentPath: NWPath?
+
+    // Computed properties
+    var lightsOn: [DeviceState] {
+        devices.values
+            .filter { $0.category == .light && $0.level > 0 }
+            .sorted { ($0.room, $0.name) < ($1.room, $1.name) }
+    }
+
+    var rooms: [(name: String, devices: [DeviceState])] {
+        let grouped = Dictionary(grouping: Array(devices.values)) { $0.room }
+        return grouped
+            .map { (name: $0.key, devices: $0.value.sorted { $0.name < $1.name }) }
+            .sorted { $0.name < $1.name }
+    }
+
+    // MARK: - Lifecycle
+
+    func start() {
+        guard !started else { return }
+        started = true
+        startNetworkMonitoring()
+        connect()
+    }
+
+    // MARK: - Connection
+
+    func connect() {
+        disconnect()
+
+        guard let creds = CertificateLoader.loadFromBundle() else {
+            statusMessage = "No certificates found in bundle"
+            print("LutronStore: \(statusMessage)")
+            return
+        }
+
+        statusMessage = "Connecting..."
+        connectionState = .connecting
+        let client = LEAPClient(host: processorHost, port: 8081, identity: creds.identity, caCert: creds.ca)
+
+        client.onConnect = { [weak self] in
+            guard let self else { return }
+            self.isConnected = true
+            self.reconnectAttempt = 0
+            self.updateConnectionState()
+            self.statusMessage = "Connected, loading devices..."
+            print("LEAP: connected to \(self.processorHost)")
+            Task { await self.loadTopology() }
+        }
+
+        client.onDisconnect = { [weak self] reason in
+            guard let self else { return }
+            print("LEAP: disconnected — \(reason)")
+            self.isConnected = false
+            self.statusMessage = "Disconnected: \(reason)"
+            self.updateConnectionState()
+            self.scheduleReconnect()
+        }
+
+        client.onError = { [weak self] error in
+            print("LEAP: error — \(error.localizedDescription)")
+            self?.statusMessage = "Error: \(error.localizedDescription)"
+        }
+
+        client.onMessage = { [weak self] msg in
+            self?.handleUnsolicited(msg)
+        }
+
+        self.leapClient = client
+        client.connect()
+    }
+
+    func disconnect() {
+        reconnectTimer?.invalidate()
+        reconnectTimer = nil
+        leapClient?.disconnect()
+        leapClient = nil
+        isConnected = false
+    }
+
+    // MARK: - Refresh (pull-to-refresh)
+
+    func refresh() async {
+        guard leapClient != nil else {
+            connect()
+            return
+        }
+        await loadTopology()
+    }
+
+    // MARK: - Topology Loading
+
+    private func loadTopology() async {
+        guard let client = leapClient else { return }
+
+        await MainActor.run { isLoading = true }
+
+        do {
+            // Small delay to let the processor settle after TLS handshake
+            try await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+
+            // 1. Load areas
+            await MainActor.run { statusMessage = "Loading areas..." }
+            let areaResp = try await client.send(LEAPMessagePayload(
+                CommuniqueType: "ReadRequest",
+                Header: LEAPMessageHeader(Url: "/area")
+            ))
+            var areas: [Int: String] = [:]
+            if let rawAreas = areaResp.Body?.Areas {
+                for a in rawAreas {
+                    let id = hrefToId(a["href"]?.stringValue ?? "")
+                    let name = a["Name"]?.stringValue ?? "Area \(id)"
+                    if id > 0 { areas[id] = name }
+                }
+            }
+            print("LEAP: loaded \(areas.count) areas")
+
+            // 2. Load zones — try bulk first, fall back to status discovery (QSX)
+            var zoneList: [(id: Int, name: String, controlType: String, areaName: String)] = []
+            var initialLevels: [Int: Double] = [:]
+
+            await MainActor.run { statusMessage = "Loading zones..." }
+
+            do {
+                let zoneResp = try await client.send(LEAPMessagePayload(
+                    CommuniqueType: "ReadRequest",
+                    Header: LEAPMessageHeader(Url: "/zone")
+                ))
+                if let rawZones = zoneResp.Body?.Zones, !rawZones.isEmpty {
+                    for z in rawZones {
+                        let parsed = parseZone(z, areas: areas)
+                        if let parsed { zoneList.append(parsed) }
+                    }
+                    print("LEAP: bulk /zone returned \(zoneList.count) zones")
+                } else {
+                    throw LEAPError.notConnected // force fallback
+                }
+            } catch {
+                // QSX path — discover from status subscription
+                print("LEAP: bulk /zone not available, discovering from status...")
+                await MainActor.run { statusMessage = "Discovering zones via status..." }
+
+                let statusResp = try await client.send(LEAPMessagePayload(
+                    CommuniqueType: "SubscribeRequest",
+                    Header: LEAPMessageHeader(Url: "/zone/status")
+                ))
+
+                var zoneIds: [Int] = []
+                if let statuses = statusResp.Body?.ZoneStatuses {
+                    for zs in statuses {
+                        let zoneHref = zs["Zone"]?.dictValue?["href"]?.stringValue ?? ""
+                        let zid = hrefToId(zoneHref)
+                        let level = zs["Level"]?.doubleValue ?? 0
+                        if zid > 0 {
+                            zoneIds.append(zid)
+                            initialLevels[zid] = level
+                        }
+                    }
+                }
+                print("LEAP: discovered \(zoneIds.count) zones from status")
+                await MainActor.run { statusMessage = "Fetching zone details (0/\(zoneIds.count))..." }
+
+                // Fetch individual zone details — populate UI progressively
+                for (i, zid) in zoneIds.enumerated() {
+                    if i % 10 == 0 {
+                        await MainActor.run { statusMessage = "Loading devices (\(i)/\(zoneIds.count))..." }
+                    }
+                    do {
+                        let zResp = try await client.send(LEAPMessagePayload(
+                            CommuniqueType: "ReadRequest",
+                            Header: LEAPMessageHeader(Url: "/zone/\(zid)")
+                        ))
+                        if let z = zResp.Body?.Zone {
+                            if let parsed = parseZone(z, areas: areas) {
+                                zoneList.append(parsed)
+                                // Progressive: add device immediately so UI updates
+                                let type: DeviceType = parsed.controlType == "Shade" ? .shade : .light
+                                let category = DeviceCategory.classify(controlType: parsed.controlType, name: parsed.name)
+                                let device = DeviceState(
+                                    integrationId: parsed.id,
+                                    name: parsed.name,
+                                    type: type,
+                                    category: category,
+                                    room: parsed.areaName,
+                                    level: initialLevels[parsed.id] ?? 0,
+                                    components: nil,
+                                    lastUpdated: Date().timeIntervalSince1970
+                                )
+                                await MainActor.run {
+                                    self.devices[parsed.id] = device
+                                }
+                            }
+                        }
+                    } catch {
+                        print("LEAP: failed to fetch zone \(zid): \(error)")
+                    }
+                }
+            }
+
+            // 3. For bulk path, build device map atomically
+            if initialLevels.isEmpty || zoneList.count != devices.count {
+                var newDevices: [Int: DeviceState] = [:]
+                for z in zoneList {
+                    let type: DeviceType = z.controlType == "Shade" ? .shade : .light
+                    let category = DeviceCategory.classify(controlType: z.controlType, name: z.name)
+                    newDevices[z.id] = DeviceState(
+                        integrationId: z.id,
+                        name: z.name,
+                        type: type,
+                        category: category,
+                        room: z.areaName,
+                        level: initialLevels[z.id] ?? 0,
+                        components: nil,
+                        lastUpdated: Date().timeIntervalSince1970
+                    )
+                }
+                await MainActor.run {
+                    self.devices = newDevices
+                }
+            }
+
+            await MainActor.run {
+                self.statusMessage = "\(self.devices.count) devices loaded"
+                self.isLoading = false
+            }
+            print("LEAP: loaded \(devices.count) devices in \(areas.count) areas")
+
+            // 4. Subscribe to zone status updates (if not already from QSX path)
+            if initialLevels.isEmpty {
+                await MainActor.run { statusMessage = "Subscribing to updates..." }
+                let subResp = try await client.send(LEAPMessagePayload(
+                    CommuniqueType: "SubscribeRequest",
+                    Header: LEAPMessageHeader(Url: "/zone/status")
+                ))
+                if let statuses = subResp.Body?.ZoneStatuses {
+                    await MainActor.run {
+                        for zs in statuses {
+                            let zoneHref = zs["Zone"]?.dictValue?["href"]?.stringValue ?? ""
+                            let zid = self.hrefToId(zoneHref)
+                            let level = zs["Level"]?.doubleValue ?? 0
+                            if zid > 0 { self.devices[zid]?.level = level }
+                        }
+                    }
+                }
+            }
+
+            await MainActor.run { statusMessage = "\(self.devices.count) devices • \(areas.count) rooms" }
+            print("LEAP: fully connected and subscribed")
+
+        } catch {
+            print("LEAP: topology load failed: \(error)")
+            await MainActor.run {
+                self.statusMessage = "Load failed: \(error.localizedDescription)"
+                self.isLoading = false
+            }
+        }
+    }
+
+    // MARK: - Unsolicited Messages (real-time zone updates)
+
+    private func handleUnsolicited(_ msg: LEAPMessage) {
+        let bodyType = msg.Header.MessageBodyType ?? ""
+        guard bodyType == "MultipleZoneStatus" || bodyType == "OneZoneStatus" else { return }
+
+        var statuses: [[String: AnyCodable]] = []
+        if let zss = msg.Body?.ZoneStatuses { statuses = zss }
+        else if let zs = msg.Body?.ZoneStatus { statuses = [zs] }
+
+        for zs in statuses {
+            let zoneHref = zs["Zone"]?.dictValue?["href"]?.stringValue ?? ""
+            let zoneId = hrefToId(zoneHref)
+            let level = zs["Level"]?.doubleValue ?? 0
+            if zoneId > 0 {
+                devices[zoneId]?.level = level
+            }
+        }
+    }
+
+    // MARK: - Actions
+
+    func setLevel(_ deviceId: Int, level: Double, fadeTime: Double? = nil) {
+        guard let client = leapClient else { return }
+        let fade = fadeTime.map { fadeDuration($0) }
+
+        // Track usage
+        let room = devices[deviceId]?.room
+        let action: UsageEvent.Action = level == 0 ? .turnOff : .setLevel
+        usageTracker?.trackDevice(deviceId, action: action, room: room, level: level)
+
+        Task {
+            do {
+                _ = try await client.send(LEAPMessagePayload(
+                    CommuniqueType: "CreateRequest",
+                    Header: LEAPMessageHeader(Url: "/zone/\(deviceId)/commandprocessor"),
+                    Body: LEAPBodyPayload(Command: LEAPCommand(
+                        CommandType: "GoToLevel",
+                        Parameter: [["Type": AnyCodable("Level"), "Value": AnyCodable(level)]],
+                        FadeTime: fade
+                    ))
+                ))
+            } catch {
+                print("LEAP: setLevel failed: \(error)")
+            }
+        }
+    }
+
+    func turnOff(_ deviceId: Int) {
+        setLevel(deviceId, level: 0, fadeTime: 1)
+    }
+
+    /// Set all lights in a given room to a level
+    func setRoomLights(_ roomName: String, level: Double, fadeTime: Double = 1) {
+        let roomLights = devices.values.filter {
+            $0.room == roomName && $0.category == .light
+        }
+        for device in roomLights {
+            setLevel(device.integrationId, level: level, fadeTime: fadeTime)
+        }
+    }
+
+    /// Find a device by room and name (case-insensitive contains match)
+    private func findDevice(room: String, name: String) -> DeviceState? {
+        let lower = name.lowercased()
+        return devices.values.first {
+            $0.room == room && $0.name.lowercased().contains(lower)
+        }
+    }
+
+    /// Set a specific device level by room + name
+    private func setDeviceLevel(room: String, name: String, level: Double, fadeTime: Double = 2) {
+        if let device = findDevice(room: room, name: name) {
+            setLevel(device.integrationId, level: level, fadeTime: fadeTime)
+        }
+    }
+
+    /// Activate the Evening scene
+    func activateEveningScene() {
+        // 1. Dining Room: chandelier 50%, off cove accent & recessed
+        setDeviceLevel(room: "Dining Room", name: "Chandelier", level: 50)
+        setDeviceLevel(room: "Dining Room", name: "Cove Accent", level: 0)
+        setDeviceLevel(room: "Dining Room", name: "Recessed", level: 0)
+
+        // 2. Family Room: peak coves & wall coves 25%, spots 12%
+        setDeviceLevel(room: "Family Room", name: "Peak Cove A", level: 25)
+        setDeviceLevel(room: "Family Room", name: "Peak Cove B", level: 25)
+        setDeviceLevel(room: "Family Room", name: "Wall Cove A", level: 25)
+        setDeviceLevel(room: "Family Room", name: "Wall Cove B", level: 25)
+        setDeviceLevel(room: "Family Room", name: "Spots", level: 12)
+
+        // 3. Jason Office: all off
+        setRoomLights("Jason Office", level: 0)
+
+        // 4. Living Room: all off
+        setRoomLights("Living Room", level: 0)
+
+        // 5. Kitchen: specific off, pendant B & undercabinet 50%
+        setDeviceLevel(room: "Kitchen", name: "Island Pendant A", level: 0)
+        setDeviceLevel(room: "Kitchen", name: "Breakfast Chandelier", level: 0)
+        setDeviceLevel(room: "Kitchen", name: "Breakfast Recessed", level: 0)
+        setDeviceLevel(room: "Kitchen", name: "Breakfast Undercabinet", level: 0)
+        setDeviceLevel(room: "Kitchen", name: "Kitchen Recessed", level: 0)
+        setDeviceLevel(room: "Kitchen", name: "Pantry Chandelier", level: 0)
+        setDeviceLevel(room: "Kitchen", name: "Pantry Undercabinet", level: 0)
+        setDeviceLevel(room: "Kitchen", name: "Island Pendant B", level: 50)
+        setDeviceLevel(room: "Kitchen", name: "Kitchen Undercabinet", level: 50)
+
+        // 6. Main Entry: all off except hall track 25%
+        setRoomLights("Main Entry", level: 0)
+        setDeviceLevel(room: "Main Entry", name: "Hall Track", level: 25)
+
+        // 7. Main Hall: stairs accent 30%
+        setDeviceLevel(room: "Main Hall", name: "Stairs Accent", level: 30)
+
+        // 8. Mudroom Entry: sconces off, recessed 25%
+        setDeviceLevel(room: "Mudroom Entry", name: "Sconces", level: 0)
+        setDeviceLevel(room: "Mudroom Entry", name: "Recessed", level: 25)
+    }
+
+    /// Toggle the Dining Shade, Family Room Shades Rear and Shades Side
+    func toggleMainShades() {
+        let targetNames = ["dining shade", "shades rear", "shades side"]
+        let targetShades = devices.values.filter { device in
+            device.category == .shadesAndDrapes &&
+            targetNames.contains(where: { device.name.lowercased().contains($0) })
+        }
+        let anyOpen = targetShades.contains { $0.level > 0 }
+        let newLevel: Double = anyOpen ? 0 : 100
+        for shade in targetShades {
+            setLevel(shade.integrationId, level: newLevel, fadeTime: 2)
+        }
+    }
+
+    /// Turn off all lights on a given floor
+    func turnOffLights(on floor: Floor) {
+        let floorDevices = devices.values.filter {
+            $0.category == .light && $0.level > 0 && Floor.floor(for: $0.room) == floor
+        }
+        for device in floorDevices {
+            setLevel(device.integrationId, level: 0, fadeTime: 1)
+        }
+    }
+
+    /// Turn off all lights in the house, optionally excluding specific device names
+    func turnOffAllLights(excludingNames: Set<String> = []) {
+        let lightsOn = devices.values.filter {
+            $0.category == .light && $0.level > 0 && !excludingNames.contains($0.name)
+        }
+        for device in lightsOn {
+            setLevel(device.integrationId, level: 0, fadeTime: 1)
+        }
+    }
+
+    // MARK: - Network Monitoring
+
+    private func startNetworkMonitoring() {
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            DispatchQueue.main.async {
+                self?.currentPath = path
+                self?.updateConnectionState()
+            }
+        }
+        monitor.start(queue: DispatchQueue(label: "com.lutronhome.network-monitor"))
+        pathMonitor = monitor
+    }
+
+    private func updateConnectionState() {
+        if isConnected {
+            connectionState = .connected
+            return
+        }
+
+        guard let path = currentPath else {
+            // No path info yet — keep current state
+            return
+        }
+
+        if path.status == .unsatisfied {
+            connectionState = .disconnectedNoNetwork
+        } else if path.usesInterfaceType(.cellular) && !path.usesInterfaceType(.wifi) {
+            connectionState = .disconnectedNeedsVPN
+        } else if path.usesInterfaceType(.wifi) {
+            // On WiFi but not connected — could be wrong network or processor down
+            connectionState = .disconnectedProcessorDown
+        } else {
+            connectionState = .disconnectedNeedsVPN
+        }
+    }
+
+    // MARK: - Reconnect
+
+    private func scheduleReconnect() {
+        let delay = min(5.0 * pow(2.0, Double(reconnectAttempt)), maxReconnectDelay)
+        reconnectAttempt += 1
+        print("LEAP: reconnecting in \(delay)s (attempt \(reconnectAttempt))...")
+        reconnectTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            DispatchQueue.main.async { self?.connect() }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func parseZone(_ z: [String: AnyCodable], areas: [Int: String]) -> (id: Int, name: String, controlType: String, areaName: String)? {
+        let id = hrefToId(z["href"]?.stringValue ?? "")
+        guard id > 0 else { return nil }
+        let rawName = z["Name"]?.stringValue ?? "Zone \(id)"
+        let ct = z["ControlType"]?.stringValue ?? "Unknown"
+        let areaHref = z["AssociatedArea"]?.dictValue?["href"]?.stringValue ?? ""
+        let areaId = hrefToId(areaHref)
+        let areaRenames: [String: String] = [
+            "Bedroom 1": "Ronan's Room",
+            "Bedroom 2": "Sebastian's Room",
+            "Safe Room": "Secret Room",
+            "Attic Bathroom": "Guest Bathroom",
+            "Attic Guest Bedroom": "Guest Bedroom",
+            "Mudroom Entry": "Mudroom",
+        ]
+        var areaName = areaRenames[areas[areaId] ?? ""] ?? areas[areaId] ?? "Unassigned"
+        var name = rawName
+
+        // Break Master Suite into sub-rooms and strip prefixes
+        if areaName == "Master Suite" {
+            let lower = rawName.lowercased()
+            if lower.hasPrefix("rachel closet") {
+                areaName = "Rachel Closet"
+                name = String(rawName.dropFirst("Rachel Closet".count)).trimmingCharacters(in: .whitespaces)
+            } else if lower.hasPrefix("jason closet") {
+                areaName = "Jason Closet"
+                name = String(rawName.dropFirst("Jason Closet".count)).trimmingCharacters(in: .whitespaces)
+            } else if lower.hasPrefix("mbth") || lower.hasPrefix("mbth") {
+                areaName = "Primary Bathroom"
+                // Strip "MBTH " or "MBth " prefix
+                if rawName.hasPrefix("MBTH ") {
+                    name = String(rawName.dropFirst(5))
+                } else if rawName.hasPrefix("MBth ") {
+                    name = String(rawName.dropFirst(5))
+                }
+            } else if lower.hasPrefix("mbd") {
+                areaName = "Primary Bedroom"
+                // Strip "MBD " prefix
+                if rawName.hasPrefix("MBD ") {
+                    name = String(rawName.dropFirst(4))
+                }
+            }
+            // Shades (Rear/Side Drapes/Shades) stay in Master Suite or assign to Primary Bedroom
+        }
+
+        // Break Breakfast devices out of Kitchen into Breakfast Nook
+        if areaName == "Kitchen" && name.hasPrefix("Breakfast ") {
+            areaName = "Breakfast Nook"
+            name = String(name.dropFirst("Breakfast ".count))
+        }
+
+        // Rename specific devices
+        let deviceRenames: [String: [String: String]] = [
+            "Kitchen": [
+                "Island Pendant A": "Island Uplight",
+                "Island Pendant B": "Island Downlight",
+            ],
+            "Powder Room": [
+                "Powder Recessed": "Recessed",
+            ],
+        ]
+        if let renames = deviceRenames[areaName], let renamed = renames[name] {
+            name = renamed
+        }
+
+        // Strip room-name prefixes from device names
+        let prefixStrips: [String: [String]] = [
+            "Guest Bathroom": ["Attic Bath "],
+            "Guest Bedroom": ["Attic GB "],
+            "Ronan's Room": ["Bedroom 1 ", "Bd1 "],
+            "Sebastian's Room": ["Bedroom 2 ", "Bd2 "],
+            "Mudroom": ["Mudroom "],
+        ]
+        if let prefixes = prefixStrips[areaName] {
+            for prefix in prefixes {
+                if name.hasPrefix(prefix) {
+                    name = String(name.dropFirst(prefix.count))
+                    break
+                }
+            }
+        }
+
+        return (id: id, name: name, controlType: ct, areaName: areaName)
+    }
+
+    private func hrefToId(_ href: String) -> Int {
+        guard !href.isEmpty else { return 0 }
+        return Int(href.split(separator: "/").last ?? "") ?? 0
+    }
+
+    private func fadeDuration(_ seconds: Double) -> String {
+        let h = Int(seconds) / 3600
+        let m = (Int(seconds) % 3600) / 60
+        let s = Int(seconds) % 60
+        return String(format: "%02d:%02d:%02d", h, m, s)
+    }
+}
