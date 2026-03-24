@@ -18,7 +18,7 @@ ios/LutronHome/build/
 # Secrets & credentials
 ios/LutronHome/LutronHome/lutron_client.p12
 ios/LutronHome/LutronHome/secrets.json
-server/data/*.json
+server/data/
 *.env
 .env.*
 
