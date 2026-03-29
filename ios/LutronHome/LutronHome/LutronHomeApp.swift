@@ -28,6 +28,8 @@ struct LutronHomeApp: App {
                 .onAppear {
                     store.usageTracker = usageTracker
                     homeKit.start()
+                    homeKit.cleanupOldActivitySnapshots()
+                    homeKit.loadTodayActivitySnapshots()
                     // Register Siri shortcuts
                     LutronShortcutsProvider.updateAppShortcutParameters()
                 }

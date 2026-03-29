@@ -21,6 +21,13 @@ class HomeKitManager: NSObject, @unchecked Sendable {
     // Two-way audio support
     var isMicrophoneActive = false
 
+    // Activity detection
+    var motionDetectedCameras: Set<String> = []  // camera names with active motion
+    var activitySnapshots: [ActivitySnapshot] = []  // today's activity history
+    private var lastActivitySnapshotTime: [String: Date] = [:]  // throttle per camera
+    private var pendingActivityCapture: (cameraName: String, timestamp: Date)?
+    private var motionClearTimers: [String: Timer] = [:]
+
     // Garage door support
     var garageDoors: [HMAccessory] = []
     var garageDoorStates: [UUID: GarageDoorState] = [:]  // keyed by accessory uniqueIdentifier
@@ -35,6 +42,14 @@ class HomeKitManager: NSObject, @unchecked Sendable {
     private var cacheDir: URL {
         let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
             .appendingPathComponent("CameraSnapshots", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    // Activity snapshots cache directory (separate from live cache)
+    private var activityCacheDir: URL {
+        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("ActivitySnapshots", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
@@ -89,6 +104,8 @@ class HomeKitManager: NSObject, @unchecked Sendable {
             if cameras.count > 1 && autoRotateEnabled {
                 startAutoRotation()
             }
+            // Subscribe to motion sensors on camera accessories
+            subscribeToMotionSensors()
         }
     }
 
@@ -358,6 +375,156 @@ class HomeKitManager: NSObject, @unchecked Sendable {
         snapshotControl.delegate = self
         snapshotControl.takeSnapshot()
     }
+
+    // MARK: - Motion Sensor Subscription
+
+    private func subscribeToMotionSensors() {
+        for (accessory, _) in cameras {
+            accessory.delegate = self
+            var foundMotion = false
+            for service in accessory.services where service.serviceType == HMServiceTypeMotionSensor {
+                for char in service.characteristics where char.characteristicType == HMCharacteristicTypeMotionDetected {
+                    foundMotion = true
+                    char.enableNotification(true) { error in
+                        if let error {
+                            print("HomeKit: motion notification failed for \(accessory.name): \(error)")
+                        } else {
+                            print("HomeKit: subscribed to motion for \(accessory.name)")
+                        }
+                    }
+                    char.readValue { _ in }
+                }
+            }
+            if !foundMotion {
+                print("HomeKit: no motion sensor on \(accessory.name)")
+            }
+        }
+    }
+
+    // MARK: - Activity Snapshot Capture
+
+    private func captureActivitySnapshot(for entry: (accessory: HMAccessory, profile: HMCameraProfile)) {
+        let cameraName = entry.accessory.name
+        let now = Date()
+
+        // Throttle: skip if last snapshot for this camera was < 30 seconds ago
+        if let lastTime = lastActivitySnapshotTime[cameraName], now.timeIntervalSince(lastTime) < 30 {
+            print("HomeKit: throttling activity snapshot for \(cameraName)")
+            return
+        }
+        lastActivitySnapshotTime[cameraName] = now
+
+        // Mark motion detected (UI indicator)
+        DispatchQueue.main.async { [weak self] in
+            self?.motionDetectedCameras.insert(cameraName)
+            // Clear motion indicator after 10 seconds
+            self?.motionClearTimers[cameraName]?.invalidate()
+            self?.motionClearTimers[cameraName] = Timer.scheduledTimer(withTimeInterval: 10, repeats: false) { _ in
+                DispatchQueue.main.async {
+                    self?.motionDetectedCameras.remove(cameraName)
+                }
+            }
+        }
+
+        // Set pending flag so snapshot callback routes to activity storage
+        pendingActivityCapture = (cameraName: cameraName, timestamp: now)
+
+        // Take snapshot from this camera's snapshot control
+        guard let snapshotControl = entry.profile.snapshotControl else {
+            print("HomeKit: no snapshot control for activity capture on \(cameraName)")
+            pendingActivityCapture = nil
+            return
+        }
+        snapshotControl.delegate = self
+        snapshotControl.takeSnapshot()
+        print("HomeKit: capturing activity snapshot for \(cameraName)")
+    }
+
+    /// Save an activity snapshot image to disk and add to in-memory array
+    private func saveActivitySnapshot(_ image: UIImage, cameraName: String, timestamp: Date) {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd_HHmmss"
+        let safeName = cameraName.replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: " ", with: "_")
+        let filename = "\(safeName)_\(formatter.string(from: timestamp)).jpg"
+        let url = activityCacheDir.appendingPathComponent(filename)
+
+        if let data = image.jpegData(compressionQuality: 0.7) {
+            try? data.write(to: url)
+        }
+
+        let snapshot = ActivitySnapshot(cameraName: cameraName, timestamp: timestamp, image: image)
+        DispatchQueue.main.async { [weak self] in
+            self?.activitySnapshots.insert(snapshot, at: 0)  // newest first
+            print("HomeKit: saved activity snapshot for \(cameraName) — total: \(self?.activitySnapshots.count ?? 0)")
+        }
+    }
+
+    // MARK: - Activity Snapshot Persistence
+
+    /// Load today's activity snapshots from disk
+    func loadTodayActivitySnapshots() {
+        let fm = FileManager.default
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+
+        guard let files = try? fm.contentsOfDirectory(at: activityCacheDir, includingPropertiesForKeys: [.creationDateKey]) else { return }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd_HHmmss"
+
+        var loaded: [ActivitySnapshot] = []
+        for file in files where file.pathExtension == "jpg" {
+            let name = file.deletingPathExtension().lastPathComponent
+            // Parse: CameraName_2026-03-28_143022
+            // Find the date portion (last 17 chars: yyyy-MM-dd_HHmmss)
+            guard name.count > 17 else { continue }
+            let dateString = String(name.suffix(17))
+            let cameraName = String(name.dropLast(18)).replacingOccurrences(of: "_", with: " ")
+
+            guard let timestamp = formatter.date(from: dateString),
+                  timestamp >= today,
+                  let data = try? Data(contentsOf: file),
+                  let image = UIImage(data: data) else { continue }
+
+            loaded.append(ActivitySnapshot(cameraName: cameraName, timestamp: timestamp, image: image))
+        }
+
+        loaded.sort { $0.timestamp > $1.timestamp }
+        DispatchQueue.main.async { [weak self] in
+            self?.activitySnapshots = loaded
+            print("HomeKit: loaded \(loaded.count) activity snapshots from today")
+        }
+    }
+
+    /// Delete activity snapshots older than 24 hours
+    func cleanupOldActivitySnapshots() {
+        let fm = FileManager.default
+        let cutoff = Date().addingTimeInterval(-24 * 60 * 60)
+
+        guard let files = try? fm.contentsOfDirectory(at: activityCacheDir, includingPropertiesForKeys: [.creationDateKey]) else { return }
+
+        var removed = 0
+        for file in files {
+            if let attrs = try? fm.attributesOfItem(atPath: file.path),
+               let created = attrs[.creationDate] as? Date,
+               created < cutoff {
+                try? fm.removeItem(at: file)
+                removed += 1
+            }
+        }
+        if removed > 0 {
+            print("HomeKit: cleaned up \(removed) old activity snapshots")
+        }
+    }
+}
+
+// MARK: - ActivitySnapshot Model
+
+struct ActivitySnapshot: Identifiable {
+    let id = UUID()
+    let cameraName: String
+    let timestamp: Date
+    let image: UIImage
 }
 
 // MARK: - HMHomeManagerDelegate
@@ -446,6 +613,10 @@ extension HomeKitManager: HMCameraSnapshotControlDelegate {
 
     /// Render a snapshot via HMCameraView and cache the result
     private func renderAndCacheSnapshot(_ snapshot: HMCameraSnapshot) {
+        // Capture pending activity state before async
+        let activityCapture = pendingActivityCapture
+        pendingActivityCapture = nil
+
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             let cameraView = HMCameraView(frame: CGRect(x: 0, y: 0, width: 640, height: 480))
@@ -456,8 +627,14 @@ extension HomeKitManager: HMCameraSnapshotControlDelegate {
                 let image = renderer.image { _ in
                     cameraView.drawHierarchy(in: cameraView.bounds, afterScreenUpdates: true)
                 }
-                // Only cache if image has actual content (not all black)
-                if let data = image.pngData(), data.count > 1000 {
+                // Only process if image has actual content (not all black)
+                guard let data = image.pngData(), data.count > 1000 else { return }
+
+                if let activity = activityCapture {
+                    // Route to activity snapshot storage
+                    self.saveActivitySnapshot(image, cameraName: activity.cameraName, timestamp: activity.timestamp)
+                } else {
+                    // Normal live snapshot caching
                     self.cacheImage(image, for: self.currentCameraName)
                     self.snapshotImage = image.jpegData(compressionQuality: 0.8)
                     print("HomeKit: cached snapshot for \(self.currentCameraName)")
@@ -474,6 +651,16 @@ extension HomeKitManager: HMAccessoryDelegate {
         // Update garage door state when characteristics change
         if service.serviceType == HMServiceTypeGarageDoorOpener {
             updateGarageDoorState(accessory)
+        }
+
+        // Handle motion detection on camera accessories
+        if service.serviceType == HMServiceTypeMotionSensor,
+           characteristic.characteristicType == HMCharacteristicTypeMotionDetected,
+           let motionDetected = characteristic.value as? Bool, motionDetected {
+            print("HomeKit: motion detected on \(accessory.name)")
+            if let cameraEntry = cameras.first(where: { $0.accessory.uniqueIdentifier == accessory.uniqueIdentifier }) {
+                captureActivitySnapshot(for: cameraEntry)
+            }
         }
     }
 }

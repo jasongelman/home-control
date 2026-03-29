@@ -8,9 +8,15 @@ import { loadConfig, saveConfig } from './config.js';
 import { createRoutes } from './api/routes.js';
 import { handleWebSocket } from './api/websocket.js';
 import { MyQPoller } from './myq/MyQPoller.js';
+import { HomeConnectManager } from './homeconnect/HomeConnectManager.js';
+import { SmartHQManager } from './smarthq/SmartHQManager.js';
+import { MyUplinkManager } from './myuplink/MyUplinkManager.js';
 import { SunShadeAutomation } from './automation/SunShadeAutomation.js';
 import type { LEAPZone } from './lutron/LEAPConnection.js';
 import type { MyQDoor } from './myq/types.js';
+import type { DishwasherStatus } from './homeconnect/types.js';
+import type { LaundryAppliance } from './smarthq/types.js';
+import type { HeatPumpStatus } from './myuplink/types.js';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
@@ -34,6 +40,9 @@ const deviceStore = new DeviceStore();
 const stateSync = new StateSync();
 const config0 = loadConfig();
 const myqPoller = new MyQPoller(config0.myq ?? { email: '', password: '', enabled: false });
+const homeConnect = new HomeConnectManager(config0.homeConnect ?? { clientId: '', clientSecret: '', enabled: false });
+const smartHQ = new SmartHQManager(config0.smartHQ ?? { email: '', password: '', enabled: false });
+const myUplink = new MyUplinkManager(config0.myUplink ?? { clientId: '', clientSecret: '', enabled: false });
 
 // ── Sun-shade automations ──────────────────────────────────────────────────
 const sunAutomations = (config0.automations ?? []).map(
@@ -72,6 +81,12 @@ connection.on('zonesLoaded', (zones: LEAPZone[]) => {
     processorConnected: true,
     doors: myqPoller.getDoors(),
     myqConnected: myqPoller.isConnected,
+    dishwashers: homeConnect.getDishwashers(),
+    laundry: smartHQ.getAppliances(),
+    heatPumps: myUplink.getHeatPumps(),
+    homeConnectLinked: homeConnect.isLinked,
+    smartHQLinked: smartHQ.isLinked,
+    myUplinkLinked: myUplink.isLinked,
   });
 });
 
@@ -110,6 +125,38 @@ myqPoller.on('disconnected', (reason: string) => {
   stateSync.broadcast({ type: 'garageState', doors: [], myqConnected: false });
 });
 
+// ── Wire up appliance events ──────────────────────────────────────────────────
+
+homeConnect.on('stateChange', (dishwashers: DishwasherStatus[]) => {
+  stateSync.broadcast({ type: 'applianceState', dishwashers, laundry: smartHQ.getAppliances(), heatPumps: myUplink.getHeatPumps() });
+});
+
+homeConnect.on('configChanged', (cfg) => {
+  const config = loadConfig();
+  config.homeConnect = cfg;
+  saveConfig(config);
+});
+
+smartHQ.on('stateChange', (laundry: LaundryAppliance[]) => {
+  stateSync.broadcast({ type: 'applianceState', dishwashers: homeConnect.getDishwashers(), laundry, heatPumps: myUplink.getHeatPumps() });
+});
+
+smartHQ.on('configChanged', (cfg) => {
+  const config = loadConfig();
+  config.smartHQ = cfg;
+  saveConfig(config);
+});
+
+myUplink.on('stateChange', (heatPumps: HeatPumpStatus[]) => {
+  stateSync.broadcast({ type: 'applianceState', dishwashers: homeConnect.getDishwashers(), laundry: smartHQ.getAppliances(), heatPumps });
+});
+
+myUplink.on('configChanged', (cfg) => {
+  const config = loadConfig();
+  config.myUplink = cfg;
+  saveConfig(config);
+});
+
 // ── Auto-reconnect logic ──────────────────────────────────────────────────────
 
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -144,7 +191,7 @@ function scheduleReconnect() {
 
 // ── REST API ──────────────────────────────────────────────────────────────────
 
-app.use('/api', createRoutes(deviceStore, connection, myqPoller, sunAutomations));
+app.use('/api', createRoutes(deviceStore, connection, myqPoller, sunAutomations, homeConnect, smartHQ, myUplink));
 
 // ── HTTP + WebSocket ──────────────────────────────────────────────────────────
 
@@ -153,7 +200,7 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 
 wss.on('connection', (ws) => {
   console.log(`WebSocket client connected (${stateSync.clientCount + 1} total)`);
-  handleWebSocket(ws, deviceStore, stateSync, connection, myqPoller);
+  handleWebSocket(ws, deviceStore, stateSync, connection, myqPoller, homeConnect, smartHQ, myUplink);
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
@@ -170,6 +217,22 @@ server.listen(PORT, () => {
     myqPoller.start();
   } else {
     console.log('MyQ not configured. Add credentials via Settings → Garage.');
+  }
+
+  if (config.homeConnect?.enabled && config.homeConnect.accessToken) {
+    console.log('Starting HomeConnect polling...');
+    homeConnect.start();
+  }
+  if (config.smartHQ?.enabled && config.smartHQ.accessToken) {
+    console.log('Starting SmartHQ polling...');
+    smartHQ.start();
+  } else if (config.smartHQ?.enabled && config.smartHQ.email && config.smartHQ.password) {
+    console.log('SmartHQ: logging in...');
+    void smartHQ.login().catch((err: Error) => console.error('SmartHQ login error:', err.message));
+  }
+  if (config.myUplink?.enabled && config.myUplink.accessToken) {
+    console.log('Starting myUplink polling...');
+    myUplink.start();
   }
 
   if (config.processor.ip) {

@@ -6,6 +6,11 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import GarageIcon from '@mui/icons-material/Garage';
+import LocalLaundryServiceIcon from '@mui/icons-material/LocalLaundryService';
+import AcUnitIcon from '@mui/icons-material/AcUnit';
+import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { useLutron } from '../context/LutronContext.js';
 import { useScenes } from '../hooks/useScenes.js';
 import { useAdaptiveDashboard } from '../hooks/useAdaptiveDashboard.js';
@@ -563,6 +568,337 @@ function GarageSettings() {
   );
 }
 
+// ── HomeConnect settings tab ──────────────────────────────────────────────────
+
+function HomeConnectSettings() {
+  const { dishwashers, homeConnectLinked } = useLutron();
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveOk, setSaveOk] = useState(false);
+  const [saveError, setSaveError] = useState('');
+
+  useMemo(() => {
+    if (loaded) return;
+    setLoaded(true);
+    fetch('/api/homeconnect/config').then((r) => r.json()).then((d: { clientId?: string }) => {
+      setClientId(d.clientId ?? '');
+    }).catch(() => {});
+  }, [loaded]);
+
+  const handleSave = async () => {
+    setSaving(true); setSaveOk(false); setSaveError('');
+    try {
+      const res = await fetch('/api/homeconnect/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId, clientSecret: clientSecret || undefined, enabled: true }),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      setSaveOk(true);
+      setClientSecret('');
+    } catch (err) { setSaveError(String(err)); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
+        <Typography sx={{ fontSize: 20 }}>🍽️</Typography>
+        <Chip size="small" label={homeConnectLinked ? `Linked — ${dishwashers.length} appliance${dishwashers.length !== 1 ? 's' : ''}` : 'Not linked'} color={homeConnectLinked ? 'success' : 'default'} variant="outlined" />
+      </Box>
+
+      {dishwashers.length > 0 && (
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mb: 1, textTransform: 'uppercase', letterSpacing: 1 }}>Appliances</Typography>
+          {dishwashers.map((dw) => (
+            <Box key={dw.applianceId} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.75, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+              <Typography variant="body2">{dw.applianceName}</Typography>
+              <Typography variant="caption" color="text.secondary">{dw.operationState}</Typography>
+            </Box>
+          ))}
+        </Box>
+      )}
+
+      <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mb: 1.5, textTransform: 'uppercase', letterSpacing: 1 }}>Home Connect OAuth2 App</Typography>
+      <TextField label="Client ID" value={clientId} onChange={(e) => setClientId(e.target.value)} fullWidth size="small" sx={{ mb: 1.5 }} disabled={saving} />
+      <TextField label="Client Secret" type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} fullWidth size="small" placeholder={homeConnectLinked ? '(saved)' : ''} helperText="Leave blank to keep existing secret" sx={{ mb: 2 }} disabled={saving} />
+
+      {saveError && <Alert severity="error" sx={{ mb: 1.5, fontSize: 12 }}>{saveError}</Alert>}
+      {saveOk && <Alert severity="success" sx={{ mb: 1.5, fontSize: 12 }}>Saved. Click Link to authorize.</Alert>}
+
+      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        <Button variant="contained" onClick={handleSave} disabled={saving || !clientId} sx={{ textTransform: 'none' }}>
+          {saving ? 'Saving…' : 'Save'}
+        </Button>
+        {clientId && (
+          <Button variant="outlined" onClick={() => window.open('/api/homeconnect/oauth/start', '_blank')} sx={{ textTransform: 'none' }}>
+            Link Account
+          </Button>
+        )}
+        {homeConnectLinked && (
+          <Button variant="outlined" color="error" onClick={() => fetch('/api/homeconnect/unlink', { method: 'POST' })} sx={{ textTransform: 'none' }}>
+            Unlink
+          </Button>
+        )}
+      </Box>
+    </Box>
+  );
+}
+
+// ── SmartHQ settings tab ──────────────────────────────────────────────────────
+
+function SmartHQSettings() {
+  const { laundry, smartHQLinked } = useLutron();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveOk, setSaveOk] = useState(false);
+  const [saveError, setSaveError] = useState('');
+
+  useMemo(() => {
+    if (loaded) return;
+    setLoaded(true);
+    fetch('/api/smarthq/config').then((r) => r.json()).then((d: { email?: string }) => {
+      setEmail(d.email ?? '');
+    }).catch(() => {});
+  }, [loaded]);
+
+  const handleSignIn = async () => {
+    setSaving(true); setSaveOk(false); setSaveError('');
+    try {
+      const res = await fetch('/api/smarthq/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      if (!res.ok) throw new Error(`Login failed: ${res.status}`);
+      setSaveOk(true);
+      setPassword('');
+    } catch (err) { setSaveError(String(err)); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
+        <LocalLaundryServiceIcon sx={{ fontSize: 18, color: smartHQLinked ? 'success.main' : 'text.disabled' }} />
+        <Chip size="small" label={smartHQLinked ? `Linked — ${laundry.length} appliance${laundry.length !== 1 ? 's' : ''}` : 'Not linked'} color={smartHQLinked ? 'success' : 'default'} variant="outlined" />
+      </Box>
+
+      {laundry.length > 0 && (
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mb: 1, textTransform: 'uppercase', letterSpacing: 1 }}>Appliances</Typography>
+          {laundry.map((a) => (
+            <Box key={a.applianceId} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.75, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+              <Typography variant="body2">{a.applianceName}</Typography>
+              <Typography variant="caption" color="text.secondary">{a.machineState}</Typography>
+            </Box>
+          ))}
+        </Box>
+      )}
+
+      <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mb: 1.5, textTransform: 'uppercase', letterSpacing: 1 }}>GE SmartHQ Account</Typography>
+      <TextField label="Email" value={email} onChange={(e) => setEmail(e.target.value)} fullWidth size="small" sx={{ mb: 1.5 }} disabled={saving} />
+      <TextField label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} fullWidth size="small" placeholder={smartHQLinked ? '(enter to re-login)' : ''} sx={{ mb: 2 }} disabled={saving} />
+
+      {saveError && <Alert severity="error" sx={{ mb: 1.5, fontSize: 12 }}>{saveError}</Alert>}
+      {saveOk && <Alert severity="success" sx={{ mb: 1.5, fontSize: 12 }}>Signed in! Fetching appliances…</Alert>}
+
+      <Box sx={{ display: 'flex', gap: 1 }}>
+        <Button variant="contained" onClick={handleSignIn} disabled={saving || !email || !password} sx={{ textTransform: 'none' }}>
+          {saving ? 'Signing in…' : 'Sign In'}
+        </Button>
+        {smartHQLinked && (
+          <Button variant="outlined" color="error" onClick={() => fetch('/api/smarthq/unlink', { method: 'POST' })} sx={{ textTransform: 'none' }}>
+            Unlink
+          </Button>
+        )}
+      </Box>
+    </Box>
+  );
+}
+
+// ── myUplink settings tab ────────────────────────────────────────────────────
+
+function MyUplinkSettings() {
+  const { heatPumps, myUplinkLinked } = useLutron();
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveOk, setSaveOk] = useState(false);
+  const [saveError, setSaveError] = useState('');
+
+  useMemo(() => {
+    if (loaded) return;
+    setLoaded(true);
+    fetch('/api/myuplink/config').then((r) => r.json()).then((d: { clientId?: string }) => {
+      setClientId(d.clientId ?? '');
+    }).catch(() => {});
+  }, [loaded]);
+
+  const handleSave = async () => {
+    setSaving(true); setSaveOk(false); setSaveError('');
+    try {
+      const res = await fetch('/api/myuplink/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId, clientSecret: clientSecret || undefined, enabled: true }),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      setSaveOk(true);
+      setClientSecret('');
+    } catch (err) { setSaveError(String(err)); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
+        <AcUnitIcon sx={{ fontSize: 18, color: myUplinkLinked ? 'success.main' : 'text.disabled' }} />
+        <Chip size="small" label={myUplinkLinked ? `Linked — ${heatPumps.length} device${heatPumps.length !== 1 ? 's' : ''}` : 'Not linked'} color={myUplinkLinked ? 'success' : 'default'} variant="outlined" />
+      </Box>
+
+      {heatPumps.length > 0 && (
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mb: 1, textTransform: 'uppercase', letterSpacing: 1 }}>Heat Pumps</Typography>
+          {heatPumps.map((hp) => (
+            <Box key={hp.deviceId} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.75, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+              <Typography variant="body2">{hp.deviceName}</Typography>
+              <Typography variant="caption" color="text.secondary">{hp.mode}{hp.outdoorTemp !== null ? ` · ${hp.outdoorTemp}°F` : ''}</Typography>
+            </Box>
+          ))}
+        </Box>
+      )}
+
+      <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mb: 1.5, textTransform: 'uppercase', letterSpacing: 1 }}>myUplink OAuth2 App</Typography>
+      <TextField label="Client ID" value={clientId} onChange={(e) => setClientId(e.target.value)} fullWidth size="small" sx={{ mb: 1.5 }} disabled={saving} />
+      <TextField label="Client Secret" type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} fullWidth size="small" placeholder={myUplinkLinked ? '(saved)' : ''} helperText="Leave blank to keep existing secret" sx={{ mb: 2 }} disabled={saving} />
+
+      {saveError && <Alert severity="error" sx={{ mb: 1.5, fontSize: 12 }}>{saveError}</Alert>}
+      {saveOk && <Alert severity="success" sx={{ mb: 1.5, fontSize: 12 }}>Saved. Click Link to authorize.</Alert>}
+
+      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        <Button variant="contained" onClick={handleSave} disabled={saving || !clientId} sx={{ textTransform: 'none' }}>
+          {saving ? 'Saving…' : 'Save'}
+        </Button>
+        {clientId && (
+          <Button variant="outlined" onClick={() => window.open('/api/myuplink/oauth/start', '_blank')} sx={{ textTransform: 'none' }}>
+            Link Account
+          </Button>
+        )}
+        {myUplinkLinked && (
+          <Button variant="outlined" color="error" onClick={() => fetch('/api/myuplink/unlink', { method: 'POST' })} sx={{ textTransform: 'none' }}>
+            Unlink
+          </Button>
+        )}
+      </Box>
+    </Box>
+  );
+}
+
+// ── AI Assistant settings tab ────────────────────────────────────────────────
+
+function AIAssistantSettings() {
+  const [apiKey, setApiKey] = useState('');
+  const [showKey, setShowKey] = useState(false);
+  const [configured, setConfigured] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveOk, setSaveOk] = useState(false);
+  const [saveError, setSaveError] = useState('');
+
+  useMemo(() => {
+    if (loaded) return;
+    setLoaded(true);
+    fetch('/api/chat/config').then((r) => r.json()).then((d: { configured?: boolean }) => {
+      setConfigured(d.configured ?? false);
+    }).catch(() => {});
+  }, [loaded]);
+
+  const handleSave = async () => {
+    setSaving(true); setSaveOk(false); setSaveError('');
+    try {
+      const res = await fetch('/api/chat/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey }),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      setSaveOk(true);
+      setConfigured(!!apiKey);
+      setApiKey('');
+    } catch (err) { setSaveError(String(err)); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
+        <ChatBubbleOutlineIcon sx={{ fontSize: 18, color: configured ? 'success.main' : 'text.disabled' }} />
+        <Chip size="small" label={configured ? 'API Key Configured' : 'Not configured'} color={configured ? 'success' : 'default'} variant="outlined" />
+      </Box>
+
+      <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mb: 1.5, textTransform: 'uppercase', letterSpacing: 1 }}>
+        Anthropic API Key
+      </Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+        Enter your Anthropic API key to enable the natural language chat assistant. Your key is stored securely on the server and never sent to the browser.
+      </Typography>
+
+      <TextField
+        label="API Key"
+        type={showKey ? 'text' : 'password'}
+        value={apiKey}
+        onChange={(e) => setApiKey(e.target.value)}
+        fullWidth
+        size="small"
+        placeholder={configured ? '(key saved — enter new to replace)' : 'sk-ant-...'}
+        sx={{ mb: 2 }}
+        disabled={saving}
+        slotProps={{
+          input: {
+            endAdornment: (
+              <IconButton size="small" onClick={() => setShowKey(!showKey)} edge="end">
+                {showKey ? <VisibilityOffIcon sx={{ fontSize: 18 }} /> : <VisibilityIcon sx={{ fontSize: 18 }} />}
+              </IconButton>
+            ),
+          },
+        }}
+      />
+
+      {saveError && <Alert severity="error" sx={{ mb: 1.5, fontSize: 12 }}>{saveError}</Alert>}
+      {saveOk && <Alert severity="success" sx={{ mb: 1.5, fontSize: 12 }}>API key saved.</Alert>}
+
+      <Box sx={{ display: 'flex', gap: 1 }}>
+        <Button variant="contained" onClick={handleSave} disabled={saving || !apiKey} sx={{ textTransform: 'none' }}>
+          {saving ? 'Saving…' : 'Save Key'}
+        </Button>
+        {configured && (
+          <Button
+            variant="outlined"
+            color="error"
+            onClick={async () => {
+              await fetch('/api/chat/config', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ apiKey: '' }),
+              });
+              setConfigured(false);
+            }}
+            sx={{ textTransform: 'none' }}
+          >
+            Remove Key
+          </Button>
+        )}
+      </Box>
+    </Box>
+  );
+}
+
 // ── Main dialog export ───────────────────────────────────────────────────────
 
 export function SettingsDialog({
@@ -606,27 +942,17 @@ export function SettingsDialog({
       <Tabs
         value={tab}
         onChange={(_, v) => setTab(v)}
+        variant="scrollable"
+        scrollButtons="auto"
         sx={{ px: 2, borderBottom: '1px solid rgba(255,255,255,0.08)', minHeight: 40 }}
       >
-        <Tab label="Connection" sx={{ minHeight: 40, fontSize: 13 }} />
-        <Tab
-          label={
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <GarageIcon sx={{ fontSize: 13 }} />
-              Garage
-            </Box>
-          }
-          sx={{ minHeight: 40, fontSize: 13 }}
-        />
-        <Tab
-          label={
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <AutoAwesomeIcon sx={{ fontSize: 13 }} />
-              For You
-            </Box>
-          }
-          sx={{ minHeight: 40, fontSize: 13 }}
-        />
+        <Tab label="Connection" sx={{ minHeight: 40, fontSize: 12 }} />
+        <Tab label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><GarageIcon sx={{ fontSize: 12 }} />Garage</Box>} sx={{ minHeight: 40, fontSize: 12 }} />
+        <Tab label="Dishwasher" sx={{ minHeight: 40, fontSize: 12 }} />
+        <Tab label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><LocalLaundryServiceIcon sx={{ fontSize: 12 }} />Laundry</Box>} sx={{ minHeight: 40, fontSize: 12 }} />
+        <Tab label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><AcUnitIcon sx={{ fontSize: 12 }} />Heat Pump</Box>} sx={{ minHeight: 40, fontSize: 12 }} />
+        <Tab label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><ChatBubbleOutlineIcon sx={{ fontSize: 12 }} />AI Assistant</Box>} sx={{ minHeight: 40, fontSize: 12 }} />
+        <Tab label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><AutoAwesomeIcon sx={{ fontSize: 12 }} />For You</Box>} sx={{ minHeight: 40, fontSize: 12 }} />
       </Tabs>
 
       <DialogContent sx={{ pt: 2 }}>
@@ -661,8 +987,20 @@ export function SettingsDialog({
         {/* Garage / MyQ tab */}
         {tab === 1 && <GarageSettings />}
 
+        {/* HomeConnect / Dishwasher tab */}
+        {tab === 2 && <HomeConnectSettings />}
+
+        {/* SmartHQ / Laundry tab */}
+        {tab === 3 && <SmartHQSettings />}
+
+        {/* myUplink / Heat Pump tab */}
+        {tab === 4 && <MyUplinkSettings />}
+
+        {/* AI Assistant tab */}
+        {tab === 5 && <AIAssistantSettings />}
+
         {/* Personalization tab */}
-        {tab === 2 && (
+        {tab === 6 && (
           <PersonalizationInsights
             events={events}
             devices={devices}

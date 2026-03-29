@@ -7,7 +7,9 @@ struct SettingsView: View {
     @Environment(MyUplinkManager.self) var myUplink
     @Environment(SmartHQManager.self) var smartHQ
     @Environment(MyQManager.self) var myQ
+    @Environment(ChatService.self) var chatService
     @State private var host: String = ""
+    @State private var chatApiKey: String = ""
     @State private var hcClientId: String = ""
     @State private var hcClientSecret: String = ""
     @State private var muClientId: String = ""
@@ -378,6 +380,54 @@ struct SettingsView: View {
                 Text("MyQ")
             } footer: {
                 Text("Sign in with your Chamberlain or LiftMaster MyQ account. Requires the MyQ app to be set up first.")
+            }
+
+            // MARK: - AI Assistant
+
+            Section {
+                HStack {
+                    Image(systemName: "bubble.left.and.text.bubble.right")
+                        .foregroundStyle(.orange)
+                    Text("Chat Assistant")
+                        .fontWeight(.medium)
+                    Spacer()
+                    if chatService.isConfigured {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                }
+
+                SecureField("Anthropic API Key", text: $chatApiKey)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+
+                Button {
+                    chatService.apiKey = chatApiKey
+                    chatApiKey = ""
+                } label: {
+                    HStack {
+                        Image(systemName: "key.fill")
+                        Text("Save Key")
+                    }
+                }
+                .tint(.orange)
+                .disabled(chatApiKey.isEmpty)
+
+                if chatService.isConfigured {
+                    Button(role: .destructive) {
+                        chatService.apiKey = ""
+                        chatApiKey = ""
+                    } label: {
+                        HStack {
+                            Image(systemName: "key.slash")
+                            Text("Remove Key")
+                        }
+                    }
+                }
+            } header: {
+                Text("AI Assistant")
+            } footer: {
+                Text("Enter your Anthropic API key to enable natural language chat control. The key is stored securely in the Keychain. Get a key at console.anthropic.com.")
             }
 
             // MARK: - For You Insights

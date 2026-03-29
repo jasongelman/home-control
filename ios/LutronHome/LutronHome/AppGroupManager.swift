@@ -2,7 +2,7 @@ import Foundation
 import WidgetKit
 
 struct AppGroupManager {
-    static let suiteName = "group.com.jasongelman.LutronHome"
+    static let suiteName = "group.com.jasongelman.homecontrol"
 
     private static var defaults: UserDefaults? {
         UserDefaults(suiteName: suiteName)

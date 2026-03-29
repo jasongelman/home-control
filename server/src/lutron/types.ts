@@ -89,6 +89,10 @@ export interface AppConfig {
   scenes?: Scene[];
   myq?: MyQConfig;
   automations?: AutomationConfig[];
+  homeConnect?: import('../homeconnect/types.js').HomeConnectConfig;
+  smartHQ?: import('../smarthq/types.js').SmartHQConfig;
+  myUplink?: import('../myuplink/types.js').MyUplinkConfig;
+  anthropicApiKey?: string;
 }
 
 // ── MyQ ──────────────────────────────────────────────────────────────────────
@@ -111,11 +115,12 @@ export interface MyQDoor {
 // ── WebSocket message types ───────────────────────────────────────────────────
 
 export type ServerMessage =
-  | { type: 'fullState'; devices: DeviceState[]; processorConnected: boolean; doors: MyQDoor[]; myqConnected: boolean }
+  | { type: 'fullState'; devices: DeviceState[]; processorConnected: boolean; doors: MyQDoor[]; myqConnected: boolean; dishwashers: import('../homeconnect/types.js').DishwasherStatus[]; laundry: import('../smarthq/types.js').LaundryAppliance[]; heatPumps: import('../myuplink/types.js').HeatPumpStatus[]; homeConnectLinked: boolean; smartHQLinked: boolean; myUplinkLinked: boolean }
   | { type: 'state'; deviceId: number; level: number; timestamp: number }
   | { type: 'connected'; processorIp: string }
   | { type: 'disconnected'; reason: string }
   | { type: 'garageState'; doors: MyQDoor[]; myqConnected: boolean }
+  | { type: 'applianceState'; dishwashers: import('../homeconnect/types.js').DishwasherStatus[]; laundry: import('../smarthq/types.js').LaundryAppliance[]; heatPumps: import('../myuplink/types.js').HeatPumpStatus[] }
   | { type: 'error'; message: string }
   | { type: 'pong' };
 

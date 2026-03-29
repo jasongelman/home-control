@@ -16,6 +16,7 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { useLutron } from '../context/LutronContext.js';
 import { GarageDoorControl } from './devices/GarageDoorControl.js';
+import { AppliancesSection } from './AppliancesSection.js';
 import { RoomDetail } from './RoomDetail.js';
 import { SceneEditor } from './SceneEditor.js';
 import { SettingsDialog } from './SettingsDialog.js';
@@ -24,6 +25,7 @@ import { useAdaptiveDashboard } from '../hooks/useAdaptiveDashboard.js';
 import { usePatternDetector } from '../hooks/usePatternDetector.js';
 import { SceneSuggestion } from './SceneSuggestion.js';
 import type { Scene } from '../types/index.js';
+import { ChatPanel } from './ChatPanel.js';
 
 const ROOM_ICONS: Record<string, string> = {
   'Kitchen': '\u{1F373}',
@@ -185,7 +187,7 @@ const QUICK_ACTIONS = [
 ];
 
 export function Dashboard({ onSetup }: { onSetup?: () => void }) {
-  const { devices, connectionStatus, processorConnected, setLevel, trackDevice, trackScene: trackSceneAction, getUsageEvents, doors, myqConnected, triggerGarage } = useLutron();
+  const { devices, connectionStatus, processorConnected, setLevel, trackDevice, trackScene: trackSceneAction, getUsageEvents, doors, myqConnected, triggerGarage, dishwashers, laundry, heatPumps } = useLutron();
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
   const { scenes, createScene, updateScene, deleteScene, activateScene, captureCurrentState } = useScenes();
   const [editorOpen, setEditorOpen] = useState(false);
@@ -522,6 +524,9 @@ export function Dashboard({ onSetup }: { onSetup?: () => void }) {
           </>
         )}
 
+        {/* Appliances — dishwasher, laundry, heat pump */}
+        <AppliancesSection dishwashers={dishwashers} laundry={laundry} heatPumps={heatPumps} />
+
         {/* Rooms */}
         <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 4, mb: 1.5 }}>
           Rooms
@@ -606,6 +611,7 @@ export function Dashboard({ onSetup }: { onSetup?: () => void }) {
         onClose={() => setSettingsOpen(false)}
         onSetup={onSetup}
       />
+      <ChatPanel />
     </Box>
   );
 }

@@ -77,7 +77,7 @@ struct ChatCard: View {
             Image(systemName: "gear.badge.questionmark")
                 .font(.title2)
                 .foregroundStyle(.secondary)
-            Text("Set the server address in Settings to enable the chat assistant.")
+            Text("Add your Anthropic API key in Settings to enable the chat assistant.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -284,8 +284,8 @@ struct MessageBubble: View {
 
     private var actionChips: some View {
         FlowLayout(spacing: 4) {
-            ForEach(message.actions) { action in
-                Text("\(action.label) — \(action.subtitle)")
+            ForEach(message.actions, id: \.description) { action in
+                Text(action.description)
                     .font(.caption2)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
-import type { ServerMessage, ClientMessage, DeviceState, ConnectionStatus, MyQDoor } from '../types/index.js';
+import type { ServerMessage, ClientMessage, DeviceState, ConnectionStatus, MyQDoor, DishwasherStatus, LaundryAppliance, HeatPumpStatus } from '../types/index.js';
 
 const RECONNECT_DELAY = 3000;
 const PING_INTERVAL = 30000;
@@ -14,6 +14,12 @@ export function useWebSocket() {
   const [processorConnected, setProcessorConnected] = useState(false);
   const [doors, setDoors] = useState<Map<string, MyQDoor>>(new Map());
   const [myqConnected, setMyqConnected] = useState(false);
+  const [dishwashers, setDishwashers] = useState<DishwasherStatus[]>([]);
+  const [laundry, setLaundry] = useState<LaundryAppliance[]>([]);
+  const [heatPumps, setHeatPumps] = useState<HeatPumpStatus[]>([]);
+  const [homeConnectLinked, setHomeConnectLinked] = useState(false);
+  const [smartHQLinked, setSmartHQLinked] = useState(false);
+  const [myUplinkLinked, setMyUplinkLinked] = useState(false);
 
   const send = useCallback((msg: ClientMessage) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -95,6 +101,12 @@ export function useWebSocket() {
             setProcessorConnected(msg.processorConnected);
             setDoors(new Map(msg.doors.map((d) => [d.serial, d])));
             setMyqConnected(msg.myqConnected);
+            setDishwashers(msg.dishwashers ?? []);
+            setLaundry(msg.laundry ?? []);
+            setHeatPumps(msg.heatPumps ?? []);
+            setHomeConnectLinked(msg.homeConnectLinked ?? false);
+            setSmartHQLinked(msg.smartHQLinked ?? false);
+            setMyUplinkLinked(msg.myUplinkLinked ?? false);
             break;
 
           case 'state':
@@ -119,6 +131,12 @@ export function useWebSocket() {
           case 'garageState':
             setDoors(new Map(msg.doors.map((d) => [d.serial, d])));
             setMyqConnected(msg.myqConnected);
+            break;
+
+          case 'applianceState':
+            setDishwashers(msg.dishwashers);
+            setLaundry(msg.laundry);
+            setHeatPumps(msg.heatPumps);
             break;
         }
       };
@@ -155,5 +173,11 @@ export function useWebSocket() {
     doors,
     myqConnected,
     triggerGarage,
+    dishwashers,
+    laundry,
+    heatPumps,
+    homeConnectLinked,
+    smartHQLinked,
+    myUplinkLinked,
   };
 }

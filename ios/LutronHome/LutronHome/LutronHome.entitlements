@@ -6,7 +6,7 @@
 	<true/>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.com.jasongelman.LutronHome</string>
+		<string>group.com.jasongelman.homecontrol</string>
 	</array>
 </dict>
 </plist>

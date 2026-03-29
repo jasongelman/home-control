@@ -26,6 +26,7 @@ struct CameraCarouselCard: View {
     var homeKit: HomeKitManager
     @State private var showCameraPicker = false
     @State private var showFullScreen = false
+    @State private var showActivityTimeline = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -40,6 +41,27 @@ struct CameraCarouselCard: View {
                     .textCase(.uppercase)
                     .tracking(0.5)
                     .foregroundStyle(.secondary)
+
+                // Activity count badge
+                if !homeKit.activitySnapshots.isEmpty {
+                    Button {
+                        showActivityTimeline = true
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "figure.walk.motion")
+                                .font(.system(size: 9))
+                            Text("\(homeKit.activitySnapshots.count)")
+                                .font(.system(size: 9, weight: .semibold))
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color.orange.opacity(0.15))
+                        .foregroundStyle(.orange)
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 Spacer()
 
                 if homeKit.cameras.count > 1 {
@@ -95,7 +117,7 @@ struct CameraCarouselCard: View {
                     )
                     .onTapGesture { showFullScreen = true }
 
-                    // Overlay bar: camera name, LIVE indicator, dots
+                    // Overlay bar: camera name, LIVE indicator, motion, dots
                     HStack {
                         // LIVE badge
                         if homeKit.isStreaming {
@@ -110,6 +132,19 @@ struct CameraCarouselCard: View {
                             .padding(.horizontal, 5)
                             .padding(.vertical, 2)
                             .background(.red.opacity(0.7), in: Capsule())
+                        }
+
+                        // Motion detected indicator
+                        if homeKit.motionDetectedCameras.contains(homeKit.currentCameraName) {
+                            HStack(spacing: 3) {
+                                Image(systemName: "figure.walk.motion")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundStyle(.white)
+                            }
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(.orange.opacity(0.7), in: Capsule())
+                            .transition(.opacity)
                         }
 
                         Text(homeKit.currentCameraName)
@@ -223,6 +258,9 @@ struct CameraCarouselCard: View {
         .fullScreenCover(isPresented: $showFullScreen) {
             CameraDetailView(homeKit: homeKit)
         }
+        .sheet(isPresented: $showActivityTimeline) {
+            ActivityTimelineView(homeKit: homeKit)
+        }
         .onAppear {
             homeKit.loadAllCachedImages()
         }
@@ -248,6 +286,7 @@ struct CameraDetailView: View {
     var homeKit: HomeKitManager
     @Environment(\.dismiss) var dismiss
     @State private var speakerVolume: Float = 0.5
+    @State private var showActivityTimeline = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -344,6 +383,29 @@ struct CameraDetailView: View {
                             Image(systemName: "camera.fill")
                                 .font(.title3)
                             Text("Snapshot")
+                                .font(.caption2)
+                        }
+                        .foregroundStyle(.white)
+                    }
+
+                    // Activity Timeline
+                    Button {
+                        showActivityTimeline = true
+                    } label: {
+                        VStack(spacing: 4) {
+                            ZStack(alignment: .topTrailing) {
+                                Image(systemName: "clock.arrow.circlepath")
+                                    .font(.title3)
+                                if !homeKit.activitySnapshots.isEmpty {
+                                    Text("\(homeKit.activitySnapshots.count)")
+                                        .font(.system(size: 8, weight: .bold))
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 3)
+                                        .background(.orange, in: Capsule())
+                                        .offset(x: 8, y: -4)
+                                }
+                            }
+                            Text("Activity")
                                 .font(.caption2)
                         }
                         .foregroundStyle(.white)
@@ -466,6 +528,219 @@ struct CameraDetailView: View {
                         .padding(.horizontal)
                     }
                     .padding(.bottom, 30)
+                }
+            }
+        }
+        .sheet(isPresented: $showActivityTimeline) {
+            ActivityTimelineView(homeKit: homeKit)
+        }
+    }
+}
+
+// MARK: - Activity Timeline View
+
+struct ActivityTimelineView: View {
+    var homeKit: HomeKitManager
+    @Environment(\.dismiss) var dismiss
+    @State private var selectedCamera: String? = nil  // nil = all cameras
+    @State private var selectedSnapshot: ActivitySnapshot? = nil
+
+    private var cameraNames: [String] {
+        Array(Set(homeKit.activitySnapshots.map(\.cameraName))).sorted()
+    }
+
+    private var filteredSnapshots: [ActivitySnapshot] {
+        if let camera = selectedCamera {
+            return homeKit.activitySnapshots.filter { $0.cameraName == camera }
+        }
+        return homeKit.activitySnapshots
+    }
+
+    private var groupedByHour: [(hour: String, snapshots: [ActivitySnapshot])] {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h a"
+
+        var groups: [String: [ActivitySnapshot]] = [:]
+        var hourOrder: [String] = []
+
+        for snapshot in filteredSnapshots {
+            let key = formatter.string(from: snapshot.timestamp)
+            if groups[key] == nil {
+                hourOrder.append(key)
+            }
+            groups[key, default: []].append(snapshot)
+        }
+
+        return hourOrder.map { (hour: $0, snapshots: groups[$0]!) }
+    }
+
+    var body: some View {
+        NavigationView {
+            Group {
+                if homeKit.activitySnapshots.isEmpty {
+                    emptyState
+                } else {
+                    VStack(spacing: 0) {
+                        // Camera filter pills
+                        if cameraNames.count > 1 {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    filterPill(title: "All", isSelected: selectedCamera == nil) {
+                                        selectedCamera = nil
+                                    }
+                                    ForEach(cameraNames, id: \.self) { name in
+                                        filterPill(title: name, isSelected: selectedCamera == name) {
+                                            selectedCamera = name
+                                        }
+                                    }
+                                }
+                                .padding(.horizontal)
+                                .padding(.vertical, 10)
+                            }
+                        }
+
+                        // Timeline
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 16) {
+                                ForEach(groupedByHour, id: \.hour) { group in
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        // Hour header
+                                        Text(group.hour)
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                            .foregroundStyle(.secondary)
+                                            .padding(.horizontal)
+
+                                        // Snapshot grid
+                                        LazyVGrid(columns: [
+                                            GridItem(.flexible(), spacing: 8),
+                                            GridItem(.flexible(), spacing: 8),
+                                            GridItem(.flexible(), spacing: 8)
+                                        ], spacing: 8) {
+                                            ForEach(group.snapshots) { snapshot in
+                                                activityThumbnail(snapshot)
+                                            }
+                                        }
+                                        .padding(.horizontal)
+                                    }
+                                }
+                            }
+                            .padding(.vertical)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Today's Activity")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    if !homeKit.activitySnapshots.isEmpty {
+                        Text("\(filteredSnapshots.count) events")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .sheet(item: $selectedSnapshot) { snapshot in
+                activityDetail(snapshot)
+            }
+        }
+    }
+
+    // MARK: - Subviews
+
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "figure.walk.motion")
+                .font(.system(size: 48))
+                .foregroundStyle(.secondary)
+            Text("No Activity Detected Today")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            Text("Screenshots will appear here when motion is detected by your cameras.")
+                .font(.subheadline)
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+        }
+    }
+
+    private func filterPill(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(isSelected ? Color.orange.opacity(0.2) : Color(.tertiarySystemBackground))
+                .foregroundStyle(isSelected ? .orange : .secondary)
+                .clipShape(Capsule())
+                .overlay(
+                    Capsule()
+                        .stroke(isSelected ? Color.orange.opacity(0.3) : Color(.separator).opacity(0.3), lineWidth: 0.5)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func activityThumbnail(_ snapshot: ActivitySnapshot) -> some View {
+        Button {
+            selectedSnapshot = snapshot
+        } label: {
+            VStack(spacing: 4) {
+                Image(uiImage: snapshot.image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(height: 80)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                HStack(spacing: 2) {
+                    if selectedCamera == nil {
+                        Text(snapshot.cameraName)
+                            .font(.system(size: 8))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    Text(snapshot.timestamp, format: .dateTime.hour().minute())
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func activityDetail(_ snapshot: ActivitySnapshot) -> some View {
+        NavigationView {
+            VStack(spacing: 16) {
+                Image(uiImage: snapshot.image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .padding(.horizontal)
+
+                VStack(spacing: 6) {
+                    Text(snapshot.cameraName)
+                        .font(.headline)
+                    Text(snapshot.timestamp, format: .dateTime.hour().minute().second())
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Text(snapshot.timestamp, format: .dateTime.weekday(.wide).month().day())
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+
+                Spacer()
+            }
+            .padding(.top, 20)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { selectedSnapshot = nil }
                 }
             }
         }

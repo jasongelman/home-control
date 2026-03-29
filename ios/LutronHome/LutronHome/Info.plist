@@ -9,12 +9,12 @@
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.jasongelman.LutronHome</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>lutronhome</string>
 			</array>
-			<key>CFBundleURLName</key>
-			<string>com.jasongelman.LutronHome</string>
 		</dict>
 	</array>
 </dict>
