@@ -9,6 +9,7 @@ struct LutronHomeApp: App {
     @State private var myUplink = MyUplinkManager()
     @State private var smartHQ = SmartHQManager()
     @State private var myQ = MyQManager()
+    @State private var chatService = ChatService()
     @Environment(\.scenePhase) private var scenePhase
     @State private var showVoiceInput = false
 
@@ -22,6 +23,7 @@ struct LutronHomeApp: App {
                 .environment(myUplink)
                 .environment(smartHQ)
                 .environment(myQ)
+                .environment(chatService)
                 .preferredColorScheme(.dark)
                 .onAppear {
                     store.usageTracker = usageTracker
@@ -48,8 +50,9 @@ struct LutronHomeApp: App {
                 }
                 .sheet(isPresented: $showVoiceInput) {
                     NavigationStack {
-                        ChatView(autoStartVoice: true)
+                        VoiceInputView()
                             .environment(store)
+                            .environment(chatService)
                             .navigationTitle("Voice Command")
                             .navigationBarTitleDisplayMode(.inline)
                             .toolbar {
