@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Lutron Home uses the microphone to recognize your voice commands for controlling lights and shades.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Lutron Home uses speech recognition to convert your voice into commands for controlling your home.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

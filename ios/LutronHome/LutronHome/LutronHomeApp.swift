@@ -46,6 +46,19 @@ struct LutronHomeApp: App {
                         showVoiceInput = true
                     }
                 }
+                .sheet(isPresented: $showVoiceInput) {
+                    NavigationStack {
+                        ChatView(autoStartVoice: true)
+                            .environment(store)
+                            .navigationTitle("Voice Command")
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbar {
+                                ToolbarItem(placement: .cancellationAction) {
+                                    Button("Done") { showVoiceInput = false }
+                                }
+                            }
+                    }
+                }
         }
     }
 
