@@ -311,6 +311,8 @@ class UsageTracker {
         if let data = try? JSONEncoder().encode(events) {
             UserDefaults.standard.set(data, forKey: Self.storageKey)
         }
+        // Sync to App Group for widget
+        AppGroupManager.writeUsageEvents(events)
     }
 
     private func loadDismissed() {

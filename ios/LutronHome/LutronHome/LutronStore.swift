@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import Observation
+import WidgetKit
 
 enum ConnectionState: Equatable {
     case connected
@@ -281,6 +282,7 @@ class LutronStore: @unchecked Sendable {
 
             await MainActor.run { statusMessage = "\(self.devices.count) devices • \(areas.count) rooms" }
             print("LEAP: fully connected and subscribed")
+            syncToAppGroup()
 
         } catch {
             print("LEAP: topology load failed: \(error)")
@@ -309,6 +311,7 @@ class LutronStore: @unchecked Sendable {
                 devices[zoneId]?.level = level
             }
         }
+        syncToAppGroup()
     }
 
     // MARK: - Actions
@@ -337,6 +340,9 @@ class LutronStore: @unchecked Sendable {
                 print("LEAP: setLevel failed: \(error)")
             }
         }
+        // Optimistically update App Group
+        devices[deviceId]?.level = level
+        syncToAppGroup()
     }
 
     func turnOff(_ deviceId: Int) {
@@ -443,6 +449,16 @@ class LutronStore: @unchecked Sendable {
         for device in lightsOn {
             setLevel(device.integrationId, level: 0, fadeTime: 1)
         }
+    }
+
+    // MARK: - Widget Sync
+
+    /// Push current state to App Group for widget consumption
+    private func syncToAppGroup() {
+        AppGroupManager.writeDevices(devices)
+        AppGroupManager.writeScenes(scenes)
+        AppGroupManager.writeServerHost(processorHost)
+        AppGroupManager.reloadWidgets()
     }
 
     // MARK: - Network Monitoring
