@@ -7,7 +7,7 @@ struct SetDeviceLevelIntent: AppIntent {
     @Parameter(title: "Device Name")
     var deviceName: String
 
-    @Parameter(title: "Level", controlStyle: .slider, inclusiveRange: (0, 100))
+    @Parameter(title: "Level")
     var level: Int
 
     static var parameterSummary: some ParameterSummary {
