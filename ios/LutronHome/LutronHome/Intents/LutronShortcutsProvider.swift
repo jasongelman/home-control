@@ -5,20 +5,11 @@ struct LutronShortcutsProvider: AppShortcutsProvider {
         AppShortcut(
             intent: ActivateSceneIntent(),
             phrases: [
-                "Activate \(\.$sceneName) in \(.applicationName)",
-                "Turn on \(\.$sceneName) scene in \(.applicationName)"
+                "Activate a scene in \(.applicationName)",
+                "Turn on a scene in \(.applicationName)"
             ],
             shortTitle: "Activate Scene",
             systemImageName: "lightswitch.on"
-        )
-        AppShortcut(
-            intent: SetDeviceLevelIntent(),
-            phrases: [
-                "Set \(\.$deviceName) to \(\.$level) percent in \(.applicationName)",
-                "Turn \(\.$deviceName) to \(\.$level) in \(.applicationName)"
-            ],
-            shortTitle: "Set Device Level",
-            systemImageName: "slider.horizontal.3"
         )
         AppShortcut(
             intent: AllLightsOffIntent(),
@@ -32,8 +23,8 @@ struct LutronShortcutsProvider: AppShortcutsProvider {
         AppShortcut(
             intent: VoiceCommandIntent(),
             phrases: [
-                "Tell \(.applicationName) \(\.$spokenText)",
-                "Ask \(.applicationName) \(\.$spokenText)"
+                "Tell \(.applicationName) a command",
+                "Ask \(.applicationName) something"
             ],
             shortTitle: "Voice Command",
             systemImageName: "mic"

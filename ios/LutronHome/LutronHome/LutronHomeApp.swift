@@ -73,9 +73,9 @@ struct LutronHomeApp: App {
                 appliances.append(.init(name: "Dishwasher", remainingMinutes: seconds / 60))
             }
         }
-        for app in smartHQ.appliances where app.machineState == .running {
+        for app in smartHQ.appliances where app.machineState == .run {
             if let minutes = app.remainingMinutes, minutes > 0 {
-                let name = app.type == .washer ? "Washer" : "Dryer"
+                let name = app.applianceType == "Washer" ? "Washer" : "Dryer"
                 appliances.append(.init(name: name, remainingMinutes: minutes))
             }
         }

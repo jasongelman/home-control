@@ -284,13 +284,13 @@ struct MessageBubble: View {
 
     private var actionChips: some View {
         FlowLayout(spacing: 4) {
-            ForEach(message.actions, id: \.description) { action in
-                Text(action.description)
+            ForEach(message.actions) { action in
+                Text("\(action.label) — \(action.subtitle)")
                     .font(.caption2)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(Color.orange.opacity(0.15), in: Capsule())
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Color.orange)
             }
         }
     }
@@ -361,7 +361,7 @@ struct VoiceInputView: View {
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.title3)
-                        .foregroundStyle(input.trimmingCharacters(in: .whitespaces).isEmpty ? .secondary : .orange)
+                        .foregroundStyle(input.trimmingCharacters(in: .whitespaces).isEmpty ? Color.secondary : Color.orange)
                 }
                 .disabled(input.trimmingCharacters(in: .whitespaces).isEmpty || isProcessing)
             }
