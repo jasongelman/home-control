@@ -522,6 +522,7 @@ struct CircularProgressView: View {
 struct DishwasherDetailView: View {
     @Environment(HomeConnectManager.self) var homeConnect
     let dishwasherId: String
+    @State private var showStartSheet = false
 
     private var status: DishwasherStatus? {
         homeConnect.dishwashers.first(where: { $0.applianceId == dishwasherId })
@@ -601,6 +602,20 @@ struct DishwasherDetailView: View {
                         }
                     }
                 }
+
+                // Remote start (when preconditions met)
+                if dw.canRemoteStart {
+                    Section {
+                        Button {
+                            showStartSheet = true
+                            Task { await homeConnect.fetchAvailablePrograms(for: dw.applianceId) }
+                        } label: {
+                            Label("Start Dishwasher", systemImage: "play.circle.fill")
+                                .foregroundStyle(.green)
+                                .font(.headline)
+                        }
+                    }
+                }
             }
             .navigationTitle(dw.applianceName.isEmpty ? "Dishwasher" : dw.applianceName)
             .navigationBarTitleDisplayMode(.inline)
@@ -608,6 +623,9 @@ struct DishwasherDetailView: View {
                 if let idx = homeConnect.dishwashers.firstIndex(where: { $0.applianceId == dishwasherId }) {
                     await homeConnect.fetchStatus(for: idx)
                 }
+            }
+            .sheet(isPresented: $showStartSheet) {
+                DishwasherStartSheet(applianceId: dw.applianceId)
             }
         } else {
             ContentUnavailableView("Dishwasher Not Found", systemImage: "dishwasher", description: Text("This appliance is no longer available."))

@@ -15,23 +15,25 @@
 		A1000006 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000006 /* SettingsView.swift */; };
 		A1000007 /* LEAPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000007 /* LEAPClient.swift */; };
 		A1000008 /* HomeKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000008 /* HomeKitManager.swift */; };
+		A1000009 /* CameraStreamView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000009 /* CameraStreamView.swift */; };
 		A100000A /* HomeConnectManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000A /* HomeConnectManager.swift */; };
 		A100000B /* MyUplinkManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000B /* MyUplinkManager.swift */; };
-		A100000D /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000D /* KeychainHelper.swift */; };
-		A1000009 /* CameraStreamView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000009 /* CameraStreamView.swift */; };
-		A1000010 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2000010 /* Assets.xcassets */; };
-		A1000011 /* lutron_client.p12 in Resources */ = {isa = PBXBuildFile; fileRef = A2000011 /* lutron_client.p12 */; };
-		B1000001 /* ModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000001 /* ModelTests.swift */; };
-		B1000002 /* AnyCodableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000002 /* AnyCodableTests.swift */; };
-		B1000003 /* StoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000003 /* StoreTests.swift */; };
 		A100000C /* AuthenticationServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A200000C /* AuthenticationServices.framework */; };
+		A100000D /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000D /* KeychainHelper.swift */; };
 		A100000E /* secrets.json in Resources */ = {isa = PBXBuildFile; fileRef = A200000E /* secrets.json */; };
 		A100000F /* SunCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000F /* SunCalculator.swift */; };
+		A1000010 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2000010 /* Assets.xcassets */; };
+		A1000011 /* lutron_client.p12 in Resources */ = {isa = PBXBuildFile; fileRef = A2000011 /* lutron_client.p12 */; };
 		A1000020 /* SmartHQManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000020 /* SmartHQManager.swift */; };
 		A1000021 /* AppliancesTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000021 /* AppliancesTab.swift */; };
 		A1000022 /* MyQManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000022 /* MyQManager.swift */; };
 		A1000030 /* UsageTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000030 /* UsageTracker.swift */; };
 		A1000031 /* PersonalizationInsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000031 /* PersonalizationInsightsView.swift */; };
+		A1000040 /* ChatService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000040 /* ChatService.swift */; };
+		A1000041 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000041 /* ChatView.swift */; };
+		B1000001 /* ModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000001 /* ModelTests.swift */; };
+		B1000002 /* AnyCodableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000002 /* AnyCodableTests.swift */; };
+		B1000003 /* StoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000003 /* StoreTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -53,26 +55,28 @@
 		A2000006 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A2000007 /* LEAPClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LEAPClient.swift; sourceTree = "<group>"; };
 		A2000008 /* HomeKitManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeKitManager.swift; sourceTree = "<group>"; };
+		A2000009 /* CameraStreamView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraStreamView.swift; sourceTree = "<group>"; };
 		A200000A /* HomeConnectManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeConnectManager.swift; sourceTree = "<group>"; };
 		A200000B /* MyUplinkManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyUplinkManager.swift; sourceTree = "<group>"; };
+		A200000C /* AuthenticationServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AuthenticationServices.framework; path = System/Library/Frameworks/AuthenticationServices.framework; sourceTree = SDKROOT; };
 		A200000D /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		A200000E /* secrets.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = secrets.json; sourceTree = "<group>"; };
-		A2000009 /* CameraStreamView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraStreamView.swift; sourceTree = "<group>"; };
+		A200000F /* SunCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SunCalculator.swift; sourceTree = "<group>"; };
 		A2000010 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		A2000012 /* LutronHome.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LutronHome.entitlements; sourceTree = "<group>"; };
 		A2000011 /* lutron_client.p12 */ = {isa = PBXFileReference; lastKnownFileType = file; path = lutron_client.p12; sourceTree = "<group>"; };
+		A2000012 /* LutronHome.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LutronHome.entitlements; sourceTree = "<group>"; };
+		A2000020 /* SmartHQManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartHQManager.swift; sourceTree = "<group>"; };
+		A2000021 /* AppliancesTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppliancesTab.swift; sourceTree = "<group>"; };
+		A2000022 /* MyQManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyQManager.swift; sourceTree = "<group>"; };
+		A2000030 /* UsageTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageTracker.swift; sourceTree = "<group>"; };
+		A2000031 /* PersonalizationInsightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalizationInsightsView.swift; sourceTree = "<group>"; };
+		A2000040 /* ChatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatService.swift; sourceTree = "<group>"; };
+		A2000041 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		A3000001 /* LutronHome.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LutronHome.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B2000001 /* ModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelTests.swift; sourceTree = "<group>"; };
 		B2000002 /* AnyCodableTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnyCodableTests.swift; sourceTree = "<group>"; };
 		B2000003 /* StoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreTests.swift; sourceTree = "<group>"; };
 		B3000001 /* LutronHomeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LutronHomeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		A200000C /* AuthenticationServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AuthenticationServices.framework; path = System/Library/Frameworks/AuthenticationServices.framework; sourceTree = SDKROOT; };
-		A200000F /* SunCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SunCalculator.swift; sourceTree = "<group>"; };
-		A2000020 /* SmartHQManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartHQManager.swift; sourceTree = "<group>"; };
-		A2000021 /* AppliancesTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppliancesTab.swift; sourceTree = "<group>"; };
-		A2000030 /* UsageTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageTracker.swift; sourceTree = "<group>"; };
-		A2000031 /* PersonalizationInsightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalizationInsightsView.swift; sourceTree = "<group>"; };
-		A2000022 /* MyQManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyQManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -80,8 +84,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-							A100000C /* AuthenticationServices.framework in Frameworks */,
-);
+				A100000C /* AuthenticationServices.framework in Frameworks */,
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		B4000002 /* Frameworks */ = {
@@ -100,6 +104,7 @@
 				A5000002 /* LutronHome */,
 				B5000001 /* LutronHomeTests */,
 				A5000003 /* Products */,
+				FB082B0C2F77583F00D9EBEF /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -125,6 +130,8 @@
 				A2000030 /* UsageTracker.swift */,
 				A2000031 /* PersonalizationInsightsView.swift */,
 				A2000022 /* MyQManager.swift */,
+				A2000040 /* ChatService.swift */,
+				A2000041 /* ChatView.swift */,
 				A2000012 /* LutronHome.entitlements */,
 				A2000010 /* Assets.xcassets */,
 				A2000011 /* lutron_client.p12 */,
@@ -149,6 +156,14 @@
 				B2000003 /* StoreTests.swift */,
 			);
 			path = LutronHomeTests;
+			sourceTree = "<group>";
+		};
+		FB082B0C2F77583F00D9EBEF /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				A200000C /* AuthenticationServices.framework */,
+			);
+			name = "Recovered References";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -231,8 +246,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-								A100000E /* secrets.json in Resources */,
-A1000010 /* Assets.xcassets in Resources */,
+				A100000E /* secrets.json in Resources */,
+				A1000010 /* Assets.xcassets in Resources */,
 				A1000011 /* lutron_client.p12 in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -262,6 +277,8 @@ A1000010 /* Assets.xcassets in Resources */,
 				A1000030 /* UsageTracker.swift in Sources */,
 				A1000031 /* PersonalizationInsightsView.swift in Sources */,
 				A1000022 /* MyQManager.swift in Sources */,
+				A1000040 /* ChatService.swift in Sources */,
+				A1000041 /* ChatView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

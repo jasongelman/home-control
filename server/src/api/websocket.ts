@@ -4,6 +4,9 @@ import type { StateSync } from '../state/StateSync.js';
 import type { LEAPConnection } from '../lutron/LEAPConnection.js';
 import type { ClientMessage } from '../lutron/types.js';
 import type { MyQPoller } from '../myq/MyQPoller.js';
+import type { HomeConnectManager } from '../homeconnect/HomeConnectManager.js';
+import type { SmartHQManager } from '../smarthq/SmartHQManager.js';
+import type { MyUplinkManager } from '../myuplink/MyUplinkManager.js';
 
 export function handleWebSocket(
   ws: WebSocket,
@@ -11,6 +14,9 @@ export function handleWebSocket(
   stateSync: StateSync,
   connection: LEAPConnection,
   myqPoller: MyQPoller,
+  homeConnect?: HomeConnectManager,
+  smartHQ?: SmartHQManager,
+  myUplink?: MyUplinkManager,
 ): void {
   stateSync.addClient(ws);
 
@@ -22,6 +28,12 @@ export function handleWebSocket(
       processorConnected: connection.isConnected,
       doors: myqPoller.getDoors(),
       myqConnected: myqPoller.isConnected,
+      dishwashers: homeConnect?.getDishwashers() ?? [],
+      laundry: smartHQ?.getAppliances() ?? [],
+      heatPumps: myUplink?.getHeatPumps() ?? [],
+      homeConnectLinked: homeConnect?.isLinked ?? false,
+      smartHQLinked: smartHQ?.isLinked ?? false,
+      myUplinkLinked: myUplink?.isLinked ?? false,
     }),
   );
 

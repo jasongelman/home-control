@@ -243,6 +243,9 @@ struct DashboardView: View {
     @Environment(MyUplinkManager.self) var myUplink
     @Environment(SmartHQManager.self) var smartHQ
 
+    @State private var showDishwasherStartSheet = false
+    @State private var selectedDishwasherId: String?
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -253,10 +256,10 @@ struct DashboardView: View {
                             HStack(spacing: 6) {
                                 Image(systemName: timeTheme.periodIcon)
                                     .font(.system(size: 15))
-                                    .foregroundStyle(timeTheme.theme.accent)
+                                    .foregroundStyle(Color.orange)
                                 Text(timeTheme.greeting)
                                     .font(.subheadline)
-                                    .foregroundStyle(timeTheme.theme.accent.opacity(0.85))
+                                    .foregroundStyle(Color.orange.opacity(0.85))
                             }
                             Text("8 Highclere")
                                 .font(.largeTitle)
@@ -277,8 +280,8 @@ struct DashboardView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 14)
                 .background(
-                    LinearGradient(colors: timeTheme.theme.headerGradient, startPoint: .top, endPoint: .bottom)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color.white.opacity(0.03))
                         .padding(.horizontal, -16)
                 )
 
@@ -286,11 +289,11 @@ struct DashboardView: View {
                     ConnectionBanner()
                 }
 
+                ChatCard()
+
                 CameraCarouselCard(homeKit: homeKit)
                 // garageDoorSection  // Hidden until HomeKit garage door integration is working
-                forYouSection
-                quickActionsSection
-                adaptiveRoomControlsSection
+                unifiedControlSection
                 sceneSuggestionsSection
                 lightsOnSection
             }
@@ -301,10 +304,15 @@ struct DashboardView: View {
             await store.refresh()
         }
         .background {
-            TimeOfDayBackground(period: SunCalculator.currentPeriod())
+            timeTheme.theme.backgroundTint.ignoresSafeArea()
         }
         .scrollContentBackground(.hidden)
         .toolbar(.hidden, for: .navigationBar)
+        .sheet(isPresented: $showDishwasherStartSheet) {
+            if let id = selectedDishwasherId {
+                DishwasherStartSheet(applianceId: id)
+            }
+        }
     }
 
     // MARK: - Time Theme
@@ -406,29 +414,132 @@ struct DashboardView: View {
         }
     }
 
-    // MARK: - Quick Actions
+    // MARK: - Unified Home Control (max 8 items, priority-ranked)
 
-    private var quickActionsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Quick Actions")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .textCase(.uppercase)
-                .tracking(0.5)
-                .foregroundStyle(timeTheme.theme.sectionHeaderColor)
+    private enum DashboardItem: Identifiable {
+        case contextualAction(title: String, icon: String, actionId: String)
+        case dishwasher(DishwasherStatus)
+        case laundry(LaundryApplianceStatus)
+        case forYouEvening
+        case forYouDevice(deviceId: Int)
+        case staticAction(title: String, icon: String, color: Color, actionId: String)
+        case room(name: String, icon: String)
 
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                // Time-based contextual actions (shown first)
-                let contextual = SunCalculator.contextualActions()
-                ForEach(contextual, id: \.id) { action in
-                    QuickActionButton(title: action.title, icon: action.icon, color: timeTheme.theme.accent) {
-                        handleContextualAction(action.id)
+        var id: String {
+            switch self {
+            case .contextualAction(_, _, let id): return "ctx_\(id)"
+            case .dishwasher(let dw): return "dw_\(dw.applianceId)"
+            case .laundry(let app): return "lnd_\(app.id)"
+            case .forYouEvening: return "foryou_evening"
+            case .forYouDevice(let id): return "foryou_\(id)"
+            case .staticAction(_, _, _, let id): return "static_\(id)"
+            case .room(let name, _): return "room_\(name)"
+            }
+        }
+    }
+
+    private var dashboardItems: [DashboardItem] {
+        let maxItems = 8
+        var items: [DashboardItem] = []
+
+        let contextualActions = SunCalculator.contextualActions()
+        let isEvening = TimeBucket.current() == .evening
+        let hasEveningContextual = contextualActions.contains(where: { $0.id == "evening" })
+        let topDevices = usageTracker.topDevices(isEvening ? 3 : 4, timeWindowSeconds: 30 * 24 * 60 * 60)
+        let hasForYou = isEvening || (!topDevices.isEmpty && usageTracker.events.count >= 5)
+
+        // 1. Contextual actions (time-sensitive, ephemeral)
+        for action in contextualActions {
+            guard items.count < maxItems else { break }
+            items.append(.contextualAction(title: action.title, icon: action.icon, actionId: action.id))
+        }
+
+        // 2. Active/startable appliances only (skip idle)
+        if homeConnect.isLinked {
+            for dw in homeConnect.dishwashers where dw.operationState.isActive || dw.canRemoteStart {
+                guard items.count < maxItems else { break }
+                items.append(.dishwasher(dw))
+            }
+        }
+        if smartHQ.isLinked {
+            for app in smartHQ.appliances where app.machineState.isActive {
+                guard items.count < maxItems else { break }
+                items.append(.laundry(app))
+            }
+        }
+
+        // 3. For You device shortcuts (personalized)
+        if hasForYou {
+            if isEvening && !hasEveningContextual && items.count < maxItems {
+                items.append(.forYouEvening)
+            }
+            for device in topDevices {
+                guard items.count < maxItems else { break }
+                items.append(.forYouDevice(deviceId: Int(device.id) ?? 0))
+            }
+        }
+
+        // 4. Static quick actions (high-utility bulk operations)
+        let statics: [(String, String, Color, String)] = [
+            ("Main Floor Off", "power", .orange, "main_floor_off"),
+            ("Upstairs Off", "power", .orange, "upstairs_off"),
+            ("Main Shades Toggle", "blinds.vertical.closed", .blue, "shades_toggle"),
+        ]
+        for (title, icon, color, actionId) in statics {
+            guard items.count < maxItems else { break }
+            items.append(.staticAction(title: title, icon: icon, color: color, actionId: actionId))
+        }
+
+        // 5. Room controls fill remaining slots
+        let roomIcons: [String: String] = [
+            "Guest Bathroom": "🚿", "Primary Bedroom": "🛏️", "Primary Bathroom": "🛁",
+            "Kitchen": "🍳", "Family Room": "📺", "Dining Room": "🍽️",
+            "Jason Office": "💻", "Living Room": "🛋️", "Main Entry": "🚪",
+            "Mudroom": "🚪", "Breakfast Nook": "☕", "Powder Room": "🚿",
+            "Ronan's Room": "🧸", "Sebastian's Room": "🧸", "Gym": "🏋️",
+            "Laundry": "🧺", "Garage": "🚗", "Guest Bedroom": "🛏️",
+        ]
+        let defaultRooms = ["Guest Bathroom", "Primary Bedroom", "Primary Bathroom", "Kitchen", "Family Room", "Dining Room"]
+        let available = store.rooms.map(\.name)
+        let sorted = usageTracker.sortedRoomNames(available: available)
+        let allRooms = usageTracker.events.isEmpty ? defaultRooms : Array(sorted)
+
+        for room in allRooms {
+            guard items.count < maxItems else { break }
+            items.append(.room(name: room, icon: roomIcons[room] ?? "🏠"))
+        }
+
+        return items
+    }
+
+    private var unifiedControlSection: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+            ForEach(dashboardItems) { item in
+                switch item {
+                case .contextualAction(let title, let icon, let actionId):
+                    QuickActionButton(title: title, icon: icon, color: .orange) {
+                        handleContextualAction(actionId)
                     }
-                }
 
-                // Appliance pills (same height, different color scheme)
-                if homeConnect.isLinked {
-                    ForEach(homeConnect.dishwashers) { dw in
+                case .dishwasher(let dw):
+                    if dw.canRemoteStart {
+                        Button {
+                            selectedDishwasherId = dw.applianceId
+                            showDishwasherStartSheet = true
+                            Task { await homeConnect.fetchAvailablePrograms(for: dw.applianceId) }
+                        } label: {
+                            AppliancePill(
+                                title: dw.applianceName.isEmpty ? "Dishwasher" : dw.applianceName,
+                                icon: "dishwasher",
+                                status: "Ready to Start",
+                                color: .green,
+                                isActive: false,
+                                progress: nil,
+                                timeRemaining: nil
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    } else {
                         AppliancePill(
                             title: dw.applianceName.isEmpty ? "Dishwasher" : dw.applianceName,
                             icon: "dishwasher",
@@ -439,124 +550,64 @@ struct DashboardView: View {
                             timeRemaining: dw.remainingTimeFormatted
                         )
                     }
-                }
 
-                if smartHQ.isLinked {
-                    ForEach(smartHQ.appliances) { app in
-                        AppliancePill(
-                            title: app.applianceName,
-                            icon: app.typeIcon,
-                            status: app.machineState.label,
-                            color: app.isWasher ? .indigo : .purple,
-                            isActive: app.machineState.isActive,
-                            progress: nil,
-                            timeRemaining: app.remainingTimeFormatted
+                case .laundry(let app):
+                    AppliancePill(
+                        title: app.applianceName,
+                        icon: app.typeIcon,
+                        status: app.machineState.label,
+                        color: app.isWasher ? .indigo : .purple,
+                        isActive: app.machineState.isActive,
+                        progress: nil,
+                        timeRemaining: app.remainingTimeFormatted
+                    )
+
+                case .forYouEvening:
+                    Button {
+                        store.activateEveningScene()
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "moon.fill")
+                                .font(.system(size: 14))
+                                .foregroundStyle(Color.orange)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("Evening")
+                                    .font(.footnote)
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                Text("Scene")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color.orange.opacity(0.06))
+                                .strokeBorder(Color.orange.opacity(0.15))
                         )
                     }
-                }
+                    .buttonStyle(.plain)
 
-                if myUplink.isLinked {
-                    AppliancePill(
-                        title: "Geothermal",
-                        icon: heatPumpIcon,
-                        status: myUplink.heatPump.operatingMode ?? "Connected",
-                        color: heatPumpColor,
-                        isActive: false,
-                        progress: nil,
-                        timeRemaining: myUplink.heatPump.currentPower.map { String(format: "%.1f kW", $0) }
-                    )
-                }
-
-                // Standard actions
-                QuickActionButton(title: "Main Floor Off", icon: "power", color: .orange) {
-                    store.turnOffLights(on: .mainFloor)
-                }
-                QuickActionButton(title: "Upstairs Off", icon: "power", color: .orange) {
-                    store.turnOffLights(on: .upstairs)
-                }
-                QuickActionButton(title: "Main Shades Toggle", icon: "blinds.vertical.closed", color: .blue) {
-                    store.toggleMainShades()
-                }
-            }
-        }
-    }
-
-    private var heatPumpIcon: String {
-        let mode = (myUplink.heatPump.operatingMode ?? "").lowercased()
-        if mode.contains("heat") { return "flame.fill" }
-        if mode.contains("cool") { return "snowflake" }
-        if mode.contains("hot water") || mode.contains("dhw") { return "drop.fill" }
-        return "leaf.fill"
-    }
-
-    private var heatPumpColor: Color {
-        let mode = (myUplink.heatPump.operatingMode ?? "").lowercased()
-        if mode.contains("heat") { return .orange }
-        if mode.contains("cool") { return .cyan }
-        if mode.contains("hot water") || mode.contains("dhw") { return .blue }
-        return .green
-    }
-
-    private func handleContextualAction(_ id: String) {
-        switch id {
-        case "morning":
-            // Morning lights scene — turn on key lights at low level
-            store.setRoomLights("Kitchen", level: 60)
-            store.setRoomLights("Family Room", level: 40)
-        case "shades_open":
-            store.toggleMainShades() // Opens if closed
-        case "shades_close":
-            store.toggleMainShades() // Closes if open
-        case "all_off":
-            store.turnOffAllLights(excludingNames: ["Bed 2 Entry"])
-        case "evening":
-            store.activateEveningScene()
-        case "goodnight":
-            // Turn off all lights except Sebastian's night light
-            store.turnOffAllLights(excludingNames: ["Bed 2 Entry"])
-        default:
-            break
-        }
-    }
-
-    // MARK: - For You (personalized suggestions)
-
-    @ViewBuilder
-    private var forYouSection: some View {
-        let isEvening = TimeBucket.current() == .evening
-        let topDevices = usageTracker.topDevices(isEvening ? 3 : 4, timeWindowSeconds: 30 * 24 * 60 * 60)
-        let hasContent = isEvening || (!topDevices.isEmpty && usageTracker.events.count >= 5)
-        if hasContent {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .font(.caption)
-                        .foregroundStyle(timeTheme.theme.accent)
-                    Text("For You")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .textCase(.uppercase)
-                        .tracking(0.5)
-                        .foregroundStyle(timeTheme.theme.sectionHeaderColor)
-                }
-
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                    // Always show Evening scene during evening hours (6pm–2am)
-                    if isEvening {
+                case .forYouDevice(let deviceId):
+                    if let device = store.devices[deviceId] {
                         Button {
-                            store.activateEveningScene()
+                            let newLevel: Double = device.level > 0 ? 0 : 100
+                            store.setLevel(device.integrationId, level: newLevel, fadeTime: 1)
                         } label: {
                             HStack(spacing: 10) {
-                                Image(systemName: "moon.fill")
+                                Image(systemName: device.category == .light ? "lightbulb.fill" : "blinds.vertical.open")
                                     .font(.system(size: 14))
-                                    .foregroundStyle(timeTheme.theme.accent)
+                                    .foregroundStyle(Color.orange)
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text("Evening")
+                                    Text(device.name)
                                         .font(.footnote)
                                         .fontWeight(.semibold)
                                         .foregroundStyle(.primary)
                                         .lineLimit(1)
-                                    Text("Scene")
+                                    Text(device.room)
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 }
@@ -565,80 +616,55 @@ struct DashboardView: View {
                             .padding(12)
                             .background(
                                 RoundedRectangle(cornerRadius: 12)
-                                    .fill(timeTheme.theme.accent.opacity(0.06))
-                                    .strokeBorder(timeTheme.theme.accent.opacity(0.15))
+                                    .fill(Color.orange.opacity(0.06))
+                                    .strokeBorder(Color.orange.opacity(0.15))
                             )
                         }
                         .buttonStyle(.plain)
                     }
 
-                    ForEach(topDevices, id: \.id) { item in
-                        if let device = store.devices[Int(item.id) ?? 0] {
-                            Button {
-                                let newLevel: Double = device.level > 0 ? 0 : 100
-                                store.setLevel(device.integrationId, level: newLevel, fadeTime: 1)
-                            } label: {
-                                HStack(spacing: 10) {
-                                    Image(systemName: device.category == .light ? "lightbulb.fill" : "blinds.vertical.open")
-                                        .font(.system(size: 14))
-                                        .foregroundStyle(timeTheme.theme.accent)
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text(device.name)
-                                            .font(.footnote)
-                                            .fontWeight(.semibold)
-                                            .foregroundStyle(.primary)
-                                            .lineLimit(1)
-                                        Text(device.room)
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                }
-                                .padding(12)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .fill(timeTheme.theme.accent.opacity(0.06))
-                                        .strokeBorder(timeTheme.theme.accent.opacity(0.15))
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        }
+                case .staticAction(let title, let icon, let color, let actionId):
+                    QuickActionButton(title: title, icon: icon, color: color) {
+                        handleStaticAction(actionId)
                     }
+
+                case .room(let name, let icon):
+                    RoomControlCard(roomName: name, icon: icon, store: store)
                 }
             }
         }
     }
 
-    // MARK: - Room Controls (adaptive)
+    private func handleContextualAction(_ id: String) {
+        switch id {
+        case "morning":
+            store.setRoomLights("Kitchen", level: 60)
+            store.setRoomLights("Family Room", level: 40)
+        case "shades_open":
+            store.toggleMainShades()
+        case "shades_close":
+            store.toggleMainShades()
+        case "all_off":
+            store.turnOffAllLights(excludingNames: ["Bed 2 Entry"])
+        case "evening":
+            store.activateEveningScene()
+        case "goodnight":
+            store.turnOffAllLights(excludingNames: ["Bed 2 Entry"])
+        default:
+            break
+        }
+    }
 
-    private var adaptiveRoomControlsSection: some View {
-        let roomIcons: [String: String] = [
-            "Guest Bathroom": "🚿", "Primary Bedroom": "🛏️", "Primary Bathroom": "🛁",
-            "Kitchen": "🍳", "Family Room": "📺", "Dining Room": "🍽️",
-            "Jason Office": "💻", "Living Room": "🛋️", "Main Entry": "🚪",
-            "Mudroom": "🚪", "Breakfast Nook": "☕", "Powder Room": "🚿",
-            "Ronan's Room": "🧸", "Sebastian's Room": "🧸", "Gym": "🏋️",
-            "Laundry": "🧺", "Garage": "🚗", "Guest Bedroom": "🛏️",
-        ]
-
-        let defaultRooms = ["Guest Bathroom", "Primary Bedroom", "Primary Bathroom", "Kitchen", "Family Room", "Dining Room"]
-        let available = store.rooms.map(\.name)
-        let sorted = usageTracker.sortedRoomNames(available: available)
-        let displayRooms = usageTracker.events.isEmpty ? defaultRooms : Array(sorted.prefix(6))
-
-        return VStack(alignment: .leading, spacing: 10) {
-            Text("Room Controls")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .textCase(.uppercase)
-                .tracking(0.5)
-                .foregroundStyle(timeTheme.theme.sectionHeaderColor)
-
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                ForEach(displayRooms, id: \.self) { room in
-                    RoomControlCard(roomName: room, icon: roomIcons[room] ?? "🏠", store: store)
-                }
-            }
+    private func handleStaticAction(_ id: String) {
+        switch id {
+        case "main_floor_off":
+            store.turnOffLights(on: .mainFloor)
+        case "upstairs_off":
+            store.turnOffLights(on: .upstairs)
+        case "shades_toggle":
+            store.toggleMainShades()
+        default:
+            break
         }
     }
 
@@ -654,7 +680,7 @@ struct DashboardView: View {
                         HStack(spacing: 6) {
                             Image(systemName: "sparkles")
                                 .font(.caption)
-                                .foregroundStyle(timeTheme.theme.accent)
+                                .foregroundStyle(Color.orange)
                             Text("Suggested Scene")
                                 .font(.footnote)
                                 .fontWeight(.semibold)
@@ -677,8 +703,8 @@ struct DashboardView: View {
                 .padding(14)
                 .background(
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(timeTheme.theme.accent.opacity(0.06))
-                        .strokeBorder(timeTheme.theme.accent.opacity(0.15))
+                        .fill(Color.orange.opacity(0.06))
+                        .strokeBorder(Color.orange.opacity(0.15))
                 )
             }
         }
@@ -704,7 +730,7 @@ struct DashboardView: View {
                     .fontWeight(.semibold)
                     .textCase(.uppercase)
                     .tracking(0.5)
-                    .foregroundStyle(timeTheme.theme.sectionHeaderColor)
+                    .foregroundStyle(Color.secondary)
 
                 Text("\(store.lightsOn.count)")
                     .font(.caption2)
@@ -714,9 +740,9 @@ struct DashboardView: View {
                     .background(
                         store.lightsOn.isEmpty
                             ? Color(.systemGray5)
-                            : timeTheme.theme.accent.opacity(0.2)
+                            : Color.orange.opacity(0.2)
                     )
-                    .foregroundColor(store.lightsOn.isEmpty ? .secondary : timeTheme.theme.accent)
+                    .foregroundColor(store.lightsOn.isEmpty ? .secondary : Color.orange)
                     .clipShape(Capsule())
             }
 
@@ -749,8 +775,8 @@ struct DashboardView: View {
                                     .font(.system(size: 9, weight: .bold))
                                     .padding(.horizontal, 5)
                                     .padding(.vertical, 1)
-                                    .background(timeTheme.theme.accent.opacity(0.15))
-                                    .foregroundStyle(timeTheme.theme.accent)
+                                    .background(Color.orange.opacity(0.15))
+                                    .foregroundStyle(Color.orange)
                                     .clipShape(Capsule())
                             }
 
@@ -767,6 +793,68 @@ struct DashboardView: View {
         }
     }
 
+}
+
+// MARK: - Quick Action Button
+
+// MARK: - Dishwasher Start Sheet
+
+struct DishwasherStartSheet: View {
+    @Environment(HomeConnectManager.self) var homeConnect
+    let applianceId: String
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if let programs = homeConnect.availablePrograms[applianceId], !programs.isEmpty {
+                    Section("Select Program") {
+                        ForEach(programs) { program in
+                            Button {
+                                Task {
+                                    let success = await homeConnect.startProgram(program.key, for: applianceId)
+                                    if success { dismiss() }
+                                }
+                            } label: {
+                                HStack {
+                                    Image(systemName: "play.circle.fill")
+                                        .foregroundStyle(.green)
+                                    Text(program.name)
+                                        .foregroundStyle(.primary)
+                                    Spacer()
+                                }
+                            }
+                            .disabled(homeConnect.isStarting)
+                        }
+                    }
+                } else {
+                    Section {
+                        HStack {
+                            Spacer()
+                            ProgressView("Loading programs…")
+                            Spacer()
+                        }
+                    }
+                }
+
+                if let error = homeConnect.startError {
+                    Section {
+                        Text(error)
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
+                }
+            }
+            .navigationTitle("Start Dishwasher")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
 }
 
 // MARK: - Quick Action Button
@@ -2090,511 +2178,6 @@ struct HeatPumpDetailView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
-    }
-}
-
-// MARK: - OAuth Presentation Context Helper
-
-// MARK: - Time-of-Day Sky Background
-
-struct TimeOfDayBackground: View {
-    let period: SunCalculator.TimePeriod
-
-    var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                skyBase(size: geo.size)
-                switch period {
-                case .night:
-                    LarchmontNightSky(size: geo.size)
-                case .earlyMorning:
-                    StarField(count: 130, spreadRatio: 0.70, opacity: 0.55, size: geo.size)
-                    PreDawnGlow(size: geo.size)
-                case .morning:
-                    SunriseGlow(size: geo.size)
-                case .midday:
-                    MiddaySky(size: geo.size)
-                case .evening:
-                    SunsetGlow(size: geo.size)
-                }
-            }
-        }
-        .ignoresSafeArea()
-    }
-
-    @ViewBuilder
-    private func skyBase(size: CGSize) -> some View {
-        switch period {
-        case .night:
-            // Larchmont, NY — pristine dark sky: deep black zenith fading to dark blue at horizon
-            LinearGradient(stops: [
-                .init(color: Color(red: 0.01, green: 0.01, blue: 0.06), location: 0.00),
-                .init(color: Color(red: 0.02, green: 0.04, blue: 0.14), location: 0.45),
-                .init(color: Color(red: 0.03, green: 0.06, blue: 0.20), location: 1.00),
-            ], startPoint: .top, endPoint: .bottom)
-        case .earlyMorning:
-            LinearGradient(stops: [
-                .init(color: Color(red: 0.04, green: 0.04, blue: 0.18), location: 0.0),
-                .init(color: Color(red: 0.18, green: 0.10, blue: 0.38), location: 0.55),
-                .init(color: Color(red: 0.45, green: 0.22, blue: 0.55), location: 0.80),
-                .init(color: Color(red: 0.70, green: 0.35, blue: 0.40), location: 1.0),
-            ], startPoint: .top, endPoint: .bottom)
-        case .morning:
-            LinearGradient(stops: [
-                .init(color: Color(red: 0.45, green: 0.68, blue: 0.95), location: 0.0),
-                .init(color: Color(red: 0.75, green: 0.82, blue: 0.98), location: 0.35),
-                .init(color: Color(red: 0.98, green: 0.80, blue: 0.55), location: 0.70),
-                .init(color: Color(red: 0.99, green: 0.65, blue: 0.25), location: 1.0),
-            ], startPoint: .top, endPoint: .bottom)
-        case .midday:
-            LinearGradient(stops: [
-                .init(color: Color(red: 0.12, green: 0.40, blue: 0.88), location: 0.0),
-                .init(color: Color(red: 0.28, green: 0.60, blue: 0.98), location: 0.45),
-                .init(color: Color(red: 0.55, green: 0.78, blue: 1.00), location: 1.0),
-            ], startPoint: .top, endPoint: .bottom)
-        case .evening:
-            LinearGradient(stops: [
-                .init(color: Color(red: 0.08, green: 0.04, blue: 0.22), location: 0.0),
-                .init(color: Color(red: 0.40, green: 0.12, blue: 0.30), location: 0.30),
-                .init(color: Color(red: 0.75, green: 0.25, blue: 0.10), location: 0.65),
-                .init(color: Color(red: 0.95, green: 0.52, blue: 0.08), location: 1.0),
-            ], startPoint: .top, endPoint: .bottom)
-        }
-    }
-}
-
-struct StarField: View {
-    let count: Int
-    let spreadRatio: Double
-    let opacity: Double
-    let size: CGSize
-
-    var body: some View {
-        Canvas { ctx, _ in
-            var seed: UInt64 = 98765
-            func next() -> Double {
-                seed = seed &* 6364136223846793005 &+ 1442695040888963407
-                return Double(seed >> 33) / Double(0x7FFFFFFF)
-            }
-            for _ in 0..<count {
-                let x = next() * size.width
-                let y = next() * size.height * spreadRatio
-                let r = next() * 1.6 + 0.4
-                let alpha = (next() * 0.55 + 0.45) * opacity
-                ctx.fill(
-                    Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)),
-                    with: .color(.white.opacity(alpha))
-                )
-            }
-        }
-        .frame(width: size.width, height: size.height)
-    }
-}
-
-struct MoonView: View {
-    let size: CGSize
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(RadialGradient(
-                    colors: [Color.white.opacity(0.12), Color.white.opacity(0.04), Color.clear],
-                    center: .center, startRadius: 14, endRadius: 55
-                ))
-                .frame(width: 110, height: 110)
-            Circle()
-                .fill(Color(red: 0.92, green: 0.92, blue: 0.85).opacity(0.88))
-                .frame(width: 26, height: 26)
-        }
-        .position(x: size.width * 0.78, y: size.height * 0.10)
-    }
-}
-
-// MARK: - Larchmont, NY Night Sky
-// Clear night with no light pollution. Winter sky facing roughly south.
-// Left edge ≈ east, right edge ≈ west; top ≈ zenith, bottom ≈ horizon.
-
-struct LarchmontNightSky: View {
-    let size: CGSize
-    var body: some View {
-        ZStack {
-            // Color-varied star field — Bortle 1 dark sky reveals thousands of stars
-            DarkSkyStarField(size: size)
-            // Winter Milky Way arc: Cassiopeia → Perseus → Auriga → Gemini → Orion → Canis Major
-            MilkyWayBand(size: size)
-            // Named bright stars and constellation lines
-            NightConstellations(size: size)
-            // Moon
-            MoonView(size: size)
-        }
-    }
-}
-
-// MARK: - Dark Sky Star Field (Bortle 1 — no light pollution)
-struct DarkSkyStarField: View {
-    let size: CGSize
-
-    var body: some View {
-        Canvas { ctx, _ in
-            var seed: UInt64 = 73621
-            func next() -> Double {
-                seed = seed &* 6364136223846793005 &+ 1442695040888963407
-                return Double(seed >> 33) / Double(0x7FFFFFFF)
-            }
-            // Spectral type distribution: B/A (blue-white), F (white), G (yellow), K (orange), M (red)
-            func starColor(_ roll: Double) -> (Double, Double, Double) {
-                switch roll {
-                case ..<0.28: return (0.72, 0.82, 1.00)  // B-type: blue-white
-                case ..<0.58: return (0.92, 0.94, 1.00)  // A-type: white
-                case ..<0.76: return (1.00, 0.98, 0.88)  // F-type: warm white
-                case ..<0.88: return (1.00, 0.94, 0.68)  // G-type: yellow
-                case ..<0.96: return (1.00, 0.76, 0.45)  // K-type: orange
-                default:      return (1.00, 0.52, 0.28)  // M-type: red-orange
-                }
-            }
-            let w = Double(size.width), h = Double(size.height)
-            // Tier 1: faint background stars (mag 4.5–6.5) — hundreds of tiny dots
-            for _ in 0..<700 {
-                let x = next() * w, y = next() * h * 0.93
-                let r = next() * 0.55 + 0.25
-                let alpha = next() * 0.45 + 0.20
-                let (cr, cg, cb) = starColor(next())
-                ctx.fill(Path(ellipseIn: CGRect(x: x-r, y: y-r, width: r*2, height: r*2)),
-                         with: .color(Color(red: cr, green: cg, blue: cb).opacity(alpha)))
-            }
-            // Tier 2: moderate stars (mag 2.5–4.5)
-            for _ in 0..<180 {
-                let x = next() * w, y = next() * h * 0.90
-                let r = next() * 0.75 + 0.60
-                let alpha = next() * 0.30 + 0.55
-                let (cr, cg, cb) = starColor(next())
-                ctx.fill(Path(ellipseIn: CGRect(x: x-r, y: y-r, width: r*2, height: r*2)),
-                         with: .color(Color(red: cr, green: cg, blue: cb).opacity(alpha)))
-            }
-            // Tier 3: bright background stars (mag 1–2.5) with a small glow halo
-            for _ in 0..<45 {
-                let x = next() * w, y = next() * h * 0.88
-                let r = next() * 0.6 + 1.1
-                let alpha = 0.80 + next() * 0.18
-                let (cr, cg, cb) = starColor(next())
-                ctx.fill(Path(ellipseIn: CGRect(x: x-r*2.5, y: y-r*2.5, width: r*5, height: r*5)),
-                         with: .color(Color(red: cr, green: cg, blue: cb).opacity(0.12)))
-                ctx.fill(Path(ellipseIn: CGRect(x: x-r, y: y-r, width: r*2, height: r*2)),
-                         with: .color(Color(red: cr, green: cg, blue: cb).opacity(alpha)))
-            }
-        }
-        .frame(width: size.width, height: size.height)
-    }
-}
-
-// MARK: - Milky Way Band
-// Winter arc: Cassiopeia (upper-left) → Perseus → Auriga → Gemini → Orion → Canis Major
-struct MilkyWayBand: View {
-    let size: CGSize
-
-    private func buildPath() -> Path {
-        let w = size.width, h = size.height
-        var p = Path()
-        p.move(to:        CGPoint(x: 0.00 * w, y: 0.34 * h))
-        p.addCurve(to:    CGPoint(x: 0.30 * w, y: 0.07 * h),
-                   control1: CGPoint(x: 0.06 * w, y: 0.14 * h),
-                   control2: CGPoint(x: 0.18 * w, y: 0.06 * h))
-        p.addCurve(to:    CGPoint(x: 0.65 * w, y: 0.13 * h),
-                   control1: CGPoint(x: 0.44 * w, y: 0.07 * h),
-                   control2: CGPoint(x: 0.56 * w, y: 0.09 * h))
-        p.addCurve(to:    CGPoint(x: 0.75 * w, y: 0.32 * h),
-                   control1: CGPoint(x: 0.72 * w, y: 0.17 * h),
-                   control2: CGPoint(x: 0.76 * w, y: 0.23 * h))
-        p.addCurve(to:    CGPoint(x: 0.56 * w, y: 0.62 * h),
-                   control1: CGPoint(x: 0.74 * w, y: 0.45 * h),
-                   control2: CGPoint(x: 0.65 * w, y: 0.55 * h))
-        p.addCurve(to:    CGPoint(x: 0.44 * w, y: 1.02 * h),
-                   control1: CGPoint(x: 0.50 * w, y: 0.74 * h),
-                   control2: CGPoint(x: 0.46 * w, y: 0.88 * h))
-        return p
-    }
-
-    var body: some View {
-        let path = buildPath()
-        let lw = size.width  // reference width for line widths
-        ZStack {
-            // Layer 1: wide outer halo — barely perceptible
-            Canvas { ctx, _ in
-                ctx.stroke(path,
-                           with: .color(Color(red: 0.78, green: 0.85, blue: 1.00).opacity(0.09)),
-                           style: StrokeStyle(lineWidth: lw * 0.24, lineCap: .round, lineJoin: .round))
-            }
-            .blur(radius: 20)
-
-            // Layer 2: main diffuse band
-            Canvas { ctx, _ in
-                ctx.stroke(path,
-                           with: .color(Color(red: 0.80, green: 0.88, blue: 1.00).opacity(0.14)),
-                           style: StrokeStyle(lineWidth: lw * 0.11, lineCap: .round, lineJoin: .round))
-            }
-            .blur(radius: 9)
-
-            // Layer 3: brighter inner core
-            Canvas { ctx, _ in
-                ctx.stroke(path,
-                           with: .color(Color(red: 0.88, green: 0.92, blue: 1.00).opacity(0.11)),
-                           style: StrokeStyle(lineWidth: lw * 0.04, lineCap: .round, lineJoin: .round))
-            }
-            .blur(radius: 3)
-
-            // Layer 4: dense unresolved star clusters scattered along the band
-            Canvas { ctx, _ in
-                var seed: UInt64 = 11223
-                func next() -> Double {
-                    seed = seed &* 6364136223846793005 &+ 1442695040888963407
-                    return Double(seed >> 33) / Double(0x7FFFFFFF)
-                }
-                let w = Double(size.width), h = Double(size.height)
-                // Sample points approximating the bezier above
-                let samples: [(Double, Double)] = [
-                    (0.02,0.30),(0.08,0.18),(0.14,0.10),(0.22,0.07),(0.30,0.07),
-                    (0.38,0.08),(0.48,0.09),(0.57,0.11),(0.64,0.13),(0.69,0.19),
-                    (0.73,0.25),(0.74,0.32),(0.72,0.40),(0.67,0.48),(0.62,0.54),
-                    (0.57,0.61),(0.52,0.68),(0.48,0.76),(0.45,0.86),(0.43,0.96),
-                ]
-                let spread = w * 0.055
-                for pt in samples {
-                    for _ in 0..<22 {
-                        let x = pt.0 * w + (next() - 0.5) * spread * 2
-                        let y = pt.1 * h + (next() - 0.5) * spread * 0.7
-                        let r = next() * 0.45 + 0.18
-                        let alpha = next() * 0.42 + 0.20
-                        ctx.fill(Path(ellipseIn: CGRect(x: x-r, y: y-r, width: r*2, height: r*2)),
-                                 with: .color(Color.white.opacity(alpha)))
-                    }
-                }
-            }
-        }
-        .frame(width: size.width, height: size.height)
-    }
-}
-
-struct NightConstellations: View {
-    let size: CGSize
-
-    var body: some View {
-        Canvas { ctx, _ in
-            let w = size.width
-            let h = size.height
-
-            // Draw a star dot at normalised (nx, ny)
-            func dot(_ nx: CGFloat, _ ny: CGFloat, r: CGFloat, _ color: Color, alpha: CGFloat = 0.92) {
-                ctx.fill(
-                    Path(ellipseIn: CGRect(x: nx * w - r, y: ny * h - r, width: r * 2, height: r * 2)),
-                    with: .color(color.opacity(alpha))
-                )
-            }
-            // Bright star: layered glow + core
-            func brightStar(_ nx: CGFloat, _ ny: CGFloat, r: CGFloat, _ color: Color) {
-                dot(nx, ny, r: r * 3.5, color, alpha: 0.08)
-                dot(nx, ny, r: r * 2.0, color, alpha: 0.18)
-                dot(nx, ny, r: r,       color, alpha: 0.95)
-            }
-            // Constellation line between normalised coords
-            func line(_ ax: CGFloat, _ ay: CGFloat, _ bx: CGFloat, _ by: CGFloat, alpha: CGFloat = 0.20) {
-                var p = Path()
-                p.move(to: CGPoint(x: ax * w, y: ay * h))
-                p.addLine(to: CGPoint(x: bx * w, y: by * h))
-                ctx.stroke(p, with: .color(.white.opacity(alpha)), lineWidth: 0.5)
-            }
-
-            let white      = Color.white
-            let blueWhite  = Color(red: 0.80, green: 0.88, blue: 1.00)
-            let warmYellow = Color(red: 1.00, green: 0.95, blue: 0.65)
-            let orange     = Color(red: 1.00, green: 0.58, blue: 0.28)
-            let orangeRed  = Color(red: 0.98, green: 0.42, blue: 0.22)
-
-            // ── ORION ─────────────────────────────────────────────────────────
-            // Dominant winter constellation; centre-south sky from Larchmont
-            line(0.36, 0.42, 0.55, 0.40)           // shoulders
-            line(0.36, 0.42, 0.38, 0.51)           // Betelgeuse → belt
-            line(0.55, 0.40, 0.53, 0.50)           // Bellatrix → belt
-            line(0.38, 0.51, 0.46, 0.50)           // belt L–M
-            line(0.46, 0.50, 0.53, 0.50)           // belt M–R
-            line(0.38, 0.51, 0.40, 0.63)           // Alnitak → Saiph
-            line(0.53, 0.50, 0.57, 0.63)           // Mintaka → Rigel
-            dot(0.36, 0.42, r: 3.2, orangeRed)     // Betelgeuse — red supergiant
-            dot(0.55, 0.40, r: 2.2, blueWhite)     // Bellatrix
-            dot(0.38, 0.51, r: 1.8, blueWhite)     // Alnitak  (belt east)
-            dot(0.46, 0.50, r: 1.6, white)         // Alnilam  (belt centre)
-            dot(0.53, 0.50, r: 1.7, blueWhite)     // Mintaka  (belt west)
-            dot(0.40, 0.63, r: 2.0, blueWhite)     // Saiph
-            brightStar(0.57, 0.63, r: 3.5, blueWhite) // Rigel — brilliant blue-white
-
-            // ── SIRIUS ────────────────────────────────────────────────────────
-            // Brightest star in sky; low southeast in winter from Larchmont
-            brightStar(0.43, 0.77, r: 4.2, blueWhite)
-
-            // ── TAURUS ────────────────────────────────────────────────────────
-            line(0.66, 0.37, 0.72, 0.30)
-            line(0.66, 0.37, 0.62, 0.30)
-            dot(0.66, 0.37, r: 2.8, orange)        // Aldebaran — orange giant
-            dot(0.72, 0.30, r: 1.4, white)
-            dot(0.62, 0.30, r: 1.2, white)
-
-            // ── PLEIADES ──────────────────────────────────────────────────────
-            // Seven Sisters cluster above Taurus; clearly visible despite light pollution
-            let pleiadesOffsets: [(CGFloat, CGFloat)] = [
-                (0.000,  0.000), (0.025, -0.020), (0.050,  0.010),
-                (0.020,  0.025), (0.045, -0.010), (0.010,  0.015), (0.035,  0.020)
-            ]
-            for (dx, dy) in pleiadesOffsets {
-                dot(0.78 + dx, 0.20 + dy, r: 1.1, Color(red: 0.85, green: 0.90, blue: 1.00))
-            }
-
-            // ── GEMINI ────────────────────────────────────────────────────────
-            line(0.74, 0.26, 0.78, 0.32)           // Castor – Pollux
-            line(0.74, 0.26, 0.55, 0.40)           // toward Bellatrix
-            line(0.78, 0.32, 0.57, 0.43)
-            dot(0.74, 0.26, r: 2.0, white)         // Castor
-            dot(0.78, 0.32, r: 2.6, warmYellow)    // Pollux — slightly warm
-
-            // ── CAPELLA ───────────────────────────────────────────────────────
-            // Bright yellow star, nearly overhead in winter nights
-            brightStar(0.64, 0.14, r: 3.2, warmYellow)
-
-            // ── PROCYON ───────────────────────────────────────────────────────
-            // Canis Minor; east of Orion, clearly visible
-            dot(0.22, 0.54, r: 2.6, Color(red: 0.95, green: 0.95, blue: 0.90))
-
-            // ── BIG DIPPER (Ursa Major) ───────────────────────────────────────
-            // Northeast sky, high in winter evenings from Larchmont (~41° N)
-            let dipper: [(CGFloat, CGFloat)] = [
-                (0.90, 0.14),   // Dubhe
-                (0.87, 0.19),   // Merak
-                (0.83, 0.15),   // Phecda
-                (0.80, 0.12),   // Megrez (faintest of bowl)
-                (0.75, 0.16),   // Alioth
-                (0.71, 0.11),   // Mizar
-                (0.66, 0.08),   // Alkaid
-            ]
-            let dipperLinks = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6)]
-            for (a, b) in dipperLinks {
-                line(dipper[a].0, dipper[a].1, dipper[b].0, dipper[b].1, alpha: 0.22)
-            }
-            for (i, s) in dipper.enumerated() {
-                dot(s.0, s.1, r: i == 3 ? 1.5 : 2.0, white)
-            }
-
-            // ── POLARIS ───────────────────────────────────────────────────────
-            // North Star — fixed at 40.9° altitude above north horizon from Larchmont
-            dot(0.90, 0.06, r: 2.1, Color(red: 0.90, green: 0.90, blue: 0.95))
-
-            // ── CASSIOPEIA ────────────────────────────────────────────────────
-            // Distinctive W-shape; circumpolar from Larchmont, upper left (north-northwest)
-            let cass: [(CGFloat, CGFloat)] = [
-                (0.09, 0.10), (0.14, 0.05), (0.19, 0.10), (0.24, 0.05), (0.29, 0.09)
-            ]
-            for i in 0..<4 {
-                line(cass[i].0, cass[i].1, cass[i + 1].0, cass[i + 1].1, alpha: 0.22)
-            }
-            for s in cass { dot(s.0, s.1, r: 1.8, white) }
-        }
-        .frame(width: size.width, height: size.height)
-    }
-}
-
-struct PreDawnGlow: View {
-    let size: CGSize
-    var body: some View {
-        RadialGradient(
-            colors: [
-                Color(red: 0.85, green: 0.50, blue: 0.60).opacity(0.55),
-                Color(red: 0.60, green: 0.25, blue: 0.55).opacity(0.30),
-                Color.clear,
-            ],
-            center: UnitPoint(x: 0.5, y: 1.05),
-            startRadius: 0, endRadius: size.height * 0.55
-        )
-        .frame(width: size.width, height: size.height)
-    }
-}
-
-struct SunriseGlow: View {
-    let size: CGSize
-    var body: some View {
-        ZStack {
-            RadialGradient(
-                colors: [
-                    Color(red: 1.00, green: 0.88, blue: 0.40).opacity(0.75),
-                    Color(red: 1.00, green: 0.60, blue: 0.20).opacity(0.50),
-                    Color(red: 0.95, green: 0.35, blue: 0.10).opacity(0.20),
-                    Color.clear,
-                ],
-                center: UnitPoint(x: 0.5, y: 1.10),
-                startRadius: 0, endRadius: size.height * 0.80
-            )
-            Circle()
-                .fill(RadialGradient(
-                    colors: [
-                        Color.white.opacity(0.95),
-                        Color(red: 1.0, green: 0.92, blue: 0.55).opacity(0.90),
-                        Color(red: 1.0, green: 0.80, blue: 0.30).opacity(0.60),
-                        Color.clear,
-                    ],
-                    center: .center, startRadius: 0, endRadius: 60
-                ))
-                .frame(width: 120, height: 120)
-                .position(x: size.width * 0.50, y: size.height * 0.78)
-        }
-        .frame(width: size.width, height: size.height)
-    }
-}
-
-struct MiddaySky: View {
-    let size: CGSize
-    var body: some View {
-        ZStack {
-            RadialGradient(
-                colors: [Color.white.opacity(0.25), Color(red: 0.85, green: 0.92, blue: 1.0).opacity(0.15), Color.clear],
-                center: UnitPoint(x: 0.62, y: 0.08),
-                startRadius: 0, endRadius: size.width * 0.55
-            )
-            LinearGradient(
-                colors: [.clear, Color(red: 0.75, green: 0.88, blue: 1.0).opacity(0.18)],
-                startPoint: UnitPoint(x: 0.5, y: 0.6), endPoint: .bottom
-            )
-        }
-        .frame(width: size.width, height: size.height)
-    }
-}
-
-struct SunsetGlow: View {
-    let size: CGSize
-    var body: some View {
-        ZStack {
-            RadialGradient(
-                colors: [
-                    Color(red: 1.00, green: 0.65, blue: 0.15).opacity(0.80),
-                    Color(red: 0.90, green: 0.30, blue: 0.08).opacity(0.55),
-                    Color(red: 0.55, green: 0.10, blue: 0.25).opacity(0.25),
-                    Color.clear,
-                ],
-                center: UnitPoint(x: 0.5, y: 1.08),
-                startRadius: 0, endRadius: size.height * 0.85
-            )
-            Circle()
-                .fill(RadialGradient(
-                    colors: [
-                        Color.white.opacity(0.90),
-                        Color(red: 1.0, green: 0.75, blue: 0.25).opacity(0.85),
-                        Color(red: 1.0, green: 0.40, blue: 0.10).opacity(0.50),
-                        Color.clear,
-                    ],
-                    center: .center, startRadius: 0, endRadius: 70
-                ))
-                .frame(width: 140, height: 140)
-                .position(x: size.width * 0.45, y: size.height * 0.82)
-            LinearGradient(
-                colors: [.clear, Color(red: 0.70, green: 0.12, blue: 0.05).opacity(0.22), Color(red: 0.40, green: 0.06, blue: 0.18).opacity(0.18)],
-                startPoint: UnitPoint(x: 0.5, y: 0.65), endPoint: .bottom
-            )
-        }
-        .frame(width: size.width, height: size.height)
     }
 }
 

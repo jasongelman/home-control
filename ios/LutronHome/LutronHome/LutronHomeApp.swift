@@ -9,6 +9,7 @@ struct LutronHomeApp: App {
     @State private var myUplink = MyUplinkManager()
     @State private var smartHQ = SmartHQManager()
     @State private var myQ = MyQManager()
+    @State private var chatService = ChatService()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -21,10 +22,13 @@ struct LutronHomeApp: App {
                 .environment(myUplink)
                 .environment(smartHQ)
                 .environment(myQ)
+                .environment(chatService)
                 .preferredColorScheme(.dark)
                 .onAppear {
                     store.usageTracker = usageTracker
                     homeKit.start()
+                    homeKit.cleanupOldActivitySnapshots()
+                    homeKit.loadTodayActivitySnapshots()
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     homeKit.handleScenePhase(active: newPhase == .active)

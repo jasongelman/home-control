@@ -14,14 +14,21 @@ import {
   parseCertInfo,
 } from '../lutron/LEAPCertManager.js';
 import type { MyQPoller } from '../myq/MyQPoller.js';
+import type { HomeConnectManager } from '../homeconnect/HomeConnectManager.js';
+import type { SmartHQManager } from '../smarthq/SmartHQManager.js';
+import type { MyUplinkManager } from '../myuplink/MyUplinkManager.js';
 import type { SunShadeAutomation } from '../automation/SunShadeAutomation.js';
 import { getSunPosition } from '../utils/SunPosition.js';
+import { handleChat, type ChatRequest } from './chat.js';
 
 export function createRoutes(
   deviceStore: DeviceStore,
   connection: LEAPConnection,
   myqPoller: MyQPoller,
   sunAutomations: SunShadeAutomation[] = [],
+  homeConnect?: HomeConnectManager,
+  smartHQ?: SmartHQManager,
+  myUplink?: MyUplinkManager,
 ): Router {
   const router = Router();
 
@@ -482,6 +489,183 @@ export function createRoutes(
       sunPosition,
       automations: sunAutomations.map((a) => a.getStatus()),
     });
+  });
+
+  // ── HomeConnect / Dishwasher ───────────────────────────────────────────────
+
+  router.get('/homeconnect/status', (_req, res) => {
+    res.json({ linked: homeConnect?.isLinked ?? false, dishwashers: homeConnect?.getDishwashers() ?? [] });
+  });
+
+  router.get('/homeconnect/config', (_req, res) => {
+    const config = loadConfig();
+    const hc = config.homeConnect ?? { clientId: '', clientSecret: '', enabled: false };
+    res.json({ clientId: hc.clientId, enabled: hc.enabled });
+  });
+
+  router.put('/homeconnect/config', (req, res) => {
+    const { clientId, clientSecret, enabled } = req.body as { clientId?: string; clientSecret?: string; enabled?: boolean };
+    const config = loadConfig();
+    config.homeConnect = {
+      ...(config.homeConnect ?? { clientId: '', clientSecret: '', enabled: false }),
+      ...(clientId !== undefined && { clientId }),
+      ...(clientSecret !== undefined && { clientSecret }),
+      ...(enabled !== undefined && { enabled }),
+    };
+    saveConfig(config);
+    homeConnect?.updateConfig(config.homeConnect);
+    res.json({ ok: true });
+  });
+
+  router.get('/homeconnect/oauth/start', (req, res) => {
+    if (!homeConnect) { res.status(503).json({ error: 'HomeConnect not available' }); return; }
+    const redirectBase = `${req.protocol}://${req.get('host')}`;
+    res.redirect(homeConnect.getAuthUrl(redirectBase));
+  });
+
+  router.get('/homeconnect/oauth/callback', async (req, res) => {
+    const { code } = req.query as { code?: string };
+    if (!code || !homeConnect) { res.status(400).send('Missing code or HomeConnect not configured'); return; }
+    try {
+      const redirectBase = `${req.protocol}://${req.get('host')}`;
+      await homeConnect.handleCallback(code, redirectBase);
+      res.send('<script>window.close()</script><p>HomeConnect linked! You can close this tab.</p>');
+    } catch (err) {
+      res.status(500).send(`OAuth error: ${String(err)}`);
+    }
+  });
+
+  router.post('/homeconnect/unlink', (_req, res) => {
+    homeConnect?.unlink();
+    res.json({ ok: true });
+  });
+
+  // ── GE SmartHQ / Laundry ─────────────────────────────────────────────────
+
+  router.get('/smarthq/status', (_req, res) => {
+    res.json({ linked: smartHQ?.isLinked ?? false, appliances: smartHQ?.getAppliances() ?? [] });
+  });
+
+  router.get('/smarthq/config', (_req, res) => {
+    const config = loadConfig();
+    const hq = config.smartHQ ?? { email: '', password: '', enabled: false };
+    res.json({ email: hq.email, enabled: hq.enabled });
+  });
+
+  router.put('/smarthq/config', (req, res) => {
+    const { email, password, enabled } = req.body as { email?: string; password?: string; enabled?: boolean };
+    const config = loadConfig();
+    config.smartHQ = {
+      email: email ?? config.smartHQ?.email ?? '',
+      password: password || config.smartHQ?.password || '',
+      enabled: enabled ?? config.smartHQ?.enabled ?? false,
+    };
+    saveConfig(config);
+    smartHQ?.updateConfig(config.smartHQ);
+    res.json({ ok: true });
+  });
+
+  router.post('/smarthq/login', async (req, res) => {
+    if (!smartHQ) { res.status(503).json({ error: 'SmartHQ not available' }); return; }
+    const { email, password } = req.body as { email?: string; password?: string };
+    if (!email || !password) { res.status(400).json({ error: 'email and password required' }); return; }
+    const config = loadConfig();
+    config.smartHQ = { ...config.smartHQ, email, password, enabled: true } as typeof config.smartHQ;
+    saveConfig(config);
+    smartHQ.updateConfig(config.smartHQ!);
+    try {
+      await smartHQ.login();
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  router.post('/smarthq/unlink', (_req, res) => {
+    smartHQ?.unlink();
+    res.json({ ok: true });
+  });
+
+  // ── myUplink / Heat Pump ──────────────────────────────────────────────────
+
+  router.get('/myuplink/status', (_req, res) => {
+    res.json({ linked: myUplink?.isLinked ?? false, heatPumps: myUplink?.getHeatPumps() ?? [] });
+  });
+
+  router.get('/myuplink/config', (_req, res) => {
+    const config = loadConfig();
+    const mu = config.myUplink ?? { clientId: '', clientSecret: '', enabled: false };
+    res.json({ clientId: mu.clientId, enabled: mu.enabled });
+  });
+
+  router.put('/myuplink/config', (req, res) => {
+    const { clientId, clientSecret, enabled } = req.body as { clientId?: string; clientSecret?: string; enabled?: boolean };
+    const config = loadConfig();
+    config.myUplink = {
+      ...(config.myUplink ?? { clientId: '', clientSecret: '', enabled: false }),
+      ...(clientId !== undefined && { clientId }),
+      ...(clientSecret !== undefined && { clientSecret }),
+      ...(enabled !== undefined && { enabled }),
+    };
+    saveConfig(config);
+    myUplink?.updateConfig(config.myUplink);
+    res.json({ ok: true });
+  });
+
+  router.get('/myuplink/oauth/start', (req, res) => {
+    if (!myUplink) { res.status(503).json({ error: 'myUplink not available' }); return; }
+    const redirectBase = `${req.protocol}://${req.get('host')}`;
+    res.redirect(myUplink.getAuthUrl(redirectBase));
+  });
+
+  router.get('/myuplink/oauth/callback', async (req, res) => {
+    const { code } = req.query as { code?: string };
+    if (!code || !myUplink) { res.status(400).send('Missing code or myUplink not configured'); return; }
+    try {
+      const redirectBase = `${req.protocol}://${req.get('host')}`;
+      await myUplink.handleCallback(code, redirectBase);
+      res.send('<script>window.close()</script><p>myUplink linked! You can close this tab.</p>');
+    } catch (err) {
+      res.status(500).send(`OAuth error: ${String(err)}`);
+    }
+  });
+
+  router.post('/myuplink/unlink', (_req, res) => {
+    myUplink?.unlink();
+    res.json({ ok: true });
+  });
+
+  // ── Chat / AI Assistant ────────────────────────────────────────────────────
+
+  /** POST /api/chat — natural language home control */
+  router.post('/chat', async (req, res) => {
+    const { message, history } = req.body as ChatRequest;
+    if (!message || typeof message !== 'string') {
+      res.status(400).json({ error: 'message is required' });
+      return;
+    }
+    try {
+      const config = loadConfig();
+      const result = await handleChat(message, history || [], deviceStore, connection, myqPoller, config);
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  /** GET /api/chat/config — check if API key is configured (never exposes the key) */
+  router.get('/chat/config', (_req, res) => {
+    const config = loadConfig();
+    res.json({ configured: !!(config.anthropicApiKey || process.env.ANTHROPIC_API_KEY) });
+  });
+
+  /** PUT /api/chat/config — save Anthropic API key */
+  router.put('/chat/config', (req, res) => {
+    const { apiKey } = req.body as { apiKey?: string };
+    const config = loadConfig();
+    config.anthropicApiKey = apiKey || '';
+    saveConfig(config);
+    res.json({ ok: true });
   });
 
   return router;

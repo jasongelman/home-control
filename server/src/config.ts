@@ -19,6 +19,21 @@ const DEFAULT_CONFIG: AppConfig = {
     password: '',
     enabled: false,
   },
+  homeConnect: {
+    clientId: '',
+    clientSecret: '',
+    enabled: false,
+  },
+  smartHQ: {
+    email: '',
+    password: '',
+    enabled: false,
+  },
+  myUplink: {
+    clientId: '',
+    clientSecret: '',
+    enabled: false,
+  },
 };
 
 export function loadConfig(): AppConfig {

@@ -114,6 +114,30 @@ struct DishwasherStatus: Identifiable {
         // Insert space before trailing digits
         return result.replacingOccurrences(of: "([a-zA-Z])(\\d)", with: "$1 $2", options: .regularExpression)
     }
+
+    var canRemoteStart: Bool {
+        operationState == .ready && remoteControlActive && connected &&
+        (doorState == .closed || doorState == .locked)
+    }
+}
+
+// MARK: - Dishwasher Program
+
+struct DishwasherProgram: Identifiable {
+    let key: String       // e.g. "Dishcare.Dishwasher.Program.Auto2"
+    let name: String      // e.g. "Auto 2"
+    var id: String { key }
+
+    static func displayName(for key: String) -> String {
+        let parts = key.split(separator: ".")
+        guard let last = parts.last else { return key }
+        var result = ""
+        for (i, char) in last.enumerated() {
+            if i > 0 && char.isUppercase { result += " " }
+            result += String(char)
+        }
+        return result.replacingOccurrences(of: "([a-zA-Z])(\\d)", with: "$1 $2", options: .regularExpression)
+    }
 }
 
 // MARK: - Manager
@@ -124,6 +148,9 @@ class HomeConnectManager: @unchecked Sendable {
     var dishwashers: [DishwasherStatus] = []
     var isLoading = false
     var errorMessage: String?
+    var availablePrograms: [String: [DishwasherProgram]] = [:]  // keyed by applianceId
+    var isStarting = false
+    var startError: String?
 
     /// Convenience: first dishwasher (backward compat for single-dishwasher UI)
     var dishwasher: DishwasherStatus {
@@ -175,7 +202,7 @@ class HomeConnectManager: @unchecked Sendable {
             URLQueryItem(name: "client_id", value: clientId),
             URLQueryItem(name: "redirect_uri", value: redirectURI),
             URLQueryItem(name: "response_type", value: "code"),
-            URLQueryItem(name: "scope", value: "IdentifyAppliance Dishwasher"),
+            URLQueryItem(name: "scope", value: "IdentifyAppliance Dishwasher Dishwasher-Control"),
         ]
 
         let session = ASWebAuthenticationSession(
@@ -297,7 +324,7 @@ class HomeConnectManager: @unchecked Sendable {
 
     // MARK: - API Requests
 
-    private func apiRequest(_ path: String, method: String = "GET") async throws -> [String: Any] {
+    private func apiRequest(_ path: String, method: String = "GET", body: [String: Any]? = nil) async throws -> [String: Any] {
         guard await refreshTokenIfNeeded(), let tok = tokens else {
             throw URLError(.userAuthenticationRequired)
         }
@@ -307,12 +334,18 @@ class HomeConnectManager: @unchecked Sendable {
         request.setValue("Bearer \(tok.accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/vnd.bsh.sdk.v1+json", forHTTPHeaderField: "Accept")
 
+        if let body {
+            request.setValue("application/vnd.bsh.sdk.v1+json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        }
+
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
             throw URLError(.badServerResponse, userInfo: ["statusCode": code])
         }
 
+        if data.isEmpty { return [:] }
         return (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
     }
 
@@ -437,6 +470,68 @@ class HomeConnectManager: @unchecked Sendable {
     func fetchAllStatuses() async {
         for i in 0..<dishwashers.count {
             await fetchStatus(for: i)
+        }
+    }
+
+    // MARK: - Remote Start
+
+    func fetchAvailablePrograms(for applianceId: String) async -> [DishwasherProgram] {
+        do {
+            let json = try await apiRequest("/api/homeappliances/\(applianceId)/programs/available")
+            guard let programs = (json["data"] as? [String: Any])?["programs"] as? [[String: Any]] else {
+                return []
+            }
+            let result = programs.compactMap { prog -> DishwasherProgram? in
+                guard let key = prog["key"] as? String else { return nil }
+                return DishwasherProgram(key: key, name: DishwasherProgram.displayName(for: key))
+            }
+            availablePrograms[applianceId] = result
+            return result
+        } catch {
+            print("HomeConnect: fetchAvailablePrograms error — \(error)")
+            return []
+        }
+    }
+
+    func startProgram(_ programKey: String, for applianceId: String) async -> Bool {
+        isStarting = true
+        startError = nil
+        defer { isStarting = false }
+
+        guard let dw = dishwashers.first(where: { $0.applianceId == applianceId }),
+              dw.canRemoteStart else {
+            startError = "Dishwasher is not ready for remote start"
+            return false
+        }
+
+        do {
+            let body: [String: Any] = [
+                "data": [
+                    "key": programKey,
+                    "options": [] as [[String: Any]]
+                ] as [String: Any]
+            ]
+            _ = try await apiRequest(
+                "/api/homeappliances/\(applianceId)/programs/active",
+                method: "PUT",
+                body: body
+            )
+
+            // Refresh status after starting
+            if let idx = dishwashers.firstIndex(where: { $0.applianceId == applianceId }) {
+                await fetchStatus(for: idx)
+            }
+            return true
+        } catch {
+            let nsError = error as NSError
+            let code = nsError.userInfo["statusCode"] as? Int
+            if code == 403 {
+                startError = "Permission denied. Re-link Home Connect in Settings to grant control permissions."
+            } else {
+                startError = "Failed to start: \(error.localizedDescription)"
+            }
+            print("HomeConnect: startProgram error — \(error)")
+            return false
         }
     }
 
