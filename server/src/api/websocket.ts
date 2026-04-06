@@ -4,6 +4,7 @@ import type { StateSync } from '../state/StateSync.js';
 import type { LEAPConnection } from '../lutron/LEAPConnection.js';
 import type { ClientMessage } from '../lutron/types.js';
 import type { MyQPoller } from '../myq/MyQPoller.js';
+import type { TotalConnectPoller } from '../totalconnect/TotalConnectPoller.js';
 
 export function handleWebSocket(
   ws: WebSocket,
@@ -11,10 +12,11 @@ export function handleWebSocket(
   stateSync: StateSync,
   connection: LEAPConnection,
   myqPoller: MyQPoller,
+  alarmPoller: TotalConnectPoller,
 ): void {
   stateSync.addClient(ws);
 
-  // Send full state + processor/garage status on connect
+  // Send full state + processor/garage/alarm status on connect
   ws.send(
     JSON.stringify({
       type: 'fullState',
@@ -22,6 +24,8 @@ export function handleWebSocket(
       processorConnected: connection.isConnected,
       doors: myqPoller.getDoors(),
       myqConnected: myqPoller.isConnected,
+      panels: alarmPoller.getPanels(),
+      alarmConnected: alarmPoller.isConnected,
     }),
   );
 
@@ -97,6 +101,18 @@ export function handleWebSocket(
         }
         try {
           await myqPoller.triggerAction(msg.serial, msg.action);
+        } catch (err) {
+          ws.send(JSON.stringify({ type: 'error', message: String(err) }));
+        }
+        break;
+
+      case 'alarmAction':
+        if (!alarmPoller.isConnected) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Alarm not connected' }));
+          return;
+        }
+        try {
+          await alarmPoller.triggerAction(msg.locationId, msg.action);
         } catch (err) {
           ws.send(JSON.stringify({ type: 'error', message: String(err) }));
         }

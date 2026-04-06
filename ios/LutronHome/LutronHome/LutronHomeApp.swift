@@ -9,6 +9,7 @@ struct LutronHomeApp: App {
     @State private var myUplink = MyUplinkManager()
     @State private var smartHQ = SmartHQManager()
     @State private var myQ = MyQManager()
+    @State private var totalConnect = TotalConnectManager()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -21,6 +22,7 @@ struct LutronHomeApp: App {
                 .environment(myUplink)
                 .environment(smartHQ)
                 .environment(myQ)
+                .environment(totalConnect)
                 .preferredColorScheme(.dark)
                 .onAppear {
                     store.usageTracker = usageTracker
@@ -34,6 +36,7 @@ struct LutronHomeApp: App {
                         myUplink.resume()
                         smartHQ.resume()
                         myQ.resume()
+                        totalConnect.resume()
                     }
                 }
         }

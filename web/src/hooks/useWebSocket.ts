@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
-import type { ServerMessage, ClientMessage, DeviceState, ConnectionStatus, MyQDoor } from '../types/index.js';
+import type { ServerMessage, ClientMessage, DeviceState, ConnectionStatus, MyQDoor, AlarmPanel } from '../types/index.js';
 
 const RECONNECT_DELAY = 3000;
 const PING_INTERVAL = 30000;
@@ -14,6 +14,8 @@ export function useWebSocket() {
   const [processorConnected, setProcessorConnected] = useState(false);
   const [doors, setDoors] = useState<Map<string, MyQDoor>>(new Map());
   const [myqConnected, setMyqConnected] = useState(false);
+  const [panels, setPanels] = useState<Map<string, AlarmPanel>>(new Map());
+  const [alarmConnected, setAlarmConnected] = useState(false);
 
   const send = useCallback((msg: ClientMessage) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -24,6 +26,13 @@ export function useWebSocket() {
   const triggerGarage = useCallback(
     (serial: string, action: 'open' | 'close') => {
       send({ type: 'garageAction', serial, action });
+    },
+    [send],
+  );
+
+  const triggerAlarm = useCallback(
+    (locationId: string, action: 'armAway' | 'armHome' | 'armNight' | 'disarm') => {
+      send({ type: 'alarmAction', locationId, action });
     },
     [send],
   );
@@ -95,6 +104,8 @@ export function useWebSocket() {
             setProcessorConnected(msg.processorConnected);
             setDoors(new Map(msg.doors.map((d) => [d.serial, d])));
             setMyqConnected(msg.myqConnected);
+            setPanels(new Map(msg.panels.map((p) => [p.locationId, p])));
+            setAlarmConnected(msg.alarmConnected);
             break;
 
           case 'state':
@@ -119,6 +130,11 @@ export function useWebSocket() {
           case 'garageState':
             setDoors(new Map(msg.doors.map((d) => [d.serial, d])));
             setMyqConnected(msg.myqConnected);
+            break;
+
+          case 'alarmState':
+            setPanels(new Map(msg.panels.map((p) => [p.locationId, p])));
+            setAlarmConnected(msg.alarmConnected);
             break;
         }
       };
@@ -155,5 +171,8 @@ export function useWebSocket() {
     doors,
     myqConnected,
     triggerGarage,
+    panels,
+    alarmConnected,
+    triggerAlarm,
   };
 }
