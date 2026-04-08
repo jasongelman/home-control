@@ -1,0 +1,62 @@
+{
+  "_comment": "Copy this file to server/data/config.json and fill in real values. server/data/ is gitignored — never commit real credentials. See CLAUDE.md § 'Never commit secrets'.",
+
+  "processor": {
+    "_comment": "Lutron Caseta/RA3 processor. port 0 = auto-detect (8081 plain, then 8083 TLS).",
+    "ip": "192.168.1.10",
+    "port": 0,
+    "username": "lutron",
+    "password": "integration"
+  },
+
+  "devices": [
+    {
+      "_comment": "Populated by the device-discovery flow; safe to leave empty on first run.",
+      "integrationId": 2,
+      "name": "Kitchen Lights",
+      "type": "light",
+      "room": "Kitchen"
+    }
+  ],
+
+  "scenes": [],
+  "automations": [],
+
+  "myq": {
+    "_comment": "Chamberlain MyQ garage door account. Credentials are used server-side only.",
+    "email": "",
+    "password": "",
+    "enabled": false
+  },
+
+  "homeConnect": {
+    "_comment": "Bosch/Siemens Home Connect OAuth2 app credentials (register at https://developer.home-connect.com).",
+    "clientId": "",
+    "clientSecret": "",
+    "enabled": false
+  },
+
+  "smartHQ": {
+    "_comment": "GE SmartHQ / Brillion laundry account. Credentials are used server-side only.",
+    "email": "",
+    "password": "",
+    "enabled": false
+  },
+
+  "myUplink": {
+    "_comment": "Nibe myUplink OAuth2 app credentials (register at https://dev.myuplink.com).",
+    "clientId": "",
+    "clientSecret": "",
+    "enabled": false
+  },
+
+  "totalconnect": {
+    "_comment": "Resideo Total Connect 2.0 alarm. userCode is the 4-digit disarm PIN.",
+    "username": "",
+    "password": "",
+    "userCode": "",
+    "enabled": false
+  },
+
+  "anthropicApiKey": ""
+}

@@ -147,8 +147,21 @@ export interface AlarmZone {
 // ── WebSocket message types ───────────────────────────────────────────────────
 
 export type ServerMessage =
-  | { type: 'fullState'; devices: DeviceState[]; processorConnected: boolean; doors: MyQDoor[]; myqConnected: boolean; dishwashers: import('../homeconnect/types.js').DishwasherStatus[]; laundry: import('../smarthq/types.js').LaundryAppliance[]; heatPumps: import('../myuplink/types.js').HeatPumpStatus[]; homeConnectLinked: boolean; smartHQLinked: boolean; myUplinkLinked: boolean }
-  | { type: 'fullState'; devices: DeviceState[]; processorConnected: boolean; doors: MyQDoor[]; myqConnected: boolean; panels: AlarmPanel[]; alarmConnected: boolean }
+  | {
+      type: 'fullState';
+      devices: DeviceState[];
+      processorConnected: boolean;
+      doors: MyQDoor[];
+      myqConnected: boolean;
+      dishwashers: import('../homeconnect/types.js').DishwasherStatus[];
+      laundry: import('../smarthq/types.js').LaundryAppliance[];
+      heatPumps: import('../myuplink/types.js').HeatPumpStatus[];
+      homeConnectLinked: boolean;
+      smartHQLinked: boolean;
+      myUplinkLinked: boolean;
+      panels: AlarmPanel[];
+      alarmConnected: boolean;
+    }
   | { type: 'state'; deviceId: number; level: number; timestamp: number }
   | { type: 'connected'; processorIp: string }
   | { type: 'disconnected'; reason: string }
