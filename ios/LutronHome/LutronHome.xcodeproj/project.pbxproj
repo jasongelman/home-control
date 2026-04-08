@@ -30,6 +30,7 @@
 		A1000020 /* SmartHQManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000020 /* SmartHQManager.swift */; };
 		A1000021 /* AppliancesTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000021 /* AppliancesTab.swift */; };
 		A1000022 /* MyQManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000022 /* MyQManager.swift */; };
+		A1000023 /* TotalConnectManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000023 /* TotalConnectManager.swift */; };
 		A1000030 /* UsageTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000030 /* UsageTracker.swift */; };
 		A1000031 /* PersonalizationInsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000031 /* PersonalizationInsightsView.swift */; };
 /* End PBXBuildFile section */
@@ -73,6 +74,7 @@
 		A2000030 /* UsageTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageTracker.swift; sourceTree = "<group>"; };
 		A2000031 /* PersonalizationInsightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalizationInsightsView.swift; sourceTree = "<group>"; };
 		A2000022 /* MyQManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyQManager.swift; sourceTree = "<group>"; };
+		A2000023 /* TotalConnectManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TotalConnectManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -125,6 +127,7 @@
 				A2000030 /* UsageTracker.swift */,
 				A2000031 /* PersonalizationInsightsView.swift */,
 				A2000022 /* MyQManager.swift */,
+				A2000023 /* TotalConnectManager.swift */,
 				A2000012 /* LutronHome.entitlements */,
 				A2000010 /* Assets.xcassets */,
 				A2000011 /* lutron_client.p12 */,
@@ -262,6 +265,7 @@ A1000010 /* Assets.xcassets in Resources */,
 				A1000030 /* UsageTracker.swift in Sources */,
 				A1000031 /* PersonalizationInsightsView.swift in Sources */,
 				A1000022 /* MyQManager.swift in Sources */,
+				A1000023 /* TotalConnectManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

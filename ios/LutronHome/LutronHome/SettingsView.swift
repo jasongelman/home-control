@@ -13,8 +13,6 @@ struct SettingsView: View {
     @State private var hcClientSecret: String = ""
     @State private var muClientId: String = ""
     @State private var muClientSecret: String = ""
-    @State private var geEmail: String = ""
-    @State private var gePassword: String = ""
     @State private var myqEmail: String = ""
     @State private var myqPassword: String = ""
     @State private var tcUsername: String = ""
@@ -158,30 +156,19 @@ struct SettingsView: View {
                 }
 
                 if !smartHQ.isLinked {
-                    TextField("GE SmartHQ Email", text: $geEmail)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.emailAddress)
-                        .onChange(of: geEmail) { _, val in smartHQ.email = val }
-
-                    SecureField("GE SmartHQ Password", text: $gePassword)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .onChange(of: gePassword) { _, val in smartHQ.password = val }
-
                     Button {
-                        Task { await smartHQ.login() }
+                        smartHQ.startOAuth(from: oauthContext)
                     } label: {
                         HStack {
                             if smartHQ.isLoading {
-                                ProgressView()
-                                    .scaleEffect(0.8)
+                                ProgressView().scaleEffect(0.8)
                             }
                             Image(systemName: "link")
-                            Text("Sign In")
+                            Text("Link GE SmartHQ Account")
                         }
                     }
-                    .disabled(geEmail.isEmpty || gePassword.isEmpty || smartHQ.isLoading)
+                    .disabled(smartHQ.isLoading)
+                    .tint(.indigo)
                 } else {
                     if smartHQ.appliances.isEmpty {
                         HStack {
@@ -223,7 +210,7 @@ struct SettingsView: View {
             } header: {
                 Text("GE SmartHQ")
             } footer: {
-                Text("Sign in with your GE SmartHQ account (same credentials as the SmartHQ app).")
+                Text("Sign in with your GE SmartHQ (Brillion) account. You'll be taken to GE's login page in Safari.")
             }
 
             // MARK: - myUplink (Dandelion Geothermal)
