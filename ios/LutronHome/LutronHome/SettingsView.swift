@@ -546,8 +546,6 @@ struct SettingsView: View {
             hcClientSecret = homeConnect.clientSecret
             muClientId = myUplink.clientId
             muClientSecret = myUplink.clientSecret
-            geEmail = smartHQ.email
-            gePassword = smartHQ.password
             myqEmail = myQ.email
             myqPassword = myQ.password
         }
