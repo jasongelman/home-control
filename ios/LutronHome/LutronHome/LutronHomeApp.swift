@@ -43,6 +43,7 @@ struct LutronHomeApp: App {
                         myUplink.resume()
                         smartHQ.resume()
                         myQ.resume()
+                        totalConnect.resume()
                         // Sync appliance status to widget
                         syncApplianceStatus()
                     }
@@ -64,7 +65,6 @@ struct LutronHomeApp: App {
                                     Button("Done") { showVoiceInput = false }
                                 }
                             }
-                        totalConnect.resume()
                     }
                 }
         }

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
-import type { ServerMessage, ClientMessage, DeviceState, ConnectionStatus, MyQDoor, DishwasherStatus, LaundryAppliance, HeatPumpStatus } from '../types/index.js';
-import type { ServerMessage, ClientMessage, DeviceState, ConnectionStatus, MyQDoor, AlarmPanel } from '../types/index.js';
+import type { ServerMessage, ClientMessage, DeviceState, ConnectionStatus, MyQDoor, DishwasherStatus, LaundryAppliance, HeatPumpStatus, AlarmPanel } from '../types/index.js';
 
 const RECONNECT_DELAY = 3000;
 const PING_INTERVAL = 30000;
@@ -149,6 +148,8 @@ export function useWebSocket() {
             setDishwashers(msg.dishwashers);
             setLaundry(msg.laundry);
             setHeatPumps(msg.heatPumps);
+            break;
+
           case 'alarmState':
             setPanels(new Map(msg.panels.map((p) => [p.locationId, p])));
             setAlarmConnected(msg.alarmConnected);

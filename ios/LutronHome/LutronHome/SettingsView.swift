@@ -383,16 +383,6 @@ struct SettingsView: View {
                         .fontWeight(.medium)
                     Spacer()
                     if chatService.isConfigured {
-            // MARK: - Resideo / Total Connect 2.0
-
-            Section {
-                HStack {
-                    Image(systemName: "lock.shield.fill")
-                        .foregroundStyle(.red)
-                    Text("Resideo Alarm")
-                        .fontWeight(.medium)
-                    Spacer()
-                    if totalConnect.isLinked {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)
                     }
@@ -429,6 +419,23 @@ struct SettingsView: View {
                 Text("AI Assistant")
             } footer: {
                 Text("Enter your Anthropic API key to enable natural language chat control. The key is stored securely in the Keychain. Get a key at console.anthropic.com.")
+            }
+
+            // MARK: - Resideo / Total Connect 2.0
+
+            Section {
+                HStack {
+                    Image(systemName: "lock.shield.fill")
+                        .foregroundStyle(.red)
+                    Text("Resideo Alarm")
+                        .fontWeight(.medium)
+                    Spacer()
+                    if totalConnect.isLinked {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                }
+
                 if !totalConnect.isLinked {
                     TextField("Total Connect Username", text: $tcUsername)
                         .autocorrectionDisabled()

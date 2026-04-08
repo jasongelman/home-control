@@ -18,9 +18,6 @@ import type { DishwasherStatus } from './homeconnect/types.js';
 import type { LaundryAppliance } from './smarthq/types.js';
 import type { HeatPumpStatus } from './myuplink/types.js';
 import { TotalConnectPoller } from './totalconnect/TotalConnectPoller.js';
-import { SunShadeAutomation } from './automation/SunShadeAutomation.js';
-import type { LEAPZone } from './lutron/LEAPConnection.js';
-import type { MyQDoor } from './myq/types.js';
 import type { AlarmPanel } from './totalconnect/types.js';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -165,6 +162,8 @@ myUplink.on('configChanged', (cfg) => {
   const config = loadConfig();
   config.myUplink = cfg;
   saveConfig(config);
+});
+
 // ── Wire up Total Connect 2.0 (alarm) events ──────────────────────────────────
 
 alarmPoller.on('stateChange', (panels: AlarmPanel[]) => {
@@ -215,8 +214,7 @@ function scheduleReconnect() {
 
 // ── REST API ──────────────────────────────────────────────────────────────────
 
-app.use('/api', createRoutes(deviceStore, connection, myqPoller, sunAutomations, homeConnect, smartHQ, myUplink));
-app.use('/api', createRoutes(deviceStore, connection, myqPoller, alarmPoller, sunAutomations));
+app.use('/api', createRoutes(deviceStore, connection, myqPoller, alarmPoller, sunAutomations, homeConnect, smartHQ, myUplink));
 
 // ── HTTP + WebSocket ──────────────────────────────────────────────────────────
 
@@ -225,8 +223,7 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 
 wss.on('connection', (ws) => {
   console.log(`WebSocket client connected (${stateSync.clientCount + 1} total)`);
-  handleWebSocket(ws, deviceStore, stateSync, connection, myqPoller, homeConnect, smartHQ, myUplink);
-  handleWebSocket(ws, deviceStore, stateSync, connection, myqPoller, alarmPoller);
+  handleWebSocket(ws, deviceStore, stateSync, connection, myqPoller, alarmPoller, homeConnect, smartHQ, myUplink);
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
@@ -259,6 +256,8 @@ server.listen(PORT, () => {
   if (config.myUplink?.enabled && config.myUplink.accessToken) {
     console.log('Starting myUplink polling...');
     myUplink.start();
+  }
+
   const tcCfg = config.totalconnect;
   if (tcCfg?.enabled && tcCfg.username && tcCfg.password) {
     console.log(`Starting Total Connect 2.0 poller for ${tcCfg.username}...`);

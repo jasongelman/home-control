@@ -188,8 +188,7 @@ const QUICK_ACTIONS = [
 ];
 
 export function Dashboard({ onSetup }: { onSetup?: () => void }) {
-  const { devices, connectionStatus, processorConnected, setLevel, trackDevice, trackScene: trackSceneAction, getUsageEvents, doors, myqConnected, triggerGarage, dishwashers, laundry, heatPumps } = useLutron();
-  const { devices, connectionStatus, processorConnected, setLevel, trackDevice, trackScene: trackSceneAction, getUsageEvents, doors, myqConnected, triggerGarage, panels, alarmConnected } = useLutron();
+  const { devices, connectionStatus, processorConnected, setLevel, trackDevice, trackScene: trackSceneAction, getUsageEvents, doors, myqConnected, triggerGarage, dishwashers, laundry, heatPumps, panels, alarmConnected } = useLutron();
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
   const { scenes, createScene, updateScene, deleteScene, activateScene, captureCurrentState } = useScenes();
   const [editorOpen, setEditorOpen] = useState(false);

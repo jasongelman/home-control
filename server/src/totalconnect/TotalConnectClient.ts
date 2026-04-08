@@ -26,33 +26,36 @@ export async function authenticate(username: string, password: string): Promise<
   const configRes = await fetch(APP_CONFIG_URL);
   if (!configRes.ok) throw new Error(`TC2 config fetch failed: ${configRes.status}`);
 
-  const configData = await configRes.json() as unknown[];
-  // Response is an array; the TC2 entry has BrandName "totalconnect"
-  const appEntry = (configData as Array<{
-    BrandName?: string;
+  const configData = await configRes.json() as {
+    version?: string;
+    RevisionNumber?: string;
+    brandInfo?: Array<{ BrandName?: string; AppID?: number | string }>;
     AppConfig?: Array<{ tc2APIKey?: string; tc2ClientId?: string }>;
-    AppID?: string;
-    appVersion?: string;
-  }>).find((e) => e.BrandName === 'totalconnect') ?? (configData as Array<{
-    AppConfig?: Array<{ tc2APIKey?: string; tc2ClientId?: string }>;
-    AppID?: string;
-    appVersion?: string;
-  }>)[0];
+  };
 
-  const appConfig = appEntry?.AppConfig?.[0];
+  // Top-level AppConfig holds the RSA key + client id; brandInfo holds per-brand AppID.
+  const appConfig = configData.AppConfig?.[0];
+  const brandEntry = configData.brandInfo?.find((b) => b.BrandName === 'totalconnect')
+    ?? configData.brandInfo?.[0];
+
   const rsaKeyPem = appConfig?.tc2APIKey;
   const clientId  = appConfig?.tc2ClientId;
-  const appId     = appEntry?.AppID ?? '';
-  const appVersion = appEntry?.appVersion ?? '5.0.0';
+  const appId     = brandEntry?.AppID != null ? String(brandEntry.AppID) : '';
+  const appVersion = configData.version ?? configData.RevisionNumber ?? '5.0.0';
 
   if (!rsaKeyPem || !clientId) {
     throw new Error('TC2: missing RSA key or clientId in app config');
   }
 
-  // Step 2: RSA-PKCS1v15-encrypt credentials
+  // Step 2: RSA-PKCS1v15-encrypt credentials.
+  // tc2APIKey is returned as raw base64 SPKI; wrap as PEM for node's crypto.
+  const pem = rsaKeyPem.includes('BEGIN PUBLIC KEY')
+    ? rsaKeyPem
+    : `-----BEGIN PUBLIC KEY-----\n${rsaKeyPem.match(/.{1,64}/g)?.join('\n') ?? rsaKeyPem}\n-----END PUBLIC KEY-----`;
+
   const encrypt = (plaintext: string): string => {
     const encrypted = publicEncrypt(
-      { key: rsaKeyPem, padding: constants.RSA_PKCS1_PADDING },
+      { key: pem, padding: constants.RSA_PKCS1_PADDING },
       Buffer.from(plaintext, 'utf8'),
     );
     return encrypted.toString('base64');

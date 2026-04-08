@@ -423,6 +423,7 @@ struct DashboardView: View {
         case laundry(LaundryApplianceStatus)
         case forYouEvening
         case forYouDevice(deviceId: Int)
+        case alarmPanel(AlarmPanel)
         case staticAction(title: String, icon: String, color: Color, actionId: String)
         case room(name: String, icon: String)
 
@@ -433,6 +434,7 @@ struct DashboardView: View {
             case .laundry(let app): return "lnd_\(app.id)"
             case .forYouEvening: return "foryou_evening"
             case .forYouDevice(let id): return "foryou_\(id)"
+            case .alarmPanel(let panel): return "alarm_\(panel.id)"
             case .staticAction(_, _, _, let id): return "static_\(id)"
             case .room(let name, _): return "room_\(name)"
             }
@@ -453,6 +455,14 @@ struct DashboardView: View {
         for action in contextualActions {
             guard items.count < maxItems else { break }
             items.append(.contextualAction(title: action.title, icon: action.icon, actionId: action.id))
+        }
+
+        // 2a. Alarm panels (safety/security — high priority)
+        if totalConnect.isLinked {
+            for panel in totalConnect.panels {
+                guard items.count < maxItems else { break }
+                items.append(.alarmPanel(panel))
+            }
         }
 
         // 2. Active/startable appliances only (skip idle)
@@ -594,101 +604,6 @@ struct DashboardView: View {
 
                 case .forYouDevice(let deviceId):
                     if let device = store.devices[deviceId] {
-                if myUplink.isLinked {
-                    AppliancePill(
-                        title: "Geothermal",
-                        icon: heatPumpIcon,
-                        status: myUplink.heatPump.operatingMode ?? "Connected",
-                        color: heatPumpColor,
-                        isActive: false,
-                        progress: nil,
-                        timeRemaining: myUplink.heatPump.currentPower.map { String(format: "%.1f kW", $0) }
-                    )
-                }
-
-                // Alarm panels
-                if totalConnect.isLinked {
-                    ForEach(totalConnect.panels) { panel in
-                        AlarmPill(panel: panel, manager: totalConnect)
-                    }
-                }
-
-                // Standard actions
-                QuickActionButton(title: "Main Floor Off", icon: "power", color: .orange) {
-                    store.turnOffLights(on: .mainFloor)
-                }
-                QuickActionButton(title: "Upstairs Off", icon: "power", color: .orange) {
-                    store.turnOffLights(on: .upstairs)
-                }
-                QuickActionButton(title: "Main Shades Toggle", icon: "blinds.vertical.closed", color: .blue) {
-                    store.toggleMainShades()
-                }
-            }
-        }
-    }
-
-    private var heatPumpIcon: String {
-        let mode = (myUplink.heatPump.operatingMode ?? "").lowercased()
-        if mode.contains("heat") { return "flame.fill" }
-        if mode.contains("cool") { return "snowflake" }
-        if mode.contains("hot water") || mode.contains("dhw") { return "drop.fill" }
-        return "leaf.fill"
-    }
-
-    private var heatPumpColor: Color {
-        let mode = (myUplink.heatPump.operatingMode ?? "").lowercased()
-        if mode.contains("heat") { return .orange }
-        if mode.contains("cool") { return .cyan }
-        if mode.contains("hot water") || mode.contains("dhw") { return .blue }
-        return .green
-    }
-
-    private func handleContextualAction(_ id: String) {
-        switch id {
-        case "morning":
-            // Morning lights scene — turn on key lights at low level
-            store.setRoomLights("Kitchen", level: 60)
-            store.setRoomLights("Family Room", level: 40)
-        case "shades_open":
-            store.toggleMainShades() // Opens if closed
-        case "shades_close":
-            store.toggleMainShades() // Closes if open
-        case "all_off":
-            store.turnOffAllLights(excludingNames: ["Bed 2 Entry"])
-        case "evening":
-            store.activateEveningScene()
-        case "goodnight":
-            // Turn off all lights except Sebastian's night light
-            store.turnOffAllLights(excludingNames: ["Bed 2 Entry"])
-        default:
-            break
-        }
-    }
-
-    // MARK: - For You (personalized suggestions)
-
-    @ViewBuilder
-    private var forYouSection: some View {
-        let isEvening = TimeBucket.current() == .evening
-        let topDevices = usageTracker.topDevices(isEvening ? 3 : 4, timeWindowSeconds: 30 * 24 * 60 * 60)
-        let hasContent = isEvening || (!topDevices.isEmpty && usageTracker.events.count >= 5)
-        if hasContent {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .font(.caption)
-                        .foregroundStyle(timeTheme.theme.accent)
-                    Text("For You")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .textCase(.uppercase)
-                        .tracking(0.5)
-                        .foregroundStyle(timeTheme.theme.sectionHeaderColor)
-                }
-
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                    // Always show Evening scene during evening hours (6pm–2am)
-                    if isEvening {
                         Button {
                             let newLevel: Double = device.level > 0 ? 0 : 100
                             store.setLevel(device.integrationId, level: newLevel, fadeTime: 1)
@@ -718,6 +633,9 @@ struct DashboardView: View {
                         }
                         .buttonStyle(.plain)
                     }
+
+                case .alarmPanel(let panel):
+                    AlarmPill(panel: panel, manager: totalConnect)
 
                 case .staticAction(let title, let icon, let color, let actionId):
                     QuickActionButton(title: title, icon: icon, color: color) {

@@ -15,10 +15,10 @@ export function handleWebSocket(
   stateSync: StateSync,
   connection: LEAPConnection,
   myqPoller: MyQPoller,
+  alarmPoller: TotalConnectPoller,
   homeConnect?: HomeConnectManager,
   smartHQ?: SmartHQManager,
   myUplink?: MyUplinkManager,
-  alarmPoller: TotalConnectPoller,
 ): void {
   stateSync.addClient(ws);
 

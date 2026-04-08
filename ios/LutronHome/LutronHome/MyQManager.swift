@@ -78,7 +78,8 @@ class MyQManager: @unchecked Sendable {
     private let accountsURL = "https://account.myq-cloud.com/api/v6/accounts"
     private let devicesBase = "https://devices.myq-cloud.com/api/v5.2"
     private let actionsBase = "https://account.myq-cloud.com/api/v6"
-    // Client credentials from community reverse engineering of the iOS MyQ app
+    // Community-reverse-engineered from the iOS MyQ app; same values as pymyq.
+    // Standing exception under CLAUDE.md § "Never commit secrets" rule 1.
     private let clientId     = "IOS_CGO"
     private let clientSecret = "VUKdMGBPRCAnfZGIWY8SJWvnbWJNyJmjklAlDyPDYS8="
     private let userAgent    = "myQ/23050.06 CFNetwork/1399 Darwin/22.1.0"

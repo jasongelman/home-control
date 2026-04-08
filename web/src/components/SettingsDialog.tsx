@@ -1075,35 +1075,8 @@ export function SettingsDialog({
         <Tab label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><LocalLaundryServiceIcon sx={{ fontSize: 12 }} />Laundry</Box>} sx={{ minHeight: 40, fontSize: 12 }} />
         <Tab label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><AcUnitIcon sx={{ fontSize: 12 }} />Heat Pump</Box>} sx={{ minHeight: 40, fontSize: 12 }} />
         <Tab label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><ChatBubbleOutlineIcon sx={{ fontSize: 12 }} />AI Assistant</Box>} sx={{ minHeight: 40, fontSize: 12 }} />
+        <Tab label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><SecurityIcon sx={{ fontSize: 12 }} />Alarm</Box>} sx={{ minHeight: 40, fontSize: 12 }} />
         <Tab label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><AutoAwesomeIcon sx={{ fontSize: 12 }} />For You</Box>} sx={{ minHeight: 40, fontSize: 12 }} />
-        <Tab label="Connection" sx={{ minHeight: 40, fontSize: 13 }} />
-        <Tab
-          label={
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <GarageIcon sx={{ fontSize: 13 }} />
-              Garage
-            </Box>
-          }
-          sx={{ minHeight: 40, fontSize: 13 }}
-        />
-        <Tab
-          label={
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <SecurityIcon sx={{ fontSize: 13 }} />
-              Alarm
-            </Box>
-          }
-          sx={{ minHeight: 40, fontSize: 13 }}
-        />
-        <Tab
-          label={
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <AutoAwesomeIcon sx={{ fontSize: 13 }} />
-              For You
-            </Box>
-          }
-          sx={{ minHeight: 40, fontSize: 13 }}
-        />
       </Tabs>
 
       <DialogContent sx={{ pt: 2 }}>
@@ -1150,13 +1123,11 @@ export function SettingsDialog({
         {/* AI Assistant tab */}
         {tab === 5 && <AIAssistantSettings />}
 
-        {/* Personalization tab */}
-        {tab === 6 && (
         {/* Alarm / Total Connect tab */}
-        {tab === 2 && <AlarmSettings />}
+        {tab === 6 && <AlarmSettings />}
 
         {/* Personalization tab */}
-        {tab === 3 && (
+        {tab === 7 && (
           <PersonalizationInsights
             events={events}
             devices={devices}

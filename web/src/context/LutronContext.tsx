@@ -1,8 +1,7 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket.js';
 import { useUsageTracker } from '../hooks/useUsageTracker.js';
-import type { DeviceState, ConnectionStatus, MyQDoor, DishwasherStatus, LaundryAppliance, HeatPumpStatus } from '../types/index.js';
-import type { DeviceState, ConnectionStatus, MyQDoor, AlarmPanel } from '../types/index.js';
+import type { DeviceState, ConnectionStatus, MyQDoor, DishwasherStatus, LaundryAppliance, HeatPumpStatus, AlarmPanel } from '../types/index.js';
 import type { UsageEvent } from '../hooks/useUsageTracker.js';
 
 interface LutronContextValue {

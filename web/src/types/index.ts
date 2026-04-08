@@ -87,6 +87,8 @@ export interface HeatPumpStatus {
   mode: HeatPumpMode;
   compressorFreq: number | null;
   lastUpdated: number;
+}
+
 // ── Total Connect 2.0 (Resideo Alarm) ────────────────────────────────────────
 
 export type PanelState =
@@ -114,8 +116,21 @@ export interface AlarmZone {
 // ── WebSocket messages ────────────────────────────────────────────────────────
 
 export type ServerMessage =
-  | { type: 'fullState'; devices: DeviceState[]; processorConnected: boolean; doors: MyQDoor[]; myqConnected: boolean; dishwashers: DishwasherStatus[]; laundry: LaundryAppliance[]; heatPumps: HeatPumpStatus[]; homeConnectLinked: boolean; smartHQLinked: boolean; myUplinkLinked: boolean }
-  | { type: 'fullState'; devices: DeviceState[]; processorConnected: boolean; doors: MyQDoor[]; myqConnected: boolean; panels: AlarmPanel[]; alarmConnected: boolean }
+  | {
+      type: 'fullState';
+      devices: DeviceState[];
+      processorConnected: boolean;
+      doors: MyQDoor[];
+      myqConnected: boolean;
+      dishwashers: DishwasherStatus[];
+      laundry: LaundryAppliance[];
+      heatPumps: HeatPumpStatus[];
+      homeConnectLinked: boolean;
+      smartHQLinked: boolean;
+      myUplinkLinked: boolean;
+      panels: AlarmPanel[];
+      alarmConnected: boolean;
+    }
   | { type: 'state'; deviceId: number; level: number; timestamp: number }
   | { type: 'connected'; processorIp: string }
   | { type: 'disconnected'; reason: string }

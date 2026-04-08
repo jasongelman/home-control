@@ -157,8 +157,9 @@ class SmartHQManager: @unchecked Sendable {
     /// Convenience: first dryer
     var dryer: LaundryApplianceStatus? { appliances.first(where: { $0.isDryer }) }
 
-    // GE SmartHQ / Brillion OAuth2 — authorization_code flow
-    // Credentials extracted from the GE SmartHQ mobile app (community-maintained, same as gehome SDK)
+    // GE SmartHQ / Brillion OAuth2 — authorization_code flow.
+    // Community-reverse-engineered from the GE SmartHQ mobile app; same values as the gehome SDK.
+    // Standing exception under CLAUDE.md § "Never commit secrets" rule 1.
     private let loginBase    = "https://accounts.brillion.geappliances.com"
     private let apiBase      = "https://api.brillion.geappliances.com"
     private let clientId     = "564c31616c4f7474434b307435412b4d2f6e7672"

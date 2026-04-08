@@ -31,3 +31,4 @@ server/data/
 
 # Worktrees
 .worktrees/
+.superpowers/
