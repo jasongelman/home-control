@@ -32,6 +32,10 @@ const DEFAULT_CONFIG: AppConfig = {
   myUplink: {
     clientId: '',
     clientSecret: '',
+  totalconnect: {
+    username: '',
+    password: '',
+    userCode: '',
     enabled: false,
   },
 };

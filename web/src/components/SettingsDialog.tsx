@@ -11,6 +11,7 @@ import AcUnitIcon from '@mui/icons-material/AcUnit';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+import SecurityIcon from '@mui/icons-material/Security';
 import { useLutron } from '../context/LutronContext.js';
 import { useScenes } from '../hooks/useScenes.js';
 import { useAdaptiveDashboard } from '../hooks/useAdaptiveDashboard.js';
@@ -441,6 +442,128 @@ function PersonalizationInsights({ events, devices, scenes, rooms }: Personaliza
           );
         })}
       </Box>
+    </Box>
+  );
+}
+
+// ── Alarm / Total Connect settings tab ───────────────────────────────────────
+
+function AlarmSettings() {
+  const { panels, alarmConnected } = useLutron();
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [userCode, setUserCode] = useState('');
+  const [enabled, setEnabled] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveOk, setSaveOk] = useState(false);
+  const [saveError, setSaveError] = useState('');
+
+  useMemo(() => {
+    if (loaded) return;
+    setLoaded(true);
+    fetch('/api/alarm/config')
+      .then((r) => r.json())
+      .then((data: { username?: string; enabled?: boolean }) => {
+        setUsername(data.username ?? '');
+        setEnabled(data.enabled ?? false);
+      })
+      .catch(() => {});
+  }, [loaded]);
+
+  const save = async () => {
+    setSaving(true); setSaveOk(false); setSaveError('');
+    try {
+      const body: Record<string, unknown> = { username, enabled };
+      if (password) body.password = password;
+      if (userCode) body.userCode = userCode;
+      const res = await fetch('/api/alarm/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setSaveOk(true);
+      setPassword('');
+      setUserCode('');
+      setTimeout(() => setSaveOk(false), 3000);
+    } catch (err) {
+      setSaveError(String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Box>
+      {/* Status */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
+        <SecurityIcon sx={{ fontSize: 18, color: alarmConnected ? 'success.main' : 'text.disabled' }} />
+        <Chip
+          size="small"
+          label={alarmConnected ? `Connected — ${panels.size} panel${panels.size !== 1 ? 's' : ''}` : 'Not connected'}
+          color={alarmConnected ? 'success' : 'default'}
+          variant="outlined"
+        />
+      </Box>
+
+      <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mb: 1.5, textTransform: 'uppercase', letterSpacing: 1 }}>
+        Total Connect 2.0 Account
+      </Typography>
+
+      <FormControlLabel
+        control={<Switch checked={enabled} onChange={(e) => setEnabled(e.target.checked)} size="small" />}
+        label={<Typography variant="body2">Enable alarm integration</Typography>}
+        sx={{ mb: 2, ml: 0 }}
+      />
+
+      <TextField
+        label="Username"
+        value={username}
+        onChange={(e) => setUsername(e.target.value)}
+        fullWidth
+        size="small"
+        sx={{ mb: 2 }}
+        disabled={saving}
+        autoComplete="off"
+      />
+      <TextField
+        label="Password"
+        type="password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        fullWidth
+        size="small"
+        placeholder={alarmConnected ? '(saved — enter to change)' : ''}
+        helperText="Leave blank to keep existing password"
+        sx={{ mb: 2 }}
+        disabled={saving}
+      />
+      <TextField
+        label="User Code (PIN)"
+        type="password"
+        value={userCode}
+        onChange={(e) => setUserCode(e.target.value)}
+        fullWidth
+        size="small"
+        placeholder={alarmConnected ? '(saved — enter to change)' : ''}
+        helperText="The numeric PIN used to arm/disarm your panel. Leave blank to keep existing."
+        sx={{ mb: 2 }}
+        disabled={saving}
+        inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }}
+      />
+
+      {saveError && <Alert severity="error" sx={{ mb: 1.5, fontSize: 12 }}>{saveError}</Alert>}
+      {saveOk && <Alert severity="success" sx={{ mb: 1.5, fontSize: 12 }}>Saved — alarm will connect shortly.</Alert>}
+
+      <Button
+        variant="contained"
+        onClick={save}
+        disabled={saving || !username}
+        size="small"
+      >
+        {saving ? 'Saving…' : 'Save'}
+      </Button>
     </Box>
   );
 }
@@ -953,6 +1076,34 @@ export function SettingsDialog({
         <Tab label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><AcUnitIcon sx={{ fontSize: 12 }} />Heat Pump</Box>} sx={{ minHeight: 40, fontSize: 12 }} />
         <Tab label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><ChatBubbleOutlineIcon sx={{ fontSize: 12 }} />AI Assistant</Box>} sx={{ minHeight: 40, fontSize: 12 }} />
         <Tab label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><AutoAwesomeIcon sx={{ fontSize: 12 }} />For You</Box>} sx={{ minHeight: 40, fontSize: 12 }} />
+        <Tab label="Connection" sx={{ minHeight: 40, fontSize: 13 }} />
+        <Tab
+          label={
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <GarageIcon sx={{ fontSize: 13 }} />
+              Garage
+            </Box>
+          }
+          sx={{ minHeight: 40, fontSize: 13 }}
+        />
+        <Tab
+          label={
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <SecurityIcon sx={{ fontSize: 13 }} />
+              Alarm
+            </Box>
+          }
+          sx={{ minHeight: 40, fontSize: 13 }}
+        />
+        <Tab
+          label={
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <AutoAwesomeIcon sx={{ fontSize: 13 }} />
+              For You
+            </Box>
+          }
+          sx={{ minHeight: 40, fontSize: 13 }}
+        />
       </Tabs>
 
       <DialogContent sx={{ pt: 2 }}>
@@ -1001,6 +1152,11 @@ export function SettingsDialog({
 
         {/* Personalization tab */}
         {tab === 6 && (
+        {/* Alarm / Total Connect tab */}
+        {tab === 2 && <AlarmSettings />}
+
+        {/* Personalization tab */}
+        {tab === 3 && (
           <PersonalizationInsights
             events={events}
             devices={devices}

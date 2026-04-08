@@ -7,6 +7,7 @@ import type { MyQPoller } from '../myq/MyQPoller.js';
 import type { HomeConnectManager } from '../homeconnect/HomeConnectManager.js';
 import type { SmartHQManager } from '../smarthq/SmartHQManager.js';
 import type { MyUplinkManager } from '../myuplink/MyUplinkManager.js';
+import type { TotalConnectPoller } from '../totalconnect/TotalConnectPoller.js';
 
 export function handleWebSocket(
   ws: WebSocket,
@@ -17,10 +18,11 @@ export function handleWebSocket(
   homeConnect?: HomeConnectManager,
   smartHQ?: SmartHQManager,
   myUplink?: MyUplinkManager,
+  alarmPoller: TotalConnectPoller,
 ): void {
   stateSync.addClient(ws);
 
-  // Send full state + processor/garage status on connect
+  // Send full state + processor/garage/alarm status on connect
   ws.send(
     JSON.stringify({
       type: 'fullState',
@@ -34,6 +36,8 @@ export function handleWebSocket(
       homeConnectLinked: homeConnect?.isLinked ?? false,
       smartHQLinked: smartHQ?.isLinked ?? false,
       myUplinkLinked: myUplink?.isLinked ?? false,
+      panels: alarmPoller.getPanels(),
+      alarmConnected: alarmPoller.isConnected,
     }),
   );
 
@@ -109,6 +113,18 @@ export function handleWebSocket(
         }
         try {
           await myqPoller.triggerAction(msg.serial, msg.action);
+        } catch (err) {
+          ws.send(JSON.stringify({ type: 'error', message: String(err) }));
+        }
+        break;
+
+      case 'alarmAction':
+        if (!alarmPoller.isConnected) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Alarm not connected' }));
+          return;
+        }
+        try {
+          await alarmPoller.triggerAction(msg.locationId, msg.action);
         } catch (err) {
           ws.send(JSON.stringify({ type: 'error', message: String(err) }));
         }

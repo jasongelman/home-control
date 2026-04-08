@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import type { ServerMessage, ClientMessage, DeviceState, ConnectionStatus, MyQDoor, DishwasherStatus, LaundryAppliance, HeatPumpStatus } from '../types/index.js';
+import type { ServerMessage, ClientMessage, DeviceState, ConnectionStatus, MyQDoor, AlarmPanel } from '../types/index.js';
 
 const RECONNECT_DELAY = 3000;
 const PING_INTERVAL = 30000;
@@ -20,6 +21,8 @@ export function useWebSocket() {
   const [homeConnectLinked, setHomeConnectLinked] = useState(false);
   const [smartHQLinked, setSmartHQLinked] = useState(false);
   const [myUplinkLinked, setMyUplinkLinked] = useState(false);
+  const [panels, setPanels] = useState<Map<string, AlarmPanel>>(new Map());
+  const [alarmConnected, setAlarmConnected] = useState(false);
 
   const send = useCallback((msg: ClientMessage) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -30,6 +33,13 @@ export function useWebSocket() {
   const triggerGarage = useCallback(
     (serial: string, action: 'open' | 'close') => {
       send({ type: 'garageAction', serial, action });
+    },
+    [send],
+  );
+
+  const triggerAlarm = useCallback(
+    (locationId: string, action: 'armAway' | 'armHome' | 'armNight' | 'disarm') => {
+      send({ type: 'alarmAction', locationId, action });
     },
     [send],
   );
@@ -107,6 +117,8 @@ export function useWebSocket() {
             setHomeConnectLinked(msg.homeConnectLinked ?? false);
             setSmartHQLinked(msg.smartHQLinked ?? false);
             setMyUplinkLinked(msg.myUplinkLinked ?? false);
+            setPanels(new Map(msg.panels.map((p) => [p.locationId, p])));
+            setAlarmConnected(msg.alarmConnected);
             break;
 
           case 'state':
@@ -137,6 +149,9 @@ export function useWebSocket() {
             setDishwashers(msg.dishwashers);
             setLaundry(msg.laundry);
             setHeatPumps(msg.heatPumps);
+          case 'alarmState':
+            setPanels(new Map(msg.panels.map((p) => [p.locationId, p])));
+            setAlarmConnected(msg.alarmConnected);
             break;
         }
       };
@@ -179,5 +194,8 @@ export function useWebSocket() {
     homeConnectLinked,
     smartHQLinked,
     myUplinkLinked,
+    panels,
+    alarmConnected,
+    triggerAlarm,
   };
 }

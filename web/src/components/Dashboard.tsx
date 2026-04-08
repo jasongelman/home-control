@@ -17,6 +17,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { useLutron } from '../context/LutronContext.js';
 import { GarageDoorControl } from './devices/GarageDoorControl.js';
 import { AppliancesSection } from './AppliancesSection.js';
+import { AlarmControl } from './AlarmControl.js';
 import { RoomDetail } from './RoomDetail.js';
 import { SceneEditor } from './SceneEditor.js';
 import { SettingsDialog } from './SettingsDialog.js';
@@ -188,6 +189,7 @@ const QUICK_ACTIONS = [
 
 export function Dashboard({ onSetup }: { onSetup?: () => void }) {
   const { devices, connectionStatus, processorConnected, setLevel, trackDevice, trackScene: trackSceneAction, getUsageEvents, doors, myqConnected, triggerGarage, dishwashers, laundry, heatPumps } = useLutron();
+  const { devices, connectionStatus, processorConnected, setLevel, trackDevice, trackScene: trackSceneAction, getUsageEvents, doors, myqConnected, triggerGarage, panels, alarmConnected } = useLutron();
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
   const { scenes, createScene, updateScene, deleteScene, activateScene, captureCurrentState } = useScenes();
   const [editorOpen, setEditorOpen] = useState(false);
@@ -526,6 +528,18 @@ export function Dashboard({ onSetup }: { onSetup?: () => void }) {
 
         {/* Appliances — dishwasher, laundry, heat pump */}
         <AppliancesSection dishwashers={dishwashers} laundry={laundry} heatPumps={heatPumps} />
+        {/* Alarm */}
+        {(alarmConnected || panels.size > 0) && (
+          <>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 4, mb: 1.5 }}>
+              <Typography variant="subtitle2" color="text.secondary">Security</Typography>
+              {!alarmConnected && (
+                <Chip label="offline" size="small" sx={{ height: 18, fontSize: 10, color: 'error.main', borderColor: 'error.main' }} variant="outlined" />
+              )}
+            </Box>
+            <AlarmControl />
+          </>
+        )}
 
         {/* Rooms */}
         <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 4, mb: 1.5 }}>

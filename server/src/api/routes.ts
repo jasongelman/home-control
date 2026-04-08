@@ -17,6 +17,7 @@ import type { MyQPoller } from '../myq/MyQPoller.js';
 import type { HomeConnectManager } from '../homeconnect/HomeConnectManager.js';
 import type { SmartHQManager } from '../smarthq/SmartHQManager.js';
 import type { MyUplinkManager } from '../myuplink/MyUplinkManager.js';
+import type { TotalConnectPoller } from '../totalconnect/TotalConnectPoller.js';
 import type { SunShadeAutomation } from '../automation/SunShadeAutomation.js';
 import { getSunPosition } from '../utils/SunPosition.js';
 import { handleChat, type ChatRequest } from './chat.js';
@@ -25,6 +26,7 @@ export function createRoutes(
   deviceStore: DeviceStore,
   connection: LEAPConnection,
   myqPoller: MyQPoller,
+  alarmPoller: TotalConnectPoller,
   sunAutomations: SunShadeAutomation[] = [],
   homeConnect?: HomeConnectManager,
   smartHQ?: SmartHQManager,
@@ -476,6 +478,53 @@ export function createRoutes(
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
+  });
+
+  // ── Total Connect 2.0 / Alarm ─────────────────────────────────────────────
+
+  /** GET /api/alarm/status — alarm connection status + panels */
+  router.get('/alarm/status', (_req, res) => {
+    res.json({
+      connected: alarmPoller.isConnected,
+      panels: alarmPoller.getPanels(),
+    });
+  });
+
+  /** GET /api/alarm/config — alarm credentials (password/userCode omitted) */
+  router.get('/alarm/config', (_req, res) => {
+    const config = loadConfig();
+    const tc = config.totalconnect ?? { username: '', password: '', userCode: '', enabled: false };
+    res.json({ username: tc.username, enabled: tc.enabled });
+  });
+
+  /** PUT /api/alarm/config — save credentials and restart poller */
+  router.put('/alarm/config', (req, res) => {
+    const { username, password, userCode, enabled } = req.body as {
+      username?: string;
+      password?: string;
+      userCode?: string;
+      enabled?: boolean;
+    };
+
+    const config = loadConfig();
+    config.totalconnect = {
+      username: username ?? config.totalconnect?.username ?? '',
+      password: password || config.totalconnect?.password || '',
+      userCode: userCode || config.totalconnect?.userCode || '',
+      enabled:  enabled ?? config.totalconnect?.enabled ?? false,
+    };
+    saveConfig(config);
+    alarmPoller.updateConfig(config.totalconnect);
+    res.json({ ok: true });
+  });
+
+  /** GET /api/alarm/zones/:locationId — zone list for a location */
+  router.get('/alarm/zones/:locationId', (req, res) => {
+    if (!alarmPoller.isConnected) {
+      res.status(503).json({ error: 'Alarm not connected' });
+      return;
+    }
+    res.json(alarmPoller.getZones(req.params.locationId));
   });
 
   // ── Automations ───────────────────────────────────────────────────────────

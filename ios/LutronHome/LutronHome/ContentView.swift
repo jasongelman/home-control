@@ -242,6 +242,7 @@ struct DashboardView: View {
     @Environment(HomeConnectManager.self) var homeConnect
     @Environment(MyUplinkManager.self) var myUplink
     @Environment(SmartHQManager.self) var smartHQ
+    @Environment(TotalConnectManager.self) var totalConnect
 
     @State private var showDishwasherStartSheet = false
     @State private var selectedDishwasherId: String?
@@ -593,6 +594,101 @@ struct DashboardView: View {
 
                 case .forYouDevice(let deviceId):
                     if let device = store.devices[deviceId] {
+                if myUplink.isLinked {
+                    AppliancePill(
+                        title: "Geothermal",
+                        icon: heatPumpIcon,
+                        status: myUplink.heatPump.operatingMode ?? "Connected",
+                        color: heatPumpColor,
+                        isActive: false,
+                        progress: nil,
+                        timeRemaining: myUplink.heatPump.currentPower.map { String(format: "%.1f kW", $0) }
+                    )
+                }
+
+                // Alarm panels
+                if totalConnect.isLinked {
+                    ForEach(totalConnect.panels) { panel in
+                        AlarmPill(panel: panel, manager: totalConnect)
+                    }
+                }
+
+                // Standard actions
+                QuickActionButton(title: "Main Floor Off", icon: "power", color: .orange) {
+                    store.turnOffLights(on: .mainFloor)
+                }
+                QuickActionButton(title: "Upstairs Off", icon: "power", color: .orange) {
+                    store.turnOffLights(on: .upstairs)
+                }
+                QuickActionButton(title: "Main Shades Toggle", icon: "blinds.vertical.closed", color: .blue) {
+                    store.toggleMainShades()
+                }
+            }
+        }
+    }
+
+    private var heatPumpIcon: String {
+        let mode = (myUplink.heatPump.operatingMode ?? "").lowercased()
+        if mode.contains("heat") { return "flame.fill" }
+        if mode.contains("cool") { return "snowflake" }
+        if mode.contains("hot water") || mode.contains("dhw") { return "drop.fill" }
+        return "leaf.fill"
+    }
+
+    private var heatPumpColor: Color {
+        let mode = (myUplink.heatPump.operatingMode ?? "").lowercased()
+        if mode.contains("heat") { return .orange }
+        if mode.contains("cool") { return .cyan }
+        if mode.contains("hot water") || mode.contains("dhw") { return .blue }
+        return .green
+    }
+
+    private func handleContextualAction(_ id: String) {
+        switch id {
+        case "morning":
+            // Morning lights scene — turn on key lights at low level
+            store.setRoomLights("Kitchen", level: 60)
+            store.setRoomLights("Family Room", level: 40)
+        case "shades_open":
+            store.toggleMainShades() // Opens if closed
+        case "shades_close":
+            store.toggleMainShades() // Closes if open
+        case "all_off":
+            store.turnOffAllLights(excludingNames: ["Bed 2 Entry"])
+        case "evening":
+            store.activateEveningScene()
+        case "goodnight":
+            // Turn off all lights except Sebastian's night light
+            store.turnOffAllLights(excludingNames: ["Bed 2 Entry"])
+        default:
+            break
+        }
+    }
+
+    // MARK: - For You (personalized suggestions)
+
+    @ViewBuilder
+    private var forYouSection: some View {
+        let isEvening = TimeBucket.current() == .evening
+        let topDevices = usageTracker.topDevices(isEvening ? 3 : 4, timeWindowSeconds: 30 * 24 * 60 * 60)
+        let hasContent = isEvening || (!topDevices.isEmpty && usageTracker.events.count >= 5)
+        if hasContent {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .font(.caption)
+                        .foregroundStyle(timeTheme.theme.accent)
+                    Text("For You")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .textCase(.uppercase)
+                        .tracking(0.5)
+                        .foregroundStyle(timeTheme.theme.sectionHeaderColor)
+                }
+
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    // Always show Evening scene during evening hours (6pm–2am)
+                    if isEvening {
                         Button {
                             let newLevel: Double = device.level > 0 ? 0 : 100
                             store.setLevel(device.integrationId, level: newLevel, fadeTime: 1)
@@ -885,6 +981,62 @@ struct QuickActionButton: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(Color(.separator).opacity(0.4), lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Alarm Pill
+
+struct AlarmPill: View {
+    let panel: AlarmPanel
+    let manager: TotalConnectManager
+
+    private var stateColor: Color {
+        switch panel.state {
+        case .disarmed:              return .green
+        case .armedAway, .armedHome, .armedNight: return .orange
+        case .alarming:              return .red
+        default:                     return .secondary
+        }
+    }
+
+    var body: some View {
+        Menu {
+            Button("Arm Away")  { Task { await manager.armAway(panel) } }
+                .disabled(panel.state == .armedAway || panel.state.isTransitioning)
+            Button("Arm Home")  { Task { await manager.armHome(panel) } }
+                .disabled(panel.state == .armedHome || panel.state.isTransitioning)
+            Button("Arm Night") { Task { await manager.armNight(panel) } }
+                .disabled(panel.state == .armedNight || panel.state.isTransitioning)
+            Divider()
+            Button("Disarm", role: .destructive) { Task { await manager.disarm(panel) } }
+                .disabled(panel.state == .disarmed || panel.state.isTransitioning)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: panel.state.icon)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(stateColor)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(panel.name)
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                    Text(panel.state.label)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+            }
+            .padding(14)
+            .frame(minHeight: 56)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(stateColor.opacity(panel.state == .alarming ? 0.8 : 0.2), lineWidth: panel.state == .alarming ? 1.5 : 0.5)
             )
         }
         .buttonStyle(.plain)

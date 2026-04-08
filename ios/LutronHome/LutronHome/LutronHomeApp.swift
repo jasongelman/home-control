@@ -10,6 +10,7 @@ struct LutronHomeApp: App {
     @State private var smartHQ = SmartHQManager()
     @State private var myQ = MyQManager()
     @State private var chatService = ChatService()
+    @State private var totalConnect = TotalConnectManager()
     @Environment(\.scenePhase) private var scenePhase
     @State private var showVoiceInput = false
 
@@ -24,6 +25,7 @@ struct LutronHomeApp: App {
                 .environment(smartHQ)
                 .environment(myQ)
                 .environment(chatService)
+                .environment(totalConnect)
                 .preferredColorScheme(.dark)
                 .onAppear {
                     store.usageTracker = usageTracker
@@ -62,6 +64,7 @@ struct LutronHomeApp: App {
                                     Button("Done") { showVoiceInput = false }
                                 }
                             }
+                        totalConnect.resume()
                     }
                 }
         }

@@ -1,0 +1,90 @@
+<h2>Widget Layout — Medium with Status & All Off</h2>
+<p class="subtitle">Added glanceable status line and lights-off button (excludes Sebastian's Room)</p>
+
+<div class="cards">
+  <!-- Small Widget (unchanged) -->
+  <div class="card" data-choice="small" style="cursor:default">
+    <div class="card-body" style="padding:0">
+      <div class="label" style="padding:12px 16px 4px">Small Widget (2×2) — unchanged</div>
+      <div style="background:linear-gradient(145deg,#1c1c1e,#2c2c2e);border-radius:16px;padding:14px;margin:8px 12px 12px;width:155px;height:155px;display:flex;flex-direction:column;justify-content:space-between;font-family:-apple-system,SF Pro Text,sans-serif;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="color:rgba(255,255,255,0.5);font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:0.5px;">Lutron Home</span>
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="rgba(255,255,255,0.4)">
+            <rect x="5.5" y="0.5" width="5" height="9" rx="2.5"/>
+            <path d="M3.5 7.5a4.5 4.5 0 009 0" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="8" y1="12" x2="8" y2="14.5" stroke="rgba(255,255,255,0.4)" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div style="margin-top:auto;">
+          <div style="color:rgba(255,255,255,0.92);font-size:14px;font-weight:500;">Evening Scene</div>
+          <div style="color:rgba(255,255,255,0.35);font-size:11px;margin-top:1px;">5 devices</div>
+        </div>
+        <div style="height:1px;background:rgba(255,255,255,0.08);margin:6px 0;"></div>
+        <div>
+          <div style="color:rgba(255,255,255,0.92);font-size:14px;font-weight:500;">Kitchen Lights</div>
+          <div style="color:rgba(255,255,255,0.35);font-size:11px;margin-top:1px;">Set to 80%</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Medium Widget — updated -->
+  <div class="card" data-choice="medium" style="cursor:default">
+    <div class="card-body" style="padding:0">
+      <div class="label" style="padding:12px 16px 4px">Medium Widget (4×2) — updated</div>
+      <div style="background:linear-gradient(145deg,#1c1c1e,#2c2c2e);border-radius:16px;padding:14px;margin:8px 12px 12px;width:340px;height:155px;display:flex;flex-direction:column;justify-content:space-between;font-family:-apple-system,SF Pro Text,sans-serif;">
+        <!-- Header row: title, status, mic -->
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:baseline;gap:8px;">
+            <span style="color:rgba(255,255,255,0.5);font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:0.5px;">Lutron Home</span>
+            <span style="color:rgba(255,255,255,0.3);font-size:10px;">3 lights on</span>
+          </div>
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="rgba(255,255,255,0.4)">
+            <rect x="5.5" y="0.5" width="5" height="9" rx="2.5"/>
+            <path d="M3.5 7.5a4.5 4.5 0 009 0" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1.3" stroke-linecap="round"/>
+            <line x1="8" y1="12" x2="8" y2="14.5" stroke="rgba(255,255,255,0.4)" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <!-- Actions + All Off row -->
+        <div style="display:flex;gap:12px;margin-top:auto;align-items:flex-end;">
+          <!-- Action 1 -->
+          <div style="flex:1;">
+            <div style="color:rgba(255,255,255,0.92);font-size:15px;font-weight:500;">Evening Scene</div>
+            <div style="color:rgba(255,255,255,0.35);font-size:11px;margin-top:2px;">5 devices</div>
+          </div>
+          <!-- Vertical divider -->
+          <div style="width:1px;height:32px;background:rgba(255,255,255,0.08);"></div>
+          <!-- Action 2 -->
+          <div style="flex:1;">
+            <div style="color:rgba(255,255,255,0.92);font-size:15px;font-weight:500;">Kitchen Lights</div>
+            <div style="color:rgba(255,255,255,0.35);font-size:11px;margin-top:2px;">Set to 80%</div>
+          </div>
+          <!-- Vertical divider -->
+          <div style="width:1px;height:32px;background:rgba(255,255,255,0.08);"></div>
+          <!-- All Off -->
+          <div style="display:flex;flex-direction:column;align-items:center;gap:3px;opacity:0.5;">
+            <!-- lightbulb.slash approximation -->
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+              <path d="M10 2a5.5 5.5 0 00-3.5 9.73V14a1 1 0 001 1h5a1 1 0 001-1v-2.27A5.5 5.5 0 0010 2z" fill="rgba(255,255,255,0.7)"/>
+              <rect x="7.5" y="15.5" width="5" height="1.5" rx="0.75" fill="rgba(255,255,255,0.7)"/>
+              <line x1="2" y1="18" x2="18" y2="2" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <span style="color:rgba(255,255,255,0.5);font-size:9px;font-weight:500;">All Off</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top:28px;">What changed in Medium</h3>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
+  <div style="background:#1e1e2e;border-radius:8px;padding:14px;">
+    <div class="label">Status line</div>
+    <p style="color:#aaa;font-size:13px;margin-top:6px;">"3 lights on" sits next to the header — updates dynamically. Shows "All off" when nothing is on.</p>
+  </div>
+  <div style="background:#1e1e2e;border-radius:8px;padding:14px;">
+    <div class="label">All Off button</div>
+    <p style="color:#aaa;font-size:13px;margin-top:6px;">Subtle icon + label at the end of the action row. Turns off all lights except Sebastian's Room. Same quiet style as the mic icon.</p>
+  </div>
+</div>

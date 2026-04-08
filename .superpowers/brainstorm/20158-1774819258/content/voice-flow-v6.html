@@ -1,0 +1,64 @@
+<h2>Voice Flow: 1 tap + speak</h2>
+<p class="subtitle">Same compact sheet, three states</p>
+
+<div style="display: flex; gap: 16px; justify-content: center; align-items: flex-start; flex-wrap: wrap; margin: 24px 0;">
+
+  <!-- Step 1: Listening -->
+  <div style="text-align: center;">
+    <div style="background: #1a1a2e; border-radius: 16px; padding: 20px 24px; border: 1px solid rgba(255,255,255,0.1); width: 200px; height: 80px; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 14px;">
+      <div style="height: 28px; display: flex; gap: 3px; align-items: center; flex-shrink: 0;">
+        <div style="width: 3px; height: 6px; background: #ff6b00; border-radius: 2px; animation: bar1 0.8s ease-in-out infinite;"></div>
+        <div style="width: 3px; height: 14px; background: #ff6b00; border-radius: 2px; animation: bar2 0.8s ease-in-out infinite;"></div>
+        <div style="width: 3px; height: 22px; background: #ff6b00; border-radius: 2px; animation: bar3 0.8s ease-in-out infinite;"></div>
+        <div style="width: 3px; height: 10px; background: #ff6b00; border-radius: 2px; animation: bar4 0.8s ease-in-out infinite;"></div>
+        <div style="width: 3px; height: 18px; background: #ff6b00; border-radius: 2px; animation: bar5 0.8s ease-in-out infinite;"></div>
+      </div>
+      <div style="color: #ccc; font-size: 14px;">"Turn on Jason's office"</div>
+    </div>
+    <div style="font-size: 11px; color: #666; margin-top: 8px;">Listening</div>
+  </div>
+
+  <div style="color: #444; font-size: 18px; padding-top: 36px;">→</div>
+
+  <!-- Step 2: Processing -->
+  <div style="text-align: center;">
+    <div style="background: #1a1a2e; border-radius: 16px; padding: 20px 24px; border: 1px solid rgba(255,255,255,0.1); width: 200px; height: 80px; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 14px;">
+      <div style="height: 28px; display: flex; gap: 3px; align-items: center; flex-shrink: 0;">
+        <div class="pbar" style="width: 3px; height: 6px; border-radius: 2px; animation: sweep 1.5s ease-in-out infinite; animation-delay: 0s;"></div>
+        <div class="pbar" style="width: 3px; height: 14px; border-radius: 2px; animation: sweep 1.5s ease-in-out infinite; animation-delay: 0.15s;"></div>
+        <div class="pbar" style="width: 3px; height: 22px; border-radius: 2px; animation: sweep 1.5s ease-in-out infinite; animation-delay: 0.3s;"></div>
+        <div class="pbar" style="width: 3px; height: 10px; border-radius: 2px; animation: sweep 1.5s ease-in-out infinite; animation-delay: 0.45s;"></div>
+        <div class="pbar" style="width: 3px; height: 18px; border-radius: 2px; animation: sweep 1.5s ease-in-out infinite; animation-delay: 0.6s;"></div>
+      </div>
+      <div style="color: #999; font-size: 14px;">"Turn on Jason's office"</div>
+    </div>
+    <div style="font-size: 11px; color: #666; margin-top: 8px;">Processing</div>
+  </div>
+
+  <div style="color: #444; font-size: 18px; padding-top: 36px;">→</div>
+
+  <!-- Step 3: Done -->
+  <div style="text-align: center;">
+    <div style="background: #1a1a2e; border-radius: 16px; padding: 20px 24px; border: 1px solid rgba(255,255,255,0.1); width: 200px; height: 80px; display: flex; align-items: center; justify-content: center;">
+      <div style="color: #4ade80; font-size: 15px; font-weight: 500;">Office light set to 100%</div>
+    </div>
+    <div style="font-size: 11px; color: #666; margin-top: 8px;">Auto-dismiss 2s</div>
+  </div>
+
+</div>
+
+<div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 12px 16px; font-size: 13px; color: #888;">
+  One fixed-size sheet with three states. No resizing, no extra taps. Text input stays at the bottom as fallback.
+</div>
+
+<style>
+@keyframes bar1 { 0%, 100% { height: 6px; } 50% { height: 22px; } }
+@keyframes bar2 { 0%, 100% { height: 14px; } 50% { height: 26px; } }
+@keyframes bar3 { 0%, 100% { height: 22px; } 50% { height: 8px; } }
+@keyframes bar4 { 0%, 100% { height: 10px; } 50% { height: 24px; } }
+@keyframes bar5 { 0%, 100% { height: 18px; } 50% { height: 6px; } }
+@keyframes sweep {
+  0%, 100% { background: #555; }
+  40%, 60% { background: #ff6b00; }
+}
+</style>

@@ -17,6 +17,11 @@ import type { MyQDoor } from './myq/types.js';
 import type { DishwasherStatus } from './homeconnect/types.js';
 import type { LaundryAppliance } from './smarthq/types.js';
 import type { HeatPumpStatus } from './myuplink/types.js';
+import { TotalConnectPoller } from './totalconnect/TotalConnectPoller.js';
+import { SunShadeAutomation } from './automation/SunShadeAutomation.js';
+import type { LEAPZone } from './lutron/LEAPConnection.js';
+import type { MyQDoor } from './myq/types.js';
+import type { AlarmPanel } from './totalconnect/types.js';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
@@ -43,6 +48,9 @@ const myqPoller = new MyQPoller(config0.myq ?? { email: '', password: '', enable
 const homeConnect = new HomeConnectManager(config0.homeConnect ?? { clientId: '', clientSecret: '', enabled: false });
 const smartHQ = new SmartHQManager(config0.smartHQ ?? { email: '', password: '', enabled: false });
 const myUplink = new MyUplinkManager(config0.myUplink ?? { clientId: '', clientSecret: '', enabled: false });
+const alarmPoller = new TotalConnectPoller(
+  config0.totalconnect ?? { username: '', password: '', userCode: '', enabled: false },
+);
 
 // ── Sun-shade automations ──────────────────────────────────────────────────
 const sunAutomations = (config0.automations ?? []).map(
@@ -87,6 +95,8 @@ connection.on('zonesLoaded', (zones: LEAPZone[]) => {
     homeConnectLinked: homeConnect.isLinked,
     smartHQLinked: smartHQ.isLinked,
     myUplinkLinked: myUplink.isLinked,
+    panels: alarmPoller.getPanels(),
+    alarmConnected: alarmPoller.isConnected,
   });
 });
 
@@ -155,6 +165,20 @@ myUplink.on('configChanged', (cfg) => {
   const config = loadConfig();
   config.myUplink = cfg;
   saveConfig(config);
+// ── Wire up Total Connect 2.0 (alarm) events ──────────────────────────────────
+
+alarmPoller.on('stateChange', (panels: AlarmPanel[]) => {
+  stateSync.broadcast({ type: 'alarmState', panels, alarmConnected: true });
+});
+
+alarmPoller.on('connected', () => {
+  console.log('Total Connect 2.0 connected');
+  stateSync.broadcast({ type: 'alarmState', panels: alarmPoller.getPanels(), alarmConnected: true });
+});
+
+alarmPoller.on('disconnected', (reason: string) => {
+  console.log(`Total Connect 2.0 disconnected: ${reason}`);
+  stateSync.broadcast({ type: 'alarmState', panels: [], alarmConnected: false });
 });
 
 // ── Auto-reconnect logic ──────────────────────────────────────────────────────
@@ -192,6 +216,7 @@ function scheduleReconnect() {
 // ── REST API ──────────────────────────────────────────────────────────────────
 
 app.use('/api', createRoutes(deviceStore, connection, myqPoller, sunAutomations, homeConnect, smartHQ, myUplink));
+app.use('/api', createRoutes(deviceStore, connection, myqPoller, alarmPoller, sunAutomations));
 
 // ── HTTP + WebSocket ──────────────────────────────────────────────────────────
 
@@ -201,6 +226,7 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 wss.on('connection', (ws) => {
   console.log(`WebSocket client connected (${stateSync.clientCount + 1} total)`);
   handleWebSocket(ws, deviceStore, stateSync, connection, myqPoller, homeConnect, smartHQ, myUplink);
+  handleWebSocket(ws, deviceStore, stateSync, connection, myqPoller, alarmPoller);
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
@@ -233,6 +259,12 @@ server.listen(PORT, () => {
   if (config.myUplink?.enabled && config.myUplink.accessToken) {
     console.log('Starting myUplink polling...');
     myUplink.start();
+  const tcCfg = config.totalconnect;
+  if (tcCfg?.enabled && tcCfg.username && tcCfg.password) {
+    console.log(`Starting Total Connect 2.0 poller for ${tcCfg.username}...`);
+    alarmPoller.start();
+  } else {
+    console.log('Total Connect 2.0 not configured. Add credentials via Settings → Alarm.');
   }
 
   if (config.processor.ip) {

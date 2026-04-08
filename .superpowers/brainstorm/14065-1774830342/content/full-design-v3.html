@@ -1,0 +1,157 @@
+<h2>Complete Design Overview</h2>
+<p class="subtitle">All three parts of the redesign</p>
+
+<!-- Part 1: Voice Flow -->
+<div class="section">
+  <h3>Part 1: Streamlined Voice Flow</h3>
+  <p style="color: #888; font-size: 13px; margin-bottom: 16px;">Widget mic tap → app opens → fully hands-free from here</p>
+
+  <div style="display: flex; gap: 16px; justify-content: center; align-items: flex-start; flex-wrap: wrap;">
+
+    <div style="text-align: center;">
+      <div style="background: #1a1a2e; border-radius: 16px; padding: 20px 24px; border: 1px solid rgba(255,255,255,0.1); width: 200px; height: 80px; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 14px;">
+        <div style="height: 28px; display: flex; gap: 3px; align-items: center; flex-shrink: 0;">
+          <div style="width: 3px; height: 6px; background: #ff6b00; border-radius: 2px; animation: bar1 0.8s ease-in-out infinite;"></div>
+          <div style="width: 3px; height: 14px; background: #ff6b00; border-radius: 2px; animation: bar2 0.8s ease-in-out infinite;"></div>
+          <div style="width: 3px; height: 22px; background: #ff6b00; border-radius: 2px; animation: bar3 0.8s ease-in-out infinite;"></div>
+          <div style="width: 3px; height: 10px; background: #ff6b00; border-radius: 2px; animation: bar4 0.8s ease-in-out infinite;"></div>
+          <div style="width: 3px; height: 18px; background: #ff6b00; border-radius: 2px; animation: bar5 0.8s ease-in-out infinite;"></div>
+        </div>
+        <div style="color: #ccc; font-size: 14px;">"Turn on Jason's office"</div>
+      </div>
+      <div style="font-size: 11px; color: #666; margin-top: 6px;">Listening</div>
+    </div>
+
+    <div style="color: #444; font-size: 18px; padding-top: 36px;">→</div>
+
+    <div style="text-align: center;">
+      <div style="background: #1a1a2e; border-radius: 16px; padding: 20px 24px; border: 1px solid rgba(255,255,255,0.1); width: 200px; height: 80px; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 14px;">
+        <div style="height: 28px; display: flex; gap: 3px; align-items: center; flex-shrink: 0;">
+          <div class="pbar" style="width: 3px; height: 6px; border-radius: 2px; animation: sweep 1.5s ease-in-out infinite; animation-delay: 0s;"></div>
+          <div class="pbar" style="width: 3px; height: 14px; border-radius: 2px; animation: sweep 1.5s ease-in-out infinite; animation-delay: 0.15s;"></div>
+          <div class="pbar" style="width: 3px; height: 22px; border-radius: 2px; animation: sweep 1.5s ease-in-out infinite; animation-delay: 0.3s;"></div>
+          <div class="pbar" style="width: 3px; height: 10px; border-radius: 2px; animation: sweep 1.5s ease-in-out infinite; animation-delay: 0.45s;"></div>
+          <div class="pbar" style="width: 3px; height: 18px; border-radius: 2px; animation: sweep 1.5s ease-in-out infinite; animation-delay: 0.6s;"></div>
+        </div>
+        <div style="color: #999; font-size: 14px;">"Turn on Jason's office"</div>
+      </div>
+      <div style="font-size: 11px; color: #666; margin-top: 6px;">Processing</div>
+    </div>
+
+    <div style="color: #444; font-size: 18px; padding-top: 36px;">→</div>
+
+    <div style="text-align: center;">
+      <div style="background: #1a1a2e; border-radius: 16px; padding: 20px 24px; border: 1px solid rgba(255,255,255,0.1); width: 200px; height: 80px; display: flex; align-items: center; justify-content: center;">
+        <div style="color: #4ade80; font-size: 15px; font-weight: 500;">Office light set to 100%</div>
+      </div>
+      <div style="font-size: 11px; color: #666; margin-top: 6px;">Auto-dismiss 2s</div>
+    </div>
+
+  </div>
+
+  <div style="background: rgba(255,107,0,0.06); border: 1px solid rgba(255,107,0,0.15); border-radius: 10px; padding: 10px 14px; font-size: 12px; color: #999; margin-top: 16px;">
+    <strong style="color: #ff6b00;">How it works:</strong> Silence-detection timer (1.5s) replaces broken <code>isFinal</code>. Timer starts after first speech detected, resets on each new word. Auto-submits when you stop talking.
+  </div>
+</div>
+
+<!-- Part 2: Siri Promotion -->
+<div class="section">
+  <h3>Part 2: Siri Promotion</h3>
+  <p style="color: #888; font-size: 13px; margin-bottom: 16px;">Zero-tap voice path for power users</p>
+
+  <div style="display: flex; gap: 16px; flex-wrap: wrap; justify-content: center;">
+
+    <!-- SiriTipView -->
+    <div style="background: #1a1a2e; border-radius: 16px; padding: 20px; border: 1px solid rgba(255,255,255,0.1); width: 220px;">
+      <div style="font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 8px;">SiriTipView on Dashboard</div>
+      <div style="background: #111; border-radius: 12px; padding: 12px; border: 1px solid rgba(255,255,255,0.06);">
+        <div style="font-size: 11px; color: #888; margin-bottom: 4px;">TRY SAYING</div>
+        <div style="font-size: 13px; color: #ccc;">"Hey Siri, tell Lutron Home to turn off the lights"</div>
+      </div>
+      <div style="font-size: 11px; color: #666; margin-top: 8px;">One-time, dismissable. Native iOS component.</div>
+    </div>
+
+    <!-- Settings rows -->
+    <div style="background: #1a1a2e; border-radius: 16px; padding: 20px; border: 1px solid rgba(255,255,255,0.1); width: 220px;">
+      <div style="font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 8px;">Settings → Siri & Shortcuts</div>
+      <div style="background: #111; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06);">
+        <div style="padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.06);">
+          <span style="font-size: 13px; color: #ccc;">Set Up Siri</span>
+          <span style="font-size: 13px; color: #555;">›</span>
+        </div>
+        <div style="padding: 10px 12px; display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 13px; color: #ccc;">Add to Shortcuts</span>
+          <span style="font-size: 13px; color: #555;">›</span>
+        </div>
+      </div>
+      <div style="font-size: 11px; color: #666; margin-top: 8px;">System Siri setup flow + installable dictation shortcut.</div>
+    </div>
+
+    <!-- Shortcut result -->
+    <div style="background: #1a1a2e; border-radius: 16px; padding: 20px; border: 1px solid rgba(255,255,255,0.1); width: 220px;">
+      <div style="font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 8px;">Home Screen Shortcut</div>
+      <div style="display: flex; align-items: center; gap: 12px; background: #111; border-radius: 12px; padding: 12px; border: 1px solid rgba(255,255,255,0.06);">
+        <div style="width: 48px; height: 48px; background: #222; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <rect x="8.5" y="2" width="7" height="13" rx="3.5" fill="#999"/>
+            <path d="M5 11.5C5 15.366 8.134 18.5 12 18.5C15.866 18.5 19 15.366 19 11.5" stroke="#999" stroke-width="1.8" stroke-linecap="round"/>
+            <line x1="12" y1="18.5" x2="12" y2="22" stroke="#999" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div>
+          <div style="font-size: 13px; color: #ccc;">Lutron Voice</div>
+          <div style="font-size: 11px; color: #666;">Dictate → execute</div>
+        </div>
+      </div>
+      <div style="font-size: 11px; color: #666; margin-top: 8px;">One tap from Home Screen. Uses system dictation.</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Part 3: Error Handling -->
+<div class="section">
+  <h3>Part 3: Error & Edge Cases</h3>
+
+  <div style="display: flex; gap: 16px; flex-wrap: wrap; justify-content: center;">
+
+    <div style="text-align: center;">
+      <div style="background: #1a1a2e; border-radius: 16px; padding: 20px 24px; border: 1px solid rgba(255,255,255,0.1); width: 200px; height: 80px; display: flex; align-items: center; justify-content: center;">
+        <div style="color: #f87171; font-size: 14px; font-weight: 500;">Couldn't reach server</div>
+      </div>
+      <div style="font-size: 11px; color: #666; margin-top: 6px;">Error — stays open, no auto-dismiss</div>
+    </div>
+
+    <div style="text-align: center;">
+      <div style="background: #1a1a2e; border-radius: 16px; padding: 20px 24px; border: 1px solid rgba(255,255,255,0.1); width: 200px; height: 80px; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 14px;">
+        <div style="height: 28px; display: flex; gap: 3px; align-items: center; flex-shrink: 0;">
+          <div style="width: 3px; height: 6px; background: #555; border-radius: 2px;"></div>
+          <div style="width: 3px; height: 14px; background: #555; border-radius: 2px;"></div>
+          <div style="width: 3px; height: 22px; background: #555; border-radius: 2px;"></div>
+          <div style="width: 3px; height: 10px; background: #555; border-radius: 2px;"></div>
+          <div style="width: 3px; height: 18px; background: #555; border-radius: 2px;"></div>
+        </div>
+        <div style="color: #999; font-size: 13px;">No speech detected</div>
+      </div>
+      <div style="font-size: 11px; color: #666; margin-top: 6px;">Timeout after 10s — falls back to text input</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Scope -->
+<div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 14px 18px; font-size: 13px; color: #888; margin-top: 8px;">
+  <strong style="color: #ccc;">Out of scope:</strong> Widget layout changes, ChatService/Intent logic changes, multi-command conversations.
+</div>
+
+<style>
+@keyframes bar1 { 0%, 100% { height: 6px; } 50% { height: 22px; } }
+@keyframes bar2 { 0%, 100% { height: 14px; } 50% { height: 26px; } }
+@keyframes bar3 { 0%, 100% { height: 22px; } 50% { height: 8px; } }
+@keyframes bar4 { 0%, 100% { height: 10px; } 50% { height: 24px; } }
+@keyframes bar5 { 0%, 100% { height: 18px; } 50% { height: 6px; } }
+@keyframes sweep {
+  0%, 100% { background: #555; }
+  40%, 60% { background: #ff6b00; }
+}
+</style>
