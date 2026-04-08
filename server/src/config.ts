@@ -19,6 +19,12 @@ const DEFAULT_CONFIG: AppConfig = {
     password: '',
     enabled: false,
   },
+  totalconnect: {
+    username: '',
+    password: '',
+    userCode: '',
+    enabled: false,
+  },
 };
 
 export function loadConfig(): AppConfig {

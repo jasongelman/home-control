@@ -242,6 +242,7 @@ struct DashboardView: View {
     @Environment(HomeConnectManager.self) var homeConnect
     @Environment(MyUplinkManager.self) var myUplink
     @Environment(SmartHQManager.self) var smartHQ
+    @Environment(TotalConnectManager.self) var totalConnect
 
     var body: some View {
         ScrollView {
@@ -465,6 +466,13 @@ struct DashboardView: View {
                         progress: nil,
                         timeRemaining: myUplink.heatPump.currentPower.map { String(format: "%.1f kW", $0) }
                     )
+                }
+
+                // Alarm panels
+                if totalConnect.isLinked {
+                    ForEach(totalConnect.panels) { panel in
+                        AlarmPill(panel: panel, manager: totalConnect)
+                    }
                 }
 
                 // Standard actions
@@ -797,6 +805,62 @@ struct QuickActionButton: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(Color(.separator).opacity(0.4), lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Alarm Pill
+
+struct AlarmPill: View {
+    let panel: AlarmPanel
+    let manager: TotalConnectManager
+
+    private var stateColor: Color {
+        switch panel.state {
+        case .disarmed:              return .green
+        case .armedAway, .armedHome, .armedNight: return .orange
+        case .alarming:              return .red
+        default:                     return .secondary
+        }
+    }
+
+    var body: some View {
+        Menu {
+            Button("Arm Away")  { Task { await manager.armAway(panel) } }
+                .disabled(panel.state == .armedAway || panel.state.isTransitioning)
+            Button("Arm Home")  { Task { await manager.armHome(panel) } }
+                .disabled(panel.state == .armedHome || panel.state.isTransitioning)
+            Button("Arm Night") { Task { await manager.armNight(panel) } }
+                .disabled(panel.state == .armedNight || panel.state.isTransitioning)
+            Divider()
+            Button("Disarm", role: .destructive) { Task { await manager.disarm(panel) } }
+                .disabled(panel.state == .disarmed || panel.state.isTransitioning)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: panel.state.icon)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(stateColor)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(panel.name)
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                    Text(panel.state.label)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+            }
+            .padding(14)
+            .frame(minHeight: 56)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(stateColor.opacity(panel.state == .alarming ? 0.8 : 0.2), lineWidth: panel.state == .alarming ? 1.5 : 0.5)
             )
         }
         .buttonStyle(.plain)

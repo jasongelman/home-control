@@ -1,4 +1,5 @@
 import Foundation
+import AuthenticationServices
 import Observation
 
 // MARK: - Models
@@ -156,85 +157,101 @@ class SmartHQManager: @unchecked Sendable {
     /// Convenience: first dryer
     var dryer: LaundryApplianceStatus? { appliances.first(where: { $0.isDryer }) }
 
-    // User credentials (email/password for GE SmartHQ account)
-    var email: String {
-        get { KeychainHelper.loadString(for: "ge_email") ?? "" }
-        set { KeychainHelper.save(newValue, for: "ge_email") }
-    }
-    var password: String {
-        get { KeychainHelper.loadString(for: "ge_password") ?? "" }
-        set { KeychainHelper.save(newValue, for: "ge_password") }
-    }
-
-    // GE SmartHQ / Brillion API
-    private let authURL = "https://accounts.brillion.geappliances.com/oauth2/token"
-    private let apiBase = "https://api.brillion.geappliances.com"
-    // Mobile app client ID (used by open-source integrations such as Home Assistant gehome)
-    private let clientId = "564c31616c4f7768536a514b"
+    // GE SmartHQ / Brillion OAuth2 — authorization_code flow
+    // Credentials extracted from the GE SmartHQ mobile app (community-maintained, same as gehome SDK)
+    private let loginBase    = "https://accounts.brillion.geappliances.com"
+    private let apiBase      = "https://api.brillion.geappliances.com"
+    private let clientId     = "564c31616c4f7474434b307435412b4d2f6e7672"
+    private let clientSecret = "6476512b5246446d452f697154444941387052645938466e5671746e5847593d"
+    private let redirectURI  = "brillion.4e617a766474657344444e562b5935566e51324a://oauth/redirect"
 
     private var tokens: SmartHQTokens? {
         didSet { saveTokens() }
     }
+    private var webAuthSession: ASWebAuthenticationSession?
     private var pollTimer: Timer?
 
     init() {
         loadTokens()
     }
 
-    // MARK: - Authentication
+    // MARK: - Authentication (OAuth2 authorization_code via ASWebAuthenticationSession)
 
-    func login() async {
-        guard !email.isEmpty, !password.isEmpty else {
-            errorMessage = "Enter email and password"
-            return
+    func startOAuth(from anchor: ASWebAuthenticationPresentationContextProviding) {
+        var components = URLComponents(string: "\(loginBase)/oauth2/g_authenticate")!
+        components.queryItems = [
+            URLQueryItem(name: "client_id",     value: clientId),
+            URLQueryItem(name: "response_type", value: "code"),
+            URLQueryItem(name: "redirect_uri",  value: redirectURI),
+            URLQueryItem(name: "access_type",   value: "offline"),
+        ]
+
+        guard let authURL = components.url else { return }
+
+        let callbackScheme = String(redirectURI.split(separator: ":").first ?? "")
+
+        let session = ASWebAuthenticationSession(url: authURL, callbackURLScheme: callbackScheme) { [weak self] callbackURL, error in
+            guard let self else { return }
+            if let error {
+                self.errorMessage = "Authentication cancelled or failed: \(error.localizedDescription)"
+                return
+            }
+            guard let callbackURL,
+                  let code = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?
+                              .queryItems?.first(where: { $0.name == "code" })?.value
+            else {
+                self.errorMessage = "No authorization code in callback"
+                return
+            }
+            Task { await self.exchangeCode(code) }
         }
+        session.presentationContextProvider = anchor
+        session.prefersEphemeralWebBrowserSession = false
+        webAuthSession = session
+        session.start()
+    }
 
+    private func exchangeCode(_ code: String) async {
         isLoading = true
         defer { isLoading = false }
 
-        var request = URLRequest(url: URL(string: authURL)!)
+        var request = URLRequest(url: URL(string: "\(loginBase)/oauth2/token")!)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
         let body = [
-            "grant_type=password",
-            "username=\(email.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? email)",
-            "password=\(password.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? password)",
-            "client_id=\(clientId)"
+            "grant_type=authorization_code",
+            "code=\(code)",
+            "client_id=\(clientId)",
+            "client_secret=\(clientSecret)",
+            "redirect_uri=\(redirectURI.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? redirectURI)",
         ].joined(separator: "&")
         request.httpBody = body.data(using: .utf8)
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse else {
-                errorMessage = "Invalid response"
-                return
-            }
+            guard let http = response as? HTTPURLResponse else { return }
 
-            if httpResponse.statusCode == 200 {
+            if http.statusCode == 200 {
                 let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-                let accessToken = json["access_token"] as? String ?? ""
-                let refreshToken = json["refresh_token"] as? String ?? ""
                 let expiresIn = json["expires_in"] as? Int ?? 3600
-
                 tokens = SmartHQTokens(
-                    accessToken: accessToken,
-                    refreshToken: refreshToken,
-                    expiresAt: Date().addingTimeInterval(TimeInterval(expiresIn - 60))
+                    accessToken:  json["access_token"]  as? String ?? "",
+                    refreshToken: json["refresh_token"] as? String ?? "",
+                    expiresAt:    Date().addingTimeInterval(TimeInterval(expiresIn - 60))
                 )
                 errorMessage = nil
-                print("SmartHQ: login successful, token expires in \(expiresIn)s")
-
+                print("SmartHQ: OAuth successful, token expires in \(expiresIn)s")
                 await fetchAppliances()
                 startPolling()
             } else {
-                let body = String(data: data, encoding: .utf8) ?? ""
-                errorMessage = "Login failed (HTTP \(httpResponse.statusCode))"
-                print("SmartHQ: login failed — \(body)")
+                let bodyText = String(data: data, encoding: .utf8) ?? ""
+                errorMessage = "Token exchange failed (HTTP \(http.statusCode))"
+                print("SmartHQ: token exchange failed — \(bodyText)")
             }
         } catch {
-            errorMessage = "Login error: \(error.localizedDescription)"
-            print("SmartHQ: login error — \(error)")
+            errorMessage = "Token exchange error: \(error.localizedDescription)"
+            print("SmartHQ: token exchange error — \(error)")
         }
     }
 
@@ -242,14 +259,15 @@ class SmartHQManager: @unchecked Sendable {
         guard let currentTokens = tokens else { return false }
         guard Date() >= currentTokens.expiresAt else { return true }
 
-        var request = URLRequest(url: URL(string: authURL)!)
+        var request = URLRequest(url: URL(string: "\(loginBase)/oauth2/token")!)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
         let body = [
             "grant_type=refresh_token",
             "refresh_token=\(currentTokens.refreshToken)",
-            "client_id=\(clientId)"
+            "client_id=\(clientId)",
+            "client_secret=\(clientSecret)",
         ].joined(separator: "&")
         request.httpBody = body.data(using: .utf8)
 
@@ -279,7 +297,11 @@ class SmartHQManager: @unchecked Sendable {
         pollTimer?.invalidate()
         pollTimer = nil
         appliances = []
+        webAuthSession?.cancel()
+        webAuthSession = nil
         KeychainHelper.delete(for: "ge_tokens")
+        KeychainHelper.delete(for: "ge_email")
+        KeychainHelper.delete(for: "ge_password")
     }
 
     // MARK: - API Requests

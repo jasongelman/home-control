@@ -7,15 +7,17 @@ struct SettingsView: View {
     @Environment(MyUplinkManager.self) var myUplink
     @Environment(SmartHQManager.self) var smartHQ
     @Environment(MyQManager.self) var myQ
+    @Environment(TotalConnectManager.self) var totalConnect
     @State private var host: String = ""
     @State private var hcClientId: String = ""
     @State private var hcClientSecret: String = ""
     @State private var muClientId: String = ""
     @State private var muClientSecret: String = ""
-    @State private var geEmail: String = ""
-    @State private var gePassword: String = ""
     @State private var myqEmail: String = ""
     @State private var myqPassword: String = ""
+    @State private var tcUsername: String = ""
+    @State private var tcPassword: String = ""
+    @State private var tcUserCode: String = ""
 
     private let oauthContext = OAuthPresentationContext()
 
@@ -154,30 +156,19 @@ struct SettingsView: View {
                 }
 
                 if !smartHQ.isLinked {
-                    TextField("GE SmartHQ Email", text: $geEmail)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.emailAddress)
-                        .onChange(of: geEmail) { _, val in smartHQ.email = val }
-
-                    SecureField("GE SmartHQ Password", text: $gePassword)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .onChange(of: gePassword) { _, val in smartHQ.password = val }
-
                     Button {
-                        Task { await smartHQ.login() }
+                        smartHQ.startOAuth(from: oauthContext)
                     } label: {
                         HStack {
                             if smartHQ.isLoading {
-                                ProgressView()
-                                    .scaleEffect(0.8)
+                                ProgressView().scaleEffect(0.8)
                             }
                             Image(systemName: "link")
-                            Text("Sign In")
+                            Text("Link GE SmartHQ Account")
                         }
                     }
-                    .disabled(geEmail.isEmpty || gePassword.isEmpty || smartHQ.isLoading)
+                    .disabled(smartHQ.isLoading)
+                    .tint(.indigo)
                 } else {
                     if smartHQ.appliances.isEmpty {
                         HStack {
@@ -219,7 +210,7 @@ struct SettingsView: View {
             } header: {
                 Text("GE SmartHQ")
             } footer: {
-                Text("Sign in with your GE SmartHQ account (same credentials as the SmartHQ app).")
+                Text("Sign in with your GE SmartHQ (Brillion) account. You'll be taken to GE's login page in Safari.")
             }
 
             // MARK: - myUplink (Dandelion Geothermal)
@@ -378,6 +369,93 @@ struct SettingsView: View {
                 Text("MyQ")
             } footer: {
                 Text("Sign in with your Chamberlain or LiftMaster MyQ account. Requires the MyQ app to be set up first.")
+            }
+
+            // MARK: - Resideo / Total Connect 2.0
+
+            Section {
+                HStack {
+                    Image(systemName: "lock.shield.fill")
+                        .foregroundStyle(.red)
+                    Text("Resideo Alarm")
+                        .fontWeight(.medium)
+                    Spacer()
+                    if totalConnect.isLinked {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                }
+
+                if !totalConnect.isLinked {
+                    TextField("Total Connect Username", text: $tcUsername)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .onChange(of: tcUsername) { _, val in totalConnect.username = val }
+
+                    SecureField("Password", text: $tcPassword)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .onChange(of: tcPassword) { _, val in totalConnect.password = val }
+
+                    SecureField("User Code (PIN)", text: $tcUserCode)
+                        .keyboardType(.numberPad)
+                        .onChange(of: tcUserCode) { _, val in totalConnect.userCode = val }
+
+                    Button {
+                        Task { await totalConnect.login() }
+                    } label: {
+                        HStack {
+                            if totalConnect.isLoading {
+                                ProgressView().scaleEffect(0.8)
+                            }
+                            Image(systemName: "link")
+                            Text("Sign In")
+                        }
+                    }
+                    .disabled(tcUsername.isEmpty || tcPassword.isEmpty || totalConnect.isLoading)
+                    .tint(.red)
+                } else {
+                    if totalConnect.panels.isEmpty {
+                        HStack {
+                            Text("Panels")
+                            Spacer()
+                            Text("Discovering...")
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        ForEach(totalConnect.panels) { panel in
+                            HStack {
+                                Image(systemName: panel.state.icon)
+                                    .foregroundStyle(panel.state == .alarming ? .red : panel.state.isArmed ? .orange : .green)
+                                    .frame(width: 20)
+                                Text(panel.name)
+                                Spacer()
+                                Text(panel.state.label)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    Button(role: .destructive) {
+                        totalConnect.unlink()
+                    } label: {
+                        HStack {
+                            Image(systemName: "link.badge.plus")
+                                .symbolRenderingMode(.multicolor)
+                            Text("Sign Out")
+                        }
+                    }
+                }
+
+                if let error = totalConnect.errorMessage {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            } header: {
+                Text("Resideo")
+            } footer: {
+                Text("Sign in with your Total Connect 2.0 account credentials (same as the T.C. 2.0 app). Your user code is the PIN used to arm/disarm your panel.")
             }
 
             // MARK: - For You Insights

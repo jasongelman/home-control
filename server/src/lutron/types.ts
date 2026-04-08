@@ -88,6 +88,7 @@ export interface AppConfig {
   devices: DeviceConfig[];
   scenes?: Scene[];
   myq?: MyQConfig;
+  totalconnect?: TotalConnectConfig;
   automations?: AutomationConfig[];
 }
 
@@ -108,14 +109,46 @@ export interface MyQDoor {
   lastUpdated: number;
 }
 
+// ── Total Connect 2.0 (Resideo Alarm) ────────────────────────────────────────
+
+export interface TotalConnectConfig {
+  username: string;
+  password: string;
+  userCode: string;
+  enabled: boolean;
+}
+
+export type PanelState =
+  | 'disarmed' | 'armedAway' | 'armedHome' | 'armedNight'
+  | 'alarming' | 'arming' | 'disarming' | 'unknown';
+
+export interface AlarmPanel {
+  locationId: string;
+  securityDeviceId: string;
+  name: string;
+  state: PanelState;
+  rawArmingState: number;
+  partitionIds: number[];
+  lastUpdated: number;
+}
+
+export interface AlarmZone {
+  zoneId: number;
+  name: string;
+  faulted: boolean;
+  bypassed: boolean;
+  lowBattery: boolean;
+}
+
 // ── WebSocket message types ───────────────────────────────────────────────────
 
 export type ServerMessage =
-  | { type: 'fullState'; devices: DeviceState[]; processorConnected: boolean; doors: MyQDoor[]; myqConnected: boolean }
+  | { type: 'fullState'; devices: DeviceState[]; processorConnected: boolean; doors: MyQDoor[]; myqConnected: boolean; panels: AlarmPanel[]; alarmConnected: boolean }
   | { type: 'state'; deviceId: number; level: number; timestamp: number }
   | { type: 'connected'; processorIp: string }
   | { type: 'disconnected'; reason: string }
   | { type: 'garageState'; doors: MyQDoor[]; myqConnected: boolean }
+  | { type: 'alarmState'; panels: AlarmPanel[]; alarmConnected: boolean }
   | { type: 'error'; message: string }
   | { type: 'pong' };
 
@@ -125,4 +158,5 @@ export type ClientMessage =
   | { type: 'releaseButton'; deviceId: number; component: number }
   | { type: 'queryDevice'; deviceId: number }
   | { type: 'garageAction'; serial: string; action: 'open' | 'close' }
+  | { type: 'alarmAction'; locationId: string; action: 'armAway' | 'armHome' | 'armNight' | 'disarm' }
   | { type: 'ping' };
