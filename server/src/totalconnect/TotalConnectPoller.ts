@@ -1,5 +1,8 @@
 import { EventEmitter } from 'events';
-import type { TotalConnectConfig, AlarmPanel, AlarmZone } from './types.js';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+import type { TotalConnectConfig, AlarmPanel, AlarmZone, PanelState } from './types.js';
 import {
   authenticate,
   getPanelStatus,
@@ -13,6 +16,20 @@ import { ArmType } from './types.js';
 const POLL_INTERVAL = 30_000;          // 30s — matches TC2 app polling
 const TOKEN_TTL     = 25 * 60 * 1000; // 25 min (tokens expire at ~30 min)
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const TOPOLOGY_PATH = join(__dirname, '..', '..', 'data', 'alarm-topology.json');
+
+interface CachedTopology {
+  panels: Array<{
+    locationId: string;
+    securityDeviceId: string;
+    name: string;
+    partitionIds: number[];
+  }>;
+  zones: Record<string, Array<{ zoneId: number; name: string }>>;
+  savedAt: number;
+}
+
 export class TotalConnectPoller extends EventEmitter {
   private config: TotalConnectConfig;
   private session: TCSession | null = null;
@@ -25,6 +42,76 @@ export class TotalConnectPoller extends EventEmitter {
   constructor(config: TotalConnectConfig) {
     super();
     this.config = config;
+    this.loadTopologyCache();
+  }
+
+  // ── Topology cache (server/data/alarm-topology.json, gitignored) ────────────
+  //
+  // The alarm setup (locations, panel name, zone names) changes rarely. We
+  // persist it so that:
+  //   1. After server restart, getPanels() and getZones() return *named*
+  //      entries immediately, with state='unknown' until the first poll
+  //      completes. This means iOS/web don't have to wait on a TC2 round-trip
+  //      to render the UI.
+  //   2. We don't need to re-fetch sessiondetails every restart — the cached
+  //      locationId / securityDeviceId / partitionIds are reused.
+  //
+  // The cache is rewritten on every successful poll where topology changes
+  // (zone added/removed/renamed, new location, etc).
+
+  private loadTopologyCache(): void {
+    if (!existsSync(TOPOLOGY_PATH)) return;
+    try {
+      const raw = readFileSync(TOPOLOGY_PATH, 'utf-8');
+      const cache = JSON.parse(raw) as CachedTopology;
+
+      for (const p of cache.panels) {
+        this.panels.set(p.locationId, {
+          locationId:       p.locationId,
+          securityDeviceId: p.securityDeviceId,
+          name:             p.name,
+          state:            'unknown' as PanelState,
+          rawArmingState:   0,
+          partitionIds:     p.partitionIds,
+          lastUpdated:      0,
+        });
+      }
+      for (const [locId, zs] of Object.entries(cache.zones)) {
+        this.zones.set(locId, zs.map((z) => ({
+          zoneId:     z.zoneId,
+          name:       z.name,
+          faulted:    false,
+          bypassed:   false,
+          lowBattery: false,
+        })));
+      }
+    } catch (err) {
+      console.warn('TC2: failed to load topology cache:', (err as Error).message);
+    }
+  }
+
+  private saveTopologyCache(): void {
+    try {
+      mkdirSync(dirname(TOPOLOGY_PATH), { recursive: true });
+      const cache: CachedTopology = {
+        panels: Array.from(this.panels.values()).map((p) => ({
+          locationId:       p.locationId,
+          securityDeviceId: p.securityDeviceId,
+          name:             p.name,
+          partitionIds:     p.partitionIds,
+        })),
+        zones: Object.fromEntries(
+          Array.from(this.zones.entries()).map(([locId, zs]) => [
+            locId,
+            zs.map((z) => ({ zoneId: z.zoneId, name: z.name })),
+          ]),
+        ),
+        savedAt: Date.now(),
+      };
+      writeFileSync(TOPOLOGY_PATH, JSON.stringify(cache, null, 2), 'utf-8');
+    } catch (err) {
+      console.warn('TC2: failed to save topology cache:', (err as Error).message);
+    }
   }
 
   get isConnected(): boolean {
@@ -67,6 +154,9 @@ export class TotalConnectPoller extends EventEmitter {
     this._connected = false;
     this.panels.clear();
     this.zones.clear();
+    // Drop cached topology when the user signs out — credentials and topology
+    // are paired; we should not retain one without the other.
+    try { if (existsSync(TOPOLOGY_PATH)) writeFileSync(TOPOLOGY_PATH, '{"panels":[],"zones":{},"savedAt":0}', 'utf-8'); } catch { /* ignore */ }
   }
 
   async triggerAction(
@@ -119,14 +209,21 @@ export class TotalConnectPoller extends EventEmitter {
     try {
       const session = await this.getSession();
 
-      let changed = false;
+      let stateChanged = false;
+      let topologyChanged = false;
       for (const loc of session.locations) {
         const { armingState, zones } = await getPanelStatus(session, loc.locationId);
         const state = mapArmingState(armingState);
 
         const prev = this.panels.get(loc.locationId);
         if (!prev || prev.state !== state || prev.rawArmingState !== armingState) {
-          changed = true;
+          stateChanged = true;
+        }
+        if (!prev
+          || prev.name !== loc.name
+          || prev.securityDeviceId !== loc.securityDeviceId
+          || !arraysEqual(prev.partitionIds, loc.partitionIds)) {
+          topologyChanged = true;
         }
 
         this.panels.set(loc.locationId, {
@@ -140,15 +237,18 @@ export class TotalConnectPoller extends EventEmitter {
         });
 
         const prevZones = this.zones.get(loc.locationId) ?? [];
-        if (zonesChanged(prevZones, zones)) changed = true;
+        if (zoneStateChanged(prevZones, zones)) stateChanged = true;
+        if (zoneTopologyChanged(prevZones, zones)) topologyChanged = true;
         this.zones.set(loc.locationId, zones);
       }
+
+      if (topologyChanged) this.saveTopologyCache();
 
       if (!this._connected) {
         this._connected = true;
         this.emit('connected');
         this.emit('stateChange', this.getPanels(), Object.fromEntries(this.zones));
-      } else if (changed) {
+      } else if (stateChanged || topologyChanged) {
         this.emit('stateChange', this.getPanels(), Object.fromEntries(this.zones));
       }
     } catch (err) {
@@ -163,11 +263,21 @@ export class TotalConnectPoller extends EventEmitter {
   }
 }
 
-function zonesChanged(prev: AlarmZone[], next: AlarmZone[]): boolean {
+function zoneStateChanged(prev: AlarmZone[], next: AlarmZone[]): boolean {
   if (prev.length !== next.length) return true;
   return next.some((z, i) =>
     z.faulted    !== prev[i]?.faulted ||
     z.bypassed   !== prev[i]?.bypassed ||
     z.lowBattery !== prev[i]?.lowBattery,
   );
+}
+
+function zoneTopologyChanged(prev: AlarmZone[], next: AlarmZone[]): boolean {
+  if (prev.length !== next.length) return true;
+  return next.some((z, i) => z.zoneId !== prev[i]?.zoneId || z.name !== prev[i]?.name);
+}
+
+function arraysEqual<T>(a: readonly T[], b: readonly T[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((v, i) => v === b[i]);
 }

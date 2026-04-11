@@ -440,19 +440,31 @@ struct SettingsView: View {
                     TextField("Total Connect Username", text: $tcUsername)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
-                        .onChange(of: tcUsername) { _, val in totalConnect.username = val }
 
                     SecureField("Password", text: $tcPassword)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
-                        .onChange(of: tcPassword) { _, val in totalConnect.password = val }
 
                     SecureField("User Code (PIN)", text: $tcUserCode)
                         .keyboardType(.numberPad)
-                        .onChange(of: tcUserCode) { _, val in totalConnect.userCode = val }
 
                     Button {
-                        Task { await totalConnect.login() }
+                        // Submit credentials in a single shot. The local
+                        // @State strings are zeroed immediately afterwards so
+                        // they don't outlive the call in memory; the canonical
+                        // copy lives in Keychain (managed by
+                        // TotalConnectManager).
+                        let user = tcUsername
+                        let pass = tcPassword
+                        let pin  = tcUserCode
+                        Task {
+                            await totalConnect.signIn(username: user, password: pass, userCode: pin)
+                            await MainActor.run {
+                                tcUsername = ""
+                                tcPassword = ""
+                                tcUserCode = ""
+                            }
+                        }
                     } label: {
                         HStack {
                             if totalConnect.isLoading {

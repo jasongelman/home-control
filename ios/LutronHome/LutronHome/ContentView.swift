@@ -36,7 +36,7 @@ struct ContentView: View {
                 }
                 .tag(3)
 
-            CategoryTab(categories: [.outlet, .fan], title: "Outlets & Fans")
+            CategoryTab(categories: [.outlet, .fan], title: "More", showAlarmZones: true)
                 .tabItem {
                     Image(systemName: "poweroutlet.type.b")
                     Text("More")
@@ -69,18 +69,22 @@ struct HomeTab: View {
 
 struct CategoryTab: View {
     @Environment(LutronStore.self) var store
+    @Environment(TotalConnectManager.self) var totalConnect
     let categories: [DeviceCategory]
     let title: String
+    let showAlarmZones: Bool
     @State private var selectedRoom: String?
 
     init(category: DeviceCategory) {
         self.categories = [category]
         self.title = category.rawValue
+        self.showAlarmZones = false
     }
 
-    init(categories: [DeviceCategory], title: String) {
+    init(categories: [DeviceCategory], title: String, showAlarmZones: Bool = false) {
         self.categories = categories
         self.title = title
+        self.showAlarmZones = showAlarmZones
     }
 
     private var categoryRooms: [(name: String, devices: [DeviceState])] {
@@ -121,7 +125,7 @@ struct CategoryTab: View {
                             .padding(.top, 12)
                         } else {
                             VStack(alignment: .leading, spacing: 20) {
-                                if categoryRooms.isEmpty {
+                                if categoryRooms.isEmpty && !(showAlarmZones && totalConnect.isLinked) {
                                     emptyState
                                 } else {
                                     ForEach(Floor.allCases, id: \.self) { floor in
@@ -129,6 +133,9 @@ struct CategoryTab: View {
                                         if !floorRooms.isEmpty {
                                             floorSection(floor: floor, rooms: floorRooms)
                                         }
+                                    }
+                                    if showAlarmZones && totalConnect.isLinked {
+                                        alarmZonesSection
                                     }
                                 }
                             }
@@ -211,6 +218,41 @@ struct CategoryTab: View {
                         onTap: { selectedRoom = room.name }
                     )
                 }
+            }
+        }
+    }
+
+    private var alarmZonesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 4) {
+                Image(systemName: "shield.lefthalf.filled")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                Text("Alarm Zones")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.tertiary)
+                    .textCase(.uppercase)
+            }
+            .padding(.leading, 4)
+
+            let allZones = totalConnect.panels.flatMap { panel in
+                (totalConnect.zones[panel.locationId] ?? []).map { (panel, $0) }
+            }
+
+            if allZones.isEmpty {
+                Text("No zones reported")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+            } else {
+                VStack(spacing: 1) {
+                    ForEach(allZones, id: \.1.id) { _, zone in
+                        AlarmZoneRow(zone: zone)
+                    }
+                }
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
             }
         }
     }
@@ -910,6 +952,81 @@ struct QuickActionButton: View {
 struct AlarmPill: View {
     let panel: AlarmPanel
     let manager: TotalConnectManager
+    @State private var showDetail = false
+
+    private var stateColor: Color {
+        switch panel.state {
+        case .disarmed:              return .green
+        case .armedAway, .armedHome, .armedNight: return .orange
+        case .alarming:              return .red
+        default:                     return .secondary
+        }
+    }
+
+    private var faultedCount: Int {
+        (manager.zones[panel.locationId] ?? []).filter { $0.faulted }.count
+    }
+
+    private var hasFault: Bool { faultedCount > 0 }
+
+    var body: some View {
+        Button { showDetail = true } label: {
+            HStack(spacing: 10) {
+                Image(systemName: panel.state.icon)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(stateColor)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Alarm")
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                    Text(panel.state.label)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+
+                Spacer(minLength: 6)
+
+                if hasFault {
+                    Text(faultedCount == 1 ? "1 fault" : "\(faultedCount) faults")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.orange)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule().fill(Color.orange.opacity(0.15))
+                        )
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(14)
+            .frame(minHeight: 56)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(stateColor.opacity(panel.state == .alarming ? 0.8 : 0.2), lineWidth: panel.state == .alarming ? 1.5 : 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .sheet(isPresented: $showDetail) {
+            AlarmDetailView(panel: panel, manager: manager)
+        }
+    }
+}
+
+// MARK: - Alarm Detail Sheet
+
+struct AlarmDetailView: View {
+    let panel: AlarmPanel
+    let manager: TotalConnectManager
+    @Environment(\.dismiss) private var dismiss
 
     private var stateColor: Color {
         switch panel.state {
@@ -921,43 +1038,165 @@ struct AlarmPill: View {
     }
 
     var body: some View {
-        Menu {
-            Button("Arm Away")  { Task { await manager.armAway(panel) } }
-                .disabled(panel.state == .armedAway || panel.state.isTransitioning)
-            Button("Arm Home")  { Task { await manager.armHome(panel) } }
-                .disabled(panel.state == .armedHome || panel.state.isTransitioning)
-            Button("Arm Night") { Task { await manager.armNight(panel) } }
-                .disabled(panel.state == .armedNight || panel.state.isTransitioning)
-            Divider()
-            Button("Disarm", role: .destructive) { Task { await manager.disarm(panel) } }
-                .disabled(panel.state == .disarmed || panel.state.isTransitioning)
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: panel.state.icon)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(stateColor)
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Big state header
+                    VStack(spacing: 8) {
+                        Image(systemName: panel.state.icon)
+                            .font(.system(size: 44, weight: .medium))
+                            .foregroundStyle(stateColor)
+                            .symbolEffect(.pulse, isActive: panel.state.isTransitioning || panel.state == .alarming)
+                        Text(panel.state.label)
+                            .font(.title2.weight(.semibold))
+                            .foregroundStyle(stateColor)
+                        Text(panel.name)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    .padding(.horizontal)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(panel.name)
-                        .font(.system(size: 12, weight: .semibold))
-                        .lineLimit(1)
-                    Text(panel.state.label)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    // Arm / Disarm buttons
+                    VStack(spacing: 10) {
+                        ArmActionButton(
+                            title: "Disarm", icon: "lock.open.fill", color: .green,
+                            isCurrent: panel.state == .disarmed,
+                            isDisabled: panel.state == .disarmed || panel.state.isTransitioning
+                        ) {
+                            Task { await manager.disarm(panel) }
+                        }
+                        ArmActionButton(
+                            title: "Arm Away", icon: "lock.fill", color: .orange,
+                            isCurrent: panel.state == .armedAway,
+                            isDisabled: panel.state == .armedAway || panel.state.isTransitioning
+                        ) {
+                            Task { await manager.armAway(panel) }
+                        }
+                        ArmActionButton(
+                            title: "Arm Home", icon: "house.lock.fill", color: .orange,
+                            isCurrent: panel.state == .armedHome,
+                            isDisabled: panel.state == .armedHome || panel.state.isTransitioning
+                        ) {
+                            Task { await manager.armHome(panel) }
+                        }
+                        ArmActionButton(
+                            title: "Arm Night", icon: "moon.fill", color: .indigo,
+                            isCurrent: panel.state == .armedNight,
+                            isDisabled: panel.state == .armedNight || panel.state.isTransitioning
+                        ) {
+                            Task { await manager.armNight(panel) }
+                        }
+                    }
+                    .padding(.horizontal)
+
+                    if let error = manager.errorMessage {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .padding(.horizontal)
+                    }
                 }
-
-                Spacer()
+                .padding(.vertical)
             }
-            .padding(14)
-            .frame(minHeight: 56)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .navigationTitle("Alarm")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+private struct ArmActionButton: View {
+    let title: String
+    let icon: String
+    let color: Color
+    let isCurrent: Bool
+    let isDisabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(isCurrent ? .white : color)
+                    .frame(width: 28)
+                Text(title)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(isCurrent ? .white : .primary)
+                Spacer()
+                if isCurrent {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isCurrent ? AnyShapeStyle(color) : AnyShapeStyle(.ultraThinMaterial))
+            )
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(stateColor.opacity(panel.state == .alarming ? 0.8 : 0.2), lineWidth: panel.state == .alarming ? 1.5 : 0.5)
+                    .stroke(color.opacity(isCurrent ? 0 : 0.25), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .opacity(isDisabled && !isCurrent ? 0.5 : 1)
+    }
+}
+
+private struct AlarmZoneRow: View {
+    let zone: AlarmZone
+
+    private var statusColor: Color {
+        if zone.faulted { return .orange }
+        if zone.lowBattery { return .red }
+        if zone.bypassed { return .yellow }
+        return .green
+    }
+
+    private var statusLabel: String {
+        var parts: [String] = []
+        if zone.faulted { parts.append("Open") }
+        if zone.bypassed { parts.append("Bypassed") }
+        if zone.lowBattery { parts.append("Low Battery") }
+        if parts.isEmpty { parts.append("Closed") }
+        return parts.joined(separator: " • ")
+    }
+
+    private var statusIcon: String {
+        if zone.faulted { return "exclamationmark.circle.fill" }
+        if zone.lowBattery { return "battery.25" }
+        if zone.bypassed { return "minus.circle.fill" }
+        return "checkmark.circle.fill"
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: statusIcon)
+                .font(.system(size: 16))
+                .foregroundStyle(statusColor)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(zone.name)
+                    .font(.system(size: 14, weight: .medium))
+                Text(statusLabel)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
     }
 }
 

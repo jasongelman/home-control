@@ -99,7 +99,7 @@ If you deliberately ship a feature on only one client (e.g. a one-off iOS widget
 | iOS on-device secrets (user-entered credentials, bearer tokens) | Keychain via the manager's `username`/`password` setters; `UserDefaults` only for non-sensitive state | `@State` that gets logged, `print()` output, committed `.xcuserstate` |
 | Web-held secrets | **none — the web client must never receive raw credentials.** It talks to `server/` which holds them. | any web source, localStorage, cookies readable by JS |
 
-The Resideo integration is the reference pattern: the user types their PIN into the web or iOS UI, the client `PUT`s it to `/api/alarm/config`, the server stores it in `config.json`, and from then on neither client ever sees the PIN again — they only see panel state.
+Resideo / Total Connect 2.0 is intentionally **two implementations** of the same protocol — one in `server/src/totalconnect/` (used by the web client) and one in `ios/LutronHome/LutronHome/TotalConnectManager.swift` (used by the iOS app, talking directly to `rs.alarmnet.com` with no server hop). This matches the way the Lutron, MyQ, and SmartHQ integrations work in this app: iOS does not require the server to be running. The cost is that the on-the-wire shape (config parsing, RSA SPKI unwrap, location parsing, arming-state codes) is duplicated — any change to the protocol must be made in **both** places. The credential-handling rules below are unchanged: on iOS, the username / password / PIN go straight from the form into Keychain via `TotalConnectManager.signIn(...)` and the local `@State` strings are zeroed immediately afterwards. The web client still PUTs them to the server.
 
 ### Hard rules
 

@@ -98,21 +98,31 @@ export async function authenticate(username: string, password: string): Promise<
   const sessionData = await sessionRes.json() as {
     SessionDetailsResult?: {
       Locations?: Array<{
-        LocationID?: string;
+        LocationID?: number | string;
         LocationName?: string;
-        SecurityDevices?: Array<{ DeviceID?: string }>;
+        SecurityDeviceID?: number | string;
+        DeviceList?: Array<{ DeviceID?: number | string; DeviceClassID?: number | string }>;
         PartitionIDs?: number[];
       }>;
     };
   };
 
   const rawLocations = sessionData.SessionDetailsResult?.Locations ?? [];
-  const locations = rawLocations.map((loc) => ({
-    locationId:       String(loc.LocationID ?? ''),
-    securityDeviceId: String(loc.SecurityDevices?.[0]?.DeviceID ?? ''),
-    name:             loc.LocationName ?? 'Home',
-    partitionIds:     loc.PartitionIDs ?? [1],
-  })).filter((l) => l.locationId && l.securityDeviceId);
+  const locations = rawLocations.map((loc) => {
+    // Prefer top-level SecurityDeviceID; fall back to the security-class entry
+    // in DeviceList (DeviceClassID === 1 is the security panel).
+    let deviceId: string = loc.SecurityDeviceID != null ? String(loc.SecurityDeviceID) : '';
+    if (!deviceId && loc.DeviceList) {
+      const sec = loc.DeviceList.find((d) => Number(d.DeviceClassID) === 1) ?? loc.DeviceList[0];
+      if (sec?.DeviceID != null) deviceId = String(sec.DeviceID);
+    }
+    return {
+      locationId:       String(loc.LocationID ?? ''),
+      securityDeviceId: deviceId,
+      name:             loc.LocationName ?? 'Home',
+      partitionIds:     loc.PartitionIDs ?? [1],
+    };
+  }).filter((l) => l.locationId && l.securityDeviceId);
 
   if (locations.length === 0) {
     throw new Error('TC2: no locations with security devices found');
