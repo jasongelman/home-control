@@ -154,6 +154,7 @@ export function useWebSocket() {
             setPanels(new Map(msg.panels.map((p) => [p.locationId, p])));
             setAlarmConnected(msg.alarmConnected);
             break;
+
         }
       };
 

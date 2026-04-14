@@ -109,7 +109,7 @@ struct ChatCard: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
             }
-            .frame(height: 240)
+            .frame(maxHeight: 240)
             .onChange(of: chatService.messages.count) {
                 withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
             }
@@ -120,16 +120,14 @@ struct ChatCard: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 6) {
-            Text("Ask me to control your home")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+        HStack(spacing: 6) {
             Text("Try \"Turn off all the lights\" or \"What's on?\"")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
     }
 
     private var loadingIndicator: some View {

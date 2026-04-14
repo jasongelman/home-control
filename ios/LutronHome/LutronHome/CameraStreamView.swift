@@ -150,7 +150,6 @@ struct CameraCarouselCard: View {
                         Text(homeKit.currentCameraName)
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(.white)
-                            .shadow(radius: 2)
 
                         Spacer()
 
@@ -312,7 +311,7 @@ struct CameraDetailView: View {
                         } else {
                             Text("Offline")
                                 .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(.gray)
+                                .foregroundStyle(.secondary)
                         }
                     }
                     Spacer()
@@ -509,7 +508,7 @@ struct CameraDetailView: View {
                                                 .overlay(
                                                     Image(systemName: "video.fill")
                                                         .font(.system(size: 12))
-                                                        .foregroundStyle(.gray)
+                                                        .foregroundStyle(.secondary)
                                                 )
                                                 .overlay(
                                                     RoundedRectangle(cornerRadius: 6)

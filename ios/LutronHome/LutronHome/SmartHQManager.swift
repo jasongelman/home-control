@@ -152,6 +152,8 @@ class SmartHQManager: @unchecked Sendable {
     var isLoading = false
     var errorMessage: String?
 
+    private var previousStates: [String: LaundryMachineState] = [:]
+
     /// Convenience: first washer
     var washer: LaundryApplianceStatus? { appliances.first(where: { $0.isWasher }) }
     /// Convenience: first dryer
@@ -461,6 +463,16 @@ class SmartHQManager: @unchecked Sendable {
 
             appliances[index].online = true
             errorMessage = nil
+
+            // Check for cycle completion transition
+            let app = appliances[index]
+            let prev = previousStates[app.id]
+            if let prev, prev.isActive, app.machineState == .endOfCycle {
+                let name = app.isWasher ? "Washer" : "Dryer"
+                NotificationManager.shared.notifyCycleComplete(appliance: name, id: app.id)
+            }
+            previousStates[app.id] = app.machineState
+
             print("SmartHQ: fetched ERD for \(appliances[index].applianceName) — state=\(appliances[index].machineState.label)")
         } catch {
             print("SmartHQ: fetchERD error for \(appliances[index].applianceName) — \(error)")

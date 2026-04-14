@@ -124,22 +124,16 @@ struct AppliancesTab: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Spacer().frame(height: 60)
+        HStack(spacing: 8) {
             Image(systemName: "washer")
-                .font(.system(size: 48))
+                .font(.system(size: 14))
                 .foregroundStyle(.secondary)
-            Text("No Appliances Linked")
-                .font(.headline)
+            Text("No appliances linked — connect in Settings")
+                .font(.caption)
                 .foregroundStyle(.secondary)
-            Text("Connect your Bosch, GE, or NIBE appliances in Settings to see them here.")
-                .font(.subheadline)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
-            Spacer()
         }
-        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -206,7 +200,7 @@ struct DishwasherRow: View {
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .stroke(status.operationState.isActive ? statusColor.opacity(0.3) : Color(.separator).opacity(0.3), lineWidth: 1)
+                .stroke(status.operationState.isActive ? statusColor.opacity(0.3) : Color(.separator).opacity(0.3), lineWidth: 0.5)
         )
     }
 
@@ -297,7 +291,7 @@ struct LaundryRow: View {
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .stroke(status.machineState.isActive ? statusColor.opacity(0.3) : Color(.separator).opacity(0.3), lineWidth: 1)
+                .stroke(status.machineState.isActive ? statusColor.opacity(0.3) : Color(.separator).opacity(0.3), lineWidth: 0.5)
         )
     }
 
@@ -396,7 +390,7 @@ struct HeatPumpRow: View {
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .stroke(Color(.separator).opacity(0.3), lineWidth: 1)
+                .stroke(Color(.separator).opacity(0.3), lineWidth: 0.5)
         )
     }
 
@@ -491,7 +485,7 @@ struct GarageRow: View {
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .stroke(door.state == .open ? Color.orange.opacity(0.3) : Color(.separator).opacity(0.3), lineWidth: 1)
+                .stroke(door.state == .open ? Color.orange.opacity(0.3) : Color(.separator).opacity(0.3), lineWidth: 0.5)
         )
     }
 }

@@ -20,6 +20,7 @@ import type { HeatPumpStatus } from './myuplink/types.js';
 import { TotalConnectPoller } from './totalconnect/TotalConnectPoller.js';
 import type { AlarmPanel } from './totalconnect/types.js';
 
+
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
 const app = express();
@@ -48,7 +49,6 @@ const myUplink = new MyUplinkManager(config0.myUplink ?? { clientId: '', clientS
 const alarmPoller = new TotalConnectPoller(
   config0.totalconnect ?? { username: '', password: '', userCode: '', enabled: false },
 );
-
 // ── Sun-shade automations ──────────────────────────────────────────────────
 const sunAutomations = (config0.automations ?? []).map(
   (cfg) => new SunShadeAutomation(cfg, connection),

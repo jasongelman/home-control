@@ -25,6 +25,8 @@ class LutronStore: @unchecked Sendable {
         set { UserDefaults.standard.set(newValue, forKey: "processorHost") }
     }
 
+
+
     /// Usage tracker for personalization — set externally from App entry point
     var usageTracker: UsageTracker?
 

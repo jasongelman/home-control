@@ -9,6 +9,7 @@ struct SettingsView: View {
     @Environment(MyQManager.self) var myQ
     @Environment(ChatService.self) var chatService
     @Environment(TotalConnectManager.self) var totalConnect
+    @Environment(EcobeeManager.self) var ecobee
     @State private var host: String = ""
     @State private var chatApiKey: String = ""
     @State private var hcClientId: String = ""
@@ -419,6 +420,53 @@ struct SettingsView: View {
                 Text("AI Assistant")
             } footer: {
                 Text("Enter your Anthropic API key to enable natural language chat control. The key is stored securely in the Keychain. Get a key at console.anthropic.com.")
+            }
+
+            // MARK: - Ecobee Thermostat (HomeKit)
+
+            Section {
+                HStack {
+                    Image(systemName: "thermometer.medium")
+                        .foregroundStyle(.green)
+                    Text("Thermostats")
+                        .fontWeight(.medium)
+                    Spacer()
+                    if ecobee.hasThermostats {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                }
+
+                if ecobee.thermostats.isEmpty {
+                    HStack {
+                        Text("Status")
+                        Spacer()
+                        Text("Waiting for HomeKit...")
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    ForEach(ecobee.thermostats) { thermo in
+                        HStack {
+                            Image(systemName: thermo.hvacMode.icon)
+                                .foregroundStyle(.green)
+                                .frame(width: 20)
+                            Text(thermo.name)
+                            Spacer()
+                            Text("\(Int(thermo.currentTemp))\u{00B0}F")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                if let error = ecobee.errorMessage {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            } header: {
+                Text("Climate")
+            } footer: {
+                Text("Thermostats are discovered automatically via HomeKit. Make sure your thermostats are added to the Home app.")
             }
 
             // MARK: - Resideo / Total Connect 2.0

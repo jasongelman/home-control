@@ -18,6 +18,7 @@ import { useLutron } from '../context/LutronContext.js';
 import { GarageDoorControl } from './devices/GarageDoorControl.js';
 import { AppliancesSection } from './AppliancesSection.js';
 import { AlarmControl } from './AlarmControl.js';
+
 import { RoomDetail } from './RoomDetail.js';
 import { SceneEditor } from './SceneEditor.js';
 import { SettingsDialog } from './SettingsDialog.js';
@@ -527,6 +528,7 @@ export function Dashboard({ onSetup }: { onSetup?: () => void }) {
 
         {/* Appliances — dishwasher, laundry, heat pump */}
         <AppliancesSection dishwashers={dishwashers} laundry={laundry} heatPumps={heatPumps} />
+
         {/* Alarm */}
         {(alarmConnected || panels.size > 0) && (
           <>

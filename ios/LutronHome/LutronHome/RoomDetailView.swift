@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RoomDetailView: View {
     @Environment(LutronStore.self) var store
+    @Environment(EcobeeManager.self) var ecobee
     let roomName: String
     let onBack: () -> Void
 
@@ -15,9 +16,72 @@ struct RoomDetailView: View {
     private var windows: [DeviceState] { devices.filter { $0.category == .window } }
     private var keypads: [DeviceState] { devices.filter { $0.type == .keypad } }
 
+    private var roomThermostats: [EcobeeThermostat] {
+        ecobee.thermostats.filter { $0.room == roomName }
+    }
+    private var roomSensors: [EcobeeRemoteSensor] {
+        ecobee.sensors.filter { $0.room == roomName }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                // Climate sensors/thermostats for this room
+                if !roomThermostats.isEmpty || !roomSensors.isEmpty {
+                    DeviceSection(title: "Climate", icon: "thermometer.medium", count: roomThermostats.count + roomSensors.count) {
+                        VStack(spacing: 8) {
+                            ForEach(roomThermostats) { thermo in
+                                HStack(spacing: 10) {
+                                    Image(systemName: thermo.hvacMode.icon)
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(.green)
+                                        .frame(width: 22)
+                                    Text(thermo.name)
+                                        .font(.system(size: 13, weight: .medium))
+                                    Spacer()
+                                    Text("\(Int(thermo.currentTemp))\u{00B0}F")
+                                        .font(.system(size: 14, weight: .semibold))
+                                    Text(thermo.hvacMode.label)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.secondary)
+                                }
+                                .padding(12)
+                                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color(.separator).opacity(0.4), lineWidth: 0.5)
+                                )
+                            }
+                            ForEach(roomSensors) { sensor in
+                                HStack(spacing: 10) {
+                                    Image(systemName: sensor.occupancy ? "person.fill" : "thermometer")
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(sensor.occupancy ? .green : .secondary)
+                                        .frame(width: 22)
+                                    Text(sensor.name)
+                                        .font(.system(size: 13, weight: .medium))
+                                    Spacer()
+                                    if let temp = sensor.temp {
+                                        Text("\(Int(temp))\u{00B0}F")
+                                            .font(.system(size: 14, weight: .semibold))
+                                    }
+                                    if sensor.occupancy {
+                                        Text("Occupied")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(.green)
+                                    }
+                                }
+                                .padding(12)
+                                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color(.separator).opacity(0.4), lineWidth: 0.5)
+                                )
+                            }
+                        }
+                    }
+                }
+
                 if !lights.isEmpty {
                     DeviceSection(title: "Lights", icon: "lightbulb.fill", count: lights.count) {
                         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
@@ -129,12 +193,11 @@ struct LightControlCard: View {
                     Image(systemName: "power")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(isOn ? .orange : Color(.systemGray3))
-                        .frame(width: 30, height: 30)
+                        .frame(width: 44, height: 44)
                         .overlay(
                             Circle()
-                                .stroke(isOn ? Color.orange : Color(.systemGray3), lineWidth: 1.5)
+                                .stroke(isOn ? Color.orange.opacity(0.4) : Color(.separator).opacity(0.4), lineWidth: 0.5)
                         )
-                        .shadow(color: isOn ? .orange.opacity(0.3) : .clear, radius: 6)
                 }
                 .buttonStyle(.plain)
 
@@ -155,14 +218,14 @@ struct LightControlCard: View {
                     store.setLevel(device.integrationId, level: localLevel)
                 }
             }
-            .tint(isOn ? .orange : .gray)
+            .tint(isOn ? .orange : .secondary)
         }
         .padding(12)
         .background(lightCardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(isOn ? Color.orange.opacity(0.2) : Color(.separator).opacity(0.5), lineWidth: 1)
+                .stroke(isOn ? Color.orange.opacity(0.2) : Color(.separator).opacity(0.4), lineWidth: 0.5)
         )
         .onChange(of: device.level) { _, newValue in
             localLevel = newValue
@@ -200,7 +263,7 @@ struct ShadeControlCard: View {
             HStack(spacing: 8) {
                 Image(systemName: "blinds.vertical.open")
                     .font(.system(size: 14))
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(.teal)
 
                 Text(device.name)
                     .font(.caption)
@@ -219,7 +282,7 @@ struct ShadeControlCard: View {
                     store.setLevel(device.integrationId, level: localLevel, fadeTime: 2)
                 }
             }
-            .tint(.blue)
+            .tint(.teal)
 
             HStack(spacing: 4) {
                 ForEach([0, 25, 50, 75, 100], id: \.self) { preset in
@@ -233,7 +296,7 @@ struct ShadeControlCard: View {
                             .padding(.vertical, 4)
                             .background(
                                 Int(localLevel) == preset
-                                    ? Color.blue
+                                    ? Color.teal
                                     : Color(.tertiarySystemBackground)
                             )
                             .foregroundStyle(Int(localLevel) == preset ? .white : .secondary)
@@ -247,7 +310,7 @@ struct ShadeControlCard: View {
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color(.separator).opacity(0.5), lineWidth: 1)
+                .stroke(Color(.separator).opacity(0.4), lineWidth: 0.5)
         )
         .onChange(of: device.level) { _, newValue in
             localLevel = newValue
@@ -293,7 +356,7 @@ struct KeypadCard: View {
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color(.separator).opacity(0.5), lineWidth: 1)
+                .stroke(Color(.separator).opacity(0.4), lineWidth: 0.5)
         )
     }
 }

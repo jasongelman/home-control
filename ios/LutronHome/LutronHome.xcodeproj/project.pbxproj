@@ -31,6 +31,8 @@
 		A1000021 /* AppliancesTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000021 /* AppliancesTab.swift */; };
 		A1000022 /* MyQManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000022 /* MyQManager.swift */; };
 		A1000023 /* TotalConnectManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000023 /* TotalConnectManager.swift */; };
+		A1000024 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000024 /* NotificationManager.swift */; };
+		A1000025 /* EcobeeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000025 /* EcobeeManager.swift */; };
 		A1000030 /* UsageTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000030 /* UsageTracker.swift */; };
 		A1000031 /* PersonalizationInsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000031 /* PersonalizationInsightsView.swift */; };
 		A1000040 /* SuggestedAction.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000040 /* SuggestedAction.swift */; };
@@ -146,6 +148,8 @@
 		W2000006 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		W3000001 /* LutronHomeWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LutronHomeWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A2000023 /* TotalConnectManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TotalConnectManager.swift; sourceTree = "<group>"; };
+		A2000024 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
+		A2000025 /* EcobeeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EcobeeManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -214,6 +218,8 @@
 				A200004A /* ChatService.swift */,
 				A5000004 /* Intents */,
 				A2000023 /* TotalConnectManager.swift */,
+				A2000024 /* NotificationManager.swift */,
+				A2000025 /* EcobeeManager.swift */,
 				A2000012 /* LutronHome.entitlements */,
 				A2000050 /* Info.plist */,
 				A2000010 /* Assets.xcassets */,
@@ -422,6 +428,8 @@ A1000010 /* Assets.xcassets in Resources */,
 				A1000049 /* ChatView.swift in Sources */,
 				A100004A /* ChatService.swift in Sources */,
 				A1000023 /* TotalConnectManager.swift in Sources */,
+				A1000024 /* NotificationManager.swift in Sources */,
+				A1000025 /* EcobeeManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

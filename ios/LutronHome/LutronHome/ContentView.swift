@@ -173,9 +173,7 @@ struct CategoryTab: View {
         HStack(spacing: 0) {
             ForEach(activeFloors, id: \.self) { floor in
                 Button {
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        proxy.scrollTo(floor, anchor: .top)
-                    }
+                    proxy.scrollTo(floor, anchor: .top)
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: floor.icon)
@@ -285,6 +283,8 @@ struct DashboardView: View {
     @Environment(MyUplinkManager.self) var myUplink
     @Environment(SmartHQManager.self) var smartHQ
     @Environment(TotalConnectManager.self) var totalConnect
+    @Environment(MyQManager.self) var myQ
+    @Environment(EcobeeManager.self) var ecobee
 
     @State private var showDishwasherStartSheet = false
     @State private var selectedDishwasherId: String?
@@ -332,9 +332,13 @@ struct DashboardView: View {
                     ConnectionBanner()
                 }
 
+                statusGlanceSection
+
                 ChatCard()
 
-                CameraCarouselCard(homeKit: homeKit)
+                if !homeKit.cameras.isEmpty || !homeKit.isReady {
+                    CameraCarouselCard(homeKit: homeKit)
+                }
                 // garageDoorSection  // Hidden until HomeKit garage door integration is working
                 unifiedControlSection
                 sceneSuggestionsSection
@@ -416,6 +420,217 @@ struct DashboardView: View {
         }
     }
 
+    // MARK: - Status Glance (Instrument Panel)
+
+    private struct StatusCell: Identifiable {
+        let id: String
+        let label: String
+        let value: String
+        let suffix: String?
+        let isActive: Bool
+        let isAlarming: Bool
+
+        init(_ id: String, label: String, value: String, suffix: String? = nil, isActive: Bool, isAlarming: Bool = false) {
+            self.id = id; self.label = label; self.value = value
+            self.suffix = suffix; self.isActive = isActive; self.isAlarming = isAlarming
+        }
+    }
+
+    private var statusCells: [StatusCell] {
+        var cells: [StatusCell] = []
+
+        // Alarm
+        if totalConnect.isLinked, let panel = totalConnect.panels.first {
+            let faults = (totalConnect.zones[panel.locationId] ?? []).filter { $0.faulted }.count
+            let value = panel.state.label
+            let suffix: String? = faults > 0 ? "\(faults)f" : nil
+            let active = panel.state.isArmed || panel.state == .alarming || faults > 0
+            cells.append(StatusCell("alarm", label: "Alarm", value: value, suffix: suffix, isActive: active, isAlarming: panel.state == .alarming))
+        }
+
+        // Dishwashers
+        if homeConnect.isLinked {
+            let dws = homeConnect.dishwashers
+            for dw in dws {
+                var value = dw.operationState.label
+                if dw.operationState.isActive, let time = dw.remainingTimeFormatted {
+                    value = time
+                }
+                let active = dw.operationState.isActive || dw.operationState == .finished
+                let label: String
+                if dws.count > 1 {
+                    let name = dw.applianceName.lowercased()
+                    if name.contains("left") { label = "Dish L" }
+                    else if name.contains("right") { label = "Dish R" }
+                    else { label = dw.applianceName.isEmpty ? "Dishes" : String(dw.applianceName.prefix(7)) }
+                } else {
+                    label = "Dishes"
+                }
+                cells.append(StatusCell("dw_\(dw.applianceId)", label: label, value: value, isActive: active))
+            }
+        }
+
+        // Washer / Dryer
+        if smartHQ.isLinked {
+            for app in smartHQ.appliances {
+                var value = app.machineState.label
+                if app.machineState.isActive, let time = app.remainingTimeFormatted {
+                    value = time
+                }
+                let active = app.machineState.isActive || app.machineState == .endOfCycle
+                let label = app.isWasher ? "Washer" : "Dryer"
+                cells.append(StatusCell("shq_\(app.id)", label: label, value: value, isActive: active))
+            }
+        }
+
+        // Garage
+        if myQ.isLinked {
+            for door in myQ.doors {
+                let active = door.state == .open || door.state.isMoving
+                cells.append(StatusCell("garage_\(door.id)", label: "Garage", value: door.state.label, isActive: active))
+            }
+        }
+
+        // Heat Pump
+        if myUplink.isLinked, myUplink.heatPump.connected {
+            let hp = myUplink.heatPump
+            let value: String
+            var suffix: String? = nil
+            if let temp = hp.outdoorTemp {
+                value = "\(Int(temp))°F"
+                if let mode = hp.operatingMode {
+                    switch mode {
+                    case "Heating": suffix = "Heat"
+                    case "Cooling": suffix = "Cool"
+                    case "Hot Water": suffix = "HW"
+                    default: break
+                    }
+                }
+            } else {
+                value = hp.operatingMode ?? "—"
+            }
+            cells.append(StatusCell("hvac", label: "HVAC", value: value, suffix: suffix, isActive: true))
+        }
+
+        // Lutron lights summary
+        if store.connectionState == .connected {
+            let onCount = store.devices.values.filter { $0.category == .light && $0.level > 0 }.count
+            let value = onCount == 0 ? "All off" : "\(onCount) on"
+            cells.append(StatusCell("lights", label: "Lights", value: value, isActive: onCount > 0))
+        }
+
+        return cells
+    }
+
+    private var hasAlarmTriggered: Bool {
+        statusCells.contains { $0.isAlarming }
+    }
+
+    @ViewBuilder
+    private var statusGlanceSection: some View {
+        let cells = statusCells
+        if !cells.isEmpty {
+            let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 4)
+            let row1 = Array(cells.prefix(4))
+            let row2 = Array(cells.dropFirst(4))
+
+            VStack(spacing: 0) {
+                // Row 1
+                LazyVGrid(columns: columns, spacing: 0) {
+                    ForEach(Array(row1.enumerated()), id: \.element.id) { index, cell in
+                        statusCellView(cell, showRightBorder: index < 3)
+                    }
+                    // Pad row 1 to 4 if fewer
+                    if row1.count < 4 {
+                        ForEach(row1.count..<4, id: \.self) { index in
+                            Color.clear.frame(maxWidth: .infinity)
+                                .overlay(alignment: .trailing) {
+                                    if index < 3 {
+                                        Rectangle().fill(Color(.separator).opacity(0.15)).frame(width: 0.5)
+                                    }
+                                }
+                        }
+                    }
+                }
+
+                // Horizontal divider
+                if !row2.isEmpty {
+                    Divider().overlay(Color(.separator).opacity(0.15))
+
+                    // Row 2
+                    LazyVGrid(columns: columns, spacing: 0) {
+                        ForEach(Array(row2.enumerated()), id: \.element.id) { index, cell in
+                            statusCellView(cell, showRightBorder: index < 3)
+                        }
+                        // Pad row 2 to 4 if fewer
+                        if row2.count < 4 {
+                            ForEach(row2.count..<4, id: \.self) { index in
+                                Color.clear.frame(maxWidth: .infinity)
+                                    .overlay(alignment: .trailing) {
+                                        if index < 3 && index + row2.count < 3 {
+                                            Rectangle().fill(Color(.separator).opacity(0.15)).frame(width: 0.5)
+                                        }
+                                    }
+                            }
+                        }
+                    }
+                }
+            }
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(hasAlarmTriggered ? Color.red.opacity(0.25) : Color(.separator).opacity(0.3), lineWidth: 0.5)
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func statusCellView(_ cell: StatusCell, showRightBorder: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(cell.label)
+                .font(.system(size: 9))
+                .textCase(.uppercase)
+                .tracking(0.5)
+                .foregroundStyle(
+                    cell.isAlarming ? Color.red.opacity(0.7) :
+                    cell.isActive ? Color.blue.opacity(0.6) :
+                    Color.primary.opacity(0.35)
+                )
+
+            HStack(spacing: 2) {
+                Text(cell.value)
+                    .font(.system(size: 14, weight: cell.isAlarming ? .heavy : cell.isActive ? .bold : .medium))
+                    .foregroundStyle(
+                        cell.isAlarming ? .red :
+                        cell.isActive ? .blue :
+                        Color.primary.opacity(0.35)
+                    )
+                    .lineLimit(1)
+
+                if let suffix = cell.suffix {
+                    Text(suffix)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.primary.opacity(0.45))
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 10)
+        .background(
+            cell.isAlarming ? Color.red.opacity(0.10) :
+            cell.isActive ? Color.blue.opacity(0.07) :
+            Color.clear
+        )
+        .overlay(alignment: .trailing) {
+            if showRightBorder {
+                Rectangle()
+                    .fill(Color(.separator).opacity(0.15))
+                    .frame(width: 0.5)
+            }
+        }
+    }
+
     // MARK: - Garage Doors
 
     private var garageDoorSection: some View {
@@ -466,6 +681,7 @@ struct DashboardView: View {
         case forYouEvening
         case forYouDevice(deviceId: Int)
         case alarmPanel(AlarmPanel)
+        case thermostat(EcobeeThermostat)
         case staticAction(title: String, icon: String, color: Color, actionId: String)
         case room(name: String, icon: String)
 
@@ -477,6 +693,7 @@ struct DashboardView: View {
             case .forYouEvening: return "foryou_evening"
             case .forYouDevice(let id): return "foryou_\(id)"
             case .alarmPanel(let panel): return "alarm_\(panel.id)"
+            case .thermostat(let t): return "thermo_\(t.id)"
             case .staticAction(_, _, _, let id): return "static_\(id)"
             case .room(let name, _): return "room_\(name)"
             }
@@ -504,6 +721,14 @@ struct DashboardView: View {
             for panel in totalConnect.panels {
                 guard items.count < maxItems else { break }
                 items.append(.alarmPanel(panel))
+            }
+        }
+
+        // 2b. Thermostats (climate — high priority like alarm)
+        if ecobee.hasThermostats {
+            for thermo in ecobee.thermostats {
+                guard items.count < maxItems else { break }
+                items.append(.thermostat(thermo))
             }
         }
 
@@ -679,6 +904,9 @@ struct DashboardView: View {
                 case .alarmPanel(let panel):
                     AlarmPill(panel: panel, manager: totalConnect)
 
+                case .thermostat(let thermo):
+                    ThermostatPill(thermostat: thermo, manager: ecobee)
+
                 case .staticAction(let title, let icon, let color, let actionId):
                     QuickActionButton(title: title, icon: icon, color: color) {
                         handleStaticAction(actionId)
@@ -803,15 +1031,10 @@ struct DashboardView: View {
             }
 
             if store.lightsOn.isEmpty {
-                HStack {
-                    Spacer()
-                    Text("All lights are off")
-                        .foregroundStyle(.secondary)
-                        .font(.subheadline)
-                    Spacer()
-                }
-                .padding(.vertical, 24)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                Text("All lights are off")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 8)
             } else {
                 // Group by room so the list stays navigable even with many lights on.
                 // Within each room the pill shows the light name without the room prefix.
@@ -1011,7 +1234,7 @@ struct AlarmPill: View {
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(stateColor.opacity(panel.state == .alarming ? 0.8 : 0.2), lineWidth: panel.state == .alarming ? 1.5 : 0.5)
+                    .stroke(stateColor.opacity(panel.state == .alarming ? 0.6 : 0.2), lineWidth: panel.state == .alarming ? 1 : 0.5)
             )
         }
         .buttonStyle(.plain)
@@ -1145,7 +1368,7 @@ private struct ArmActionButton: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(color.opacity(isCurrent ? 0 : 0.25), lineWidth: 1)
+                    .stroke(color.opacity(isCurrent ? 0 : 0.25), lineWidth: 0.5)
             )
         }
         .buttonStyle(.plain)
@@ -1197,6 +1420,290 @@ private struct AlarmZoneRow: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+    }
+}
+
+// MARK: - Thermostat Pill
+
+struct ThermostatPill: View {
+    let thermostat: EcobeeThermostat
+    let manager: EcobeeManager
+    @State private var showDetail = false
+
+    private var modeColor: Color {
+        switch thermostat.hvacMode {
+        case .heat: return .orange
+        case .cool:               return .cyan
+        case .auto:               return .green
+        case .off:                return .secondary
+        }
+    }
+
+    var body: some View {
+        Button { showDetail = true } label: {
+            HStack(spacing: 10) {
+                Image(systemName: thermostat.hvacMode.icon)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(modeColor)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(thermostat.name)
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        Text("\(Int(thermostat.currentTemp))\u{00B0}")
+                            .font(.system(size: 14, weight: .bold))
+                        Text(thermostat.hvacMode.label)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: 6)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(14)
+            .frame(minHeight: 56)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(modeColor.opacity(0.15), lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .sheet(isPresented: $showDetail) {
+            ThermostatDetailView(thermostat: thermostat, manager: manager)
+        }
+    }
+}
+
+// MARK: - Thermostat Detail Sheet
+
+struct ThermostatDetailView: View {
+    let thermostat: EcobeeThermostat
+    let manager: EcobeeManager
+    @Environment(\.dismiss) private var dismiss
+    @State private var heatTarget: Double
+    @State private var coolTarget: Double
+
+    init(thermostat: EcobeeThermostat, manager: EcobeeManager) {
+        self.thermostat = thermostat
+        self.manager = manager
+        self._heatTarget = State(initialValue: thermostat.desiredHeat)
+        self._coolTarget = State(initialValue: thermostat.desiredCool)
+    }
+
+    private var modeColor: Color {
+        switch thermostat.hvacMode {
+        case .heat: return .orange
+        case .cool:               return .cyan
+        case .auto:               return .green
+        case .off:                return .secondary
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Big temp header
+                    VStack(spacing: 8) {
+                        Image(systemName: thermostat.hvacMode.icon)
+                            .font(.system(size: 44, weight: .medium))
+                            .foregroundStyle(modeColor)
+                        Text("\(Int(thermostat.currentTemp))\u{00B0}F")
+                            .font(.system(size: 44, weight: .bold))
+                        Text(thermostat.name)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        HStack(spacing: 12) {
+                            if let humidity = thermostat.humidity {
+                                Label("\(humidity)%", systemImage: "humidity")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text(thermostat.hvacMode.label)
+                                .font(.caption)
+                                .foregroundStyle(modeColor)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    .padding(.horizontal)
+
+                    // Setpoint controls
+                    if thermostat.hvacMode != .off {
+                        VStack(spacing: 12) {
+                            if thermostat.hvacMode == .heat || thermostat.hvacMode == .auto {
+                                HStack {
+                                    Image(systemName: "flame.fill")
+                                        .foregroundStyle(.orange)
+                                    Text("Heat to")
+                                    Spacer()
+                                    Button { heatTarget -= 1 } label: {
+                                        Image(systemName: "minus.circle.fill")
+                                            .font(.title2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                    Text("\(Int(heatTarget))\u{00B0}")
+                                        .font(.title3.weight(.semibold))
+                                        .frame(width: 44)
+                                    Button { heatTarget += 1 } label: {
+                                        Image(systemName: "plus.circle.fill")
+                                            .font(.title2)
+                                            .foregroundStyle(.orange)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            if thermostat.hvacMode == .cool || thermostat.hvacMode == .auto {
+                                HStack {
+                                    Image(systemName: "snowflake")
+                                        .foregroundStyle(.cyan)
+                                    Text("Cool to")
+                                    Spacer()
+                                    Button { coolTarget -= 1 } label: {
+                                        Image(systemName: "minus.circle.fill")
+                                            .font(.title2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                    Text("\(Int(coolTarget))\u{00B0}")
+                                        .font(.title3.weight(.semibold))
+                                        .frame(width: 44)
+                                    Button { coolTarget += 1 } label: {
+                                        Image(systemName: "plus.circle.fill")
+                                            .font(.title2)
+                                            .foregroundStyle(.cyan)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+
+                            if heatTarget != thermostat.desiredHeat || coolTarget != thermostat.desiredCool {
+                                Button {
+                                    Task {
+                                        if thermostat.hvacMode == .auto {
+                                            try? await manager.setHeatCoolTargets(
+                                                thermostatId: thermostat.identifier,
+                                                heat: heatTarget,
+                                                cool: coolTarget
+                                            )
+                                        } else {
+                                            let target = thermostat.hvacMode == .heat ? heatTarget : coolTarget
+                                            try? await manager.setTargetTemp(
+                                                thermostatId: thermostat.identifier,
+                                                temp: target
+                                            )
+                                        }
+                                    }
+                                } label: {
+                                    Text("Set Temperature")
+                                        .font(.body.weight(.semibold))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 10)
+                                        .background(modeColor, in: RoundedRectangle(cornerRadius: 10))
+                                        .foregroundStyle(.white)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal)
+                    }
+
+                    // Mode picker
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Mode")
+                            .font(.caption.weight(.semibold))
+                            .textCase(.uppercase)
+                            .foregroundStyle(.secondary)
+                        HStack(spacing: 8) {
+                            ForEach([HvacMode.heat, .cool, .auto, .off], id: \.rawValue) { mode in
+                                Button {
+                                    Task { try? await manager.setMode(thermostatId: thermostat.identifier, mode: mode) }
+                                } label: {
+                                    VStack(spacing: 4) {
+                                        Image(systemName: mode.icon)
+                                            .font(.system(size: 16))
+                                        Text(mode.label)
+                                            .font(.caption2)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 10)
+                                    .background(
+                                        thermostat.hvacMode == mode
+                                            ? AnyShapeStyle(modeColor.opacity(0.2))
+                                            : AnyShapeStyle(.ultraThinMaterial)
+                                    , in: RoundedRectangle(cornerRadius: 10))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .stroke(thermostat.hvacMode == mode ? modeColor.opacity(0.5) : Color.clear, lineWidth: 1)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+
+                    // Sensors
+                    let thermoSensors = manager.sensors.filter { $0.parentThermostatId == thermostat.identifier }
+                    if !thermoSensors.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Sensors")
+                                .font(.caption.weight(.semibold))
+                                .textCase(.uppercase)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal)
+
+                            VStack(spacing: 0) {
+                                ForEach(thermoSensors) { sensor in
+                                    HStack(spacing: 12) {
+                                        Image(systemName: sensor.occupancy ? "person.fill" : "person")
+                                            .font(.system(size: 14))
+                                            .foregroundStyle(sensor.occupancy ? .green : .secondary)
+                                            .frame(width: 22)
+                                        Text(sensor.name)
+                                            .font(.system(size: 14, weight: .medium))
+                                        Spacer()
+                                        if let temp = sensor.temp {
+                                            Text("\(Int(temp))\u{00B0}F")
+                                                .font(.system(size: 14, weight: .semibold))
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 10)
+                                }
+                            }
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        }
+                        .padding(.horizontal)
+                    }
+
+                    if let error = manager.errorMessage {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .padding(.horizontal)
+                    }
+                }
+                .padding(.vertical)
+            }
+            .navigationTitle("Thermostat")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
     }
 }
 
@@ -1318,7 +1825,7 @@ struct RoomControlCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(isActive ? Color.orange.opacity(0.2) : Color(.separator).opacity(0.5), lineWidth: 1)
+                .stroke(isActive ? Color.orange.opacity(0.2) : Color(.separator).opacity(0.5), lineWidth: 0.5)
         )
     }
 
@@ -1406,7 +1913,7 @@ struct LightOnPill: View {
                     .animation(isDragging ? nil : .easeOut(duration: 0.15), value: displayLevel)
 
                 RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                    .stroke(Color.orange.opacity(0.3), lineWidth: 0.5)
 
                 HStack(spacing: 4) {
                     Image(systemName: "lightbulb.fill")
@@ -1517,7 +2024,7 @@ struct DimPill: View {
                     .animation(isDragging ? nil : .easeOut(duration: 0.15), value: displayLevel)
 
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(accentColor.opacity(isOn ? 0.3 : 0.15), lineWidth: 1)
+                    .stroke(accentColor.opacity(isOn ? 0.3 : 0.15), lineWidth: 0.5)
 
                 HStack(spacing: 0) {
                     Button { setAll(0, fadeTime: 1) } label: {
@@ -1690,9 +2197,8 @@ struct CategoryRoomCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 14))
             .overlay(
                 RoundedRectangle(cornerRadius: 14)
-                    .stroke(hasActiveDevice ? accentColor.opacity(0.3) : Color(.separator).opacity(0.5), lineWidth: 1)
+                    .stroke(hasActiveDevice ? accentColor.opacity(0.3) : Color(.separator).opacity(0.4), lineWidth: 0.5)
             )
-            .shadow(color: hasActiveDevice ? accentColor.opacity(0.1) : .clear, radius: 8, y: 4)
         }
         .buttonStyle(.plain)
     }
@@ -2092,7 +2598,7 @@ struct GarageDoorCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(position == .open ? Color.orange.opacity(0.3) : Color(.separator).opacity(0.5), lineWidth: 1)
+                    .stroke(position == .open ? Color.orange.opacity(0.3) : Color(.separator).opacity(0.5), lineWidth: 0.5)
             )
         }
         .buttonStyle(.plain)
@@ -2197,7 +2703,7 @@ struct ConnectionBanner: View {
         .background(tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(tint.opacity(0.2), lineWidth: 1)
+                .stroke(tint.opacity(0.2), lineWidth: 0.5)
         )
     }
 
@@ -2284,7 +2790,7 @@ struct DishwasherCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(status.operationState.isActive ? Color.cyan.opacity(0.3) : Color(.separator).opacity(0.5), lineWidth: 1)
+                .stroke(status.operationState.isActive ? Color.cyan.opacity(0.3) : Color(.separator).opacity(0.5), lineWidth: 0.5)
         )
     }
 
@@ -2370,7 +2876,7 @@ struct HeatPumpCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color(.separator).opacity(0.5), lineWidth: 1)
+                    .stroke(Color(.separator).opacity(0.5), lineWidth: 0.5)
             )
         }
         .buttonStyle(.plain)

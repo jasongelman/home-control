@@ -11,6 +11,7 @@ struct LutronHomeApp: App {
     @State private var myQ = MyQManager()
     @State private var chatService = ChatService()
     @State private var totalConnect = TotalConnectManager()
+    @State private var ecobee = EcobeeManager()
     @Environment(\.scenePhase) private var scenePhase
     @State private var showVoiceInput = false
 
@@ -26,12 +27,14 @@ struct LutronHomeApp: App {
                 .environment(myQ)
                 .environment(chatService)
                 .environment(totalConnect)
+                .environment(ecobee)
                 .preferredColorScheme(.dark)
                 .onAppear {
                     store.usageTracker = usageTracker
                     homeKit.start()
                     homeKit.cleanupOldActivitySnapshots()
                     homeKit.loadTodayActivitySnapshots()
+                    NotificationManager.shared.requestPermission()
                     // Register Siri shortcuts
                     LutronShortcutsProvider.updateAppShortcutParameters()
                 }
@@ -44,6 +47,7 @@ struct LutronHomeApp: App {
                         smartHQ.resume()
                         myQ.resume()
                         totalConnect.resume()
+                        ecobee.resume()
                         // Sync appliance status to widget
                         syncApplianceStatus()
                     }

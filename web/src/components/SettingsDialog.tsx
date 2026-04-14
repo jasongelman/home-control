@@ -12,6 +12,7 @@ import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import SecurityIcon from '@mui/icons-material/Security';
+
 import { useLutron } from '../context/LutronContext.js';
 import { useScenes } from '../hooks/useScenes.js';
 import { useAdaptiveDashboard } from '../hooks/useAdaptiveDashboard.js';

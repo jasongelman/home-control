@@ -129,6 +129,7 @@ export function handleWebSocket(
           ws.send(JSON.stringify({ type: 'error', message: String(err) }));
         }
         break;
+
     }
   });
 }

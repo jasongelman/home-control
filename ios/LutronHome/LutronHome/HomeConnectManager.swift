@@ -152,6 +152,8 @@ class HomeConnectManager: @unchecked Sendable {
     var isStarting = false
     var startError: String?
 
+    private var previousStates: [String: DishwasherOperationState] = [:]
+
     /// Convenience: first dishwasher (backward compat for single-dishwasher UI)
     var dishwasher: DishwasherStatus {
         get { dishwashers.first ?? DishwasherStatus() }
@@ -461,6 +463,14 @@ class HomeConnectManager: @unchecked Sendable {
 
             dishwashers[index].connected = true
             errorMessage = nil
+
+            // Check for cycle completion transition
+            let dw = dishwashers[index]
+            let prev = previousStates[dw.applianceId]
+            if let prev, prev.isActive, dw.operationState == .finished {
+                NotificationManager.shared.notifyCycleComplete(appliance: "Dishwasher", id: dw.applianceId)
+            }
+            previousStates[dw.applianceId] = dw.operationState
         } catch {
             print("HomeConnect: fetchStatus error for \(dishwashers[index].applianceName) — \(error)")
         }
@@ -590,6 +600,8 @@ class HomeConnectManager: @unchecked Sendable {
             // Find the matching dishwasher (or default to first if no haId)
             guard let idx = self.dishwashers.firstIndex(where: { $0.applianceId == haId }) ?? self.dishwashers.indices.first else { return }
 
+            let prevState = self.previousStates[self.dishwashers[idx].applianceId]
+
             for item in items {
                 let key = item["key"] as? String ?? ""
                 switch key {
@@ -609,6 +621,13 @@ class HomeConnectManager: @unchecked Sendable {
                     break
                 }
             }
+
+            // Check for cycle completion transition
+            let dw = self.dishwashers[idx]
+            if let prevState, prevState.isActive, dw.operationState == .finished {
+                NotificationManager.shared.notifyCycleComplete(appliance: "Dishwasher", id: dw.applianceId)
+            }
+            self.previousStates[dw.applianceId] = dw.operationState
         }
     }
 
