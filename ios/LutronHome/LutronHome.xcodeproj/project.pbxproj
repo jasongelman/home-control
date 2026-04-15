@@ -49,6 +49,7 @@
 		A100004B /* SonosModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200004B /* SonosModels.swift */; };
 		A100004C /* SonosLocalClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200004C /* SonosLocalClient.swift */; };
 		A100004D /* SonosCloudClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200004D /* SonosCloudClient.swift */; };
+		A100004E /* SonosManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200004E /* SonosManager.swift */; };
 		B1000004 /* AppGroupManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000004 /* AppGroupManagerTests.swift */; };
 		B1000005 /* RecommendationEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000005 /* RecommendationEngineTests.swift */; };
 		W1000001 /* LutronHomeWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = W2000001 /* LutronHomeWidget.swift */; };
@@ -143,6 +144,7 @@
 		A200004B /* SonosModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SonosModels.swift; sourceTree = "<group>"; };
 		A200004C /* SonosLocalClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SonosLocalClient.swift; sourceTree = "<group>"; };
 		A200004D /* SonosCloudClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SonosCloudClient.swift; sourceTree = "<group>"; };
+		A200004E /* SonosManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SonosManager.swift; sourceTree = "<group>"; };
 		A2000050 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B2000004 /* AppGroupManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroupManagerTests.swift; sourceTree = "<group>"; };
 		B2000005 /* RecommendationEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecommendationEngineTests.swift; sourceTree = "<group>"; };
@@ -229,6 +231,7 @@
 				A200004B /* SonosModels.swift */,
 				A200004C /* SonosLocalClient.swift */,
 				A200004D /* SonosCloudClient.swift */,
+				A200004E /* SonosManager.swift */,
 				A2000012 /* LutronHome.entitlements */,
 				A2000050 /* Info.plist */,
 				A2000010 /* Assets.xcassets */,
@@ -442,6 +445,7 @@ A1000010 /* Assets.xcassets in Resources */,
 				A100004B /* SonosModels.swift in Sources */,
 				A100004C /* SonosLocalClient.swift in Sources */,
 				A100004D /* SonosCloudClient.swift in Sources */,
+				A100004E /* SonosManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
