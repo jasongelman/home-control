@@ -285,6 +285,7 @@ struct DashboardView: View {
     @Environment(TotalConnectManager.self) var totalConnect
     @Environment(MyQManager.self) var myQ
     @Environment(EcobeeManager.self) var ecobee
+    @Environment(SonosManager.self) var sonos
 
     @State private var showDishwasherStartSheet = false
     @State private var selectedDishwasherId: String?
@@ -682,6 +683,7 @@ struct DashboardView: View {
         case forYouDevice(deviceId: Int)
         case alarmPanel(AlarmPanel)
         case thermostat(EcobeeThermostat)
+        case sonosPlayer(SonosPlayer)
         case staticAction(title: String, icon: String, color: Color, actionId: String)
         case room(name: String, icon: String)
 
@@ -694,6 +696,7 @@ struct DashboardView: View {
             case .forYouDevice(let id): return "foryou_\(id)"
             case .alarmPanel(let panel): return "alarm_\(panel.id)"
             case .thermostat(let t): return "thermo_\(t.id)"
+            case .sonosPlayer(let p): return "sonos_\(p.id)"
             case .staticAction(_, _, _, let id): return "static_\(id)"
             case .room(let name, _): return "room_\(name)"
             }
@@ -730,6 +733,12 @@ struct DashboardView: View {
                 guard items.count < maxItems else { break }
                 items.append(.thermostat(thermo))
             }
+        }
+
+        // 2c. Sonos speakers (media — high priority like alarm/climate)
+        for player in sonos.coordinators where player.state == .playing || player.currentTrack != nil {
+            guard items.count < maxItems else { break }
+            items.append(.sonosPlayer(player))
         }
 
         // 2. Active/startable appliances only (skip idle)
@@ -906,6 +915,9 @@ struct DashboardView: View {
 
                 case .thermostat(let thermo):
                     ThermostatPill(thermostat: thermo, manager: ecobee)
+
+                case .sonosPlayer(let player):
+                    SonosPill(player: player)
 
                 case .staticAction(let title, let icon, let color, let actionId):
                     QuickActionButton(title: title, icon: icon, color: color) {
@@ -1477,6 +1489,81 @@ struct ThermostatPill: View {
         .buttonStyle(.plain)
         .sheet(isPresented: $showDetail) {
             ThermostatDetailView(thermostat: thermostat, manager: manager)
+        }
+    }
+}
+
+// MARK: - Sonos Pill
+
+struct SonosPill: View {
+    let player: SonosPlayer
+    @Environment(SonosManager.self) var sonos
+    @State private var showDetail = false
+
+    var body: some View {
+        Button { showDetail = true } label: {
+            HStack(spacing: 10) {
+                Image(systemName: player.state == .playing ? "speaker.wave.2.fill" : "speaker.fill")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(.orange)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(player.name)
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                    if let track = player.currentTrack {
+                        HStack(spacing: 4) {
+                            Text(track.title)
+                                .font(.system(size: 11))
+                                .lineLimit(1)
+                            if !track.artist.isEmpty {
+                                Text("·")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                Text(track.artist)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                    } else {
+                        Text("Not Playing")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer(minLength: 6)
+
+                // Inline play/pause button
+                Button {
+                    Task {
+                        if player.state == .playing {
+                            try? await sonos.pausePlayback(playerId: player.id)
+                        } else {
+                            try? await sonos.play(playerId: player.id)
+                        }
+                    }
+                } label: {
+                    Image(systemName: player.state == .playing ? "pause.fill" : "play.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.orange)
+                        .frame(width: 28, height: 28)
+                        .background(Color.orange.opacity(0.15), in: Circle())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(14)
+            .frame(minHeight: 56)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.orange.opacity(0.15), lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .sheet(isPresented: $showDetail) {
+            SonosDetailView(player: player)
         }
     }
 }

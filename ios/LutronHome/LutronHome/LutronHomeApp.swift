@@ -12,6 +12,7 @@ struct LutronHomeApp: App {
     @State private var chatService = ChatService()
     @State private var totalConnect = TotalConnectManager()
     @State private var ecobee = EcobeeManager()
+    @State private var sonos = SonosManager()
     @Environment(\.scenePhase) private var scenePhase
     @State private var showVoiceInput = false
 
@@ -28,6 +29,7 @@ struct LutronHomeApp: App {
                 .environment(chatService)
                 .environment(totalConnect)
                 .environment(ecobee)
+                .environment(sonos)
                 .preferredColorScheme(.dark)
                 .onAppear {
                     store.usageTracker = usageTracker
@@ -48,8 +50,11 @@ struct LutronHomeApp: App {
                         myQ.resume()
                         totalConnect.resume()
                         ecobee.resume()
+                        sonos.resume()
                         // Sync appliance status to widget
                         syncApplianceStatus()
+                    } else if newPhase == .background {
+                        sonos.suspendLocal()
                     }
                 }
                 .onOpenURL { url in
