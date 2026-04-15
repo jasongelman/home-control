@@ -3,6 +3,7 @@ import SwiftUI
 struct RoomDetailView: View {
     @Environment(LutronStore.self) var store
     @Environment(EcobeeManager.self) var ecobee
+    @Environment(SonosManager.self) var sonos
     let roomName: String
     let onBack: () -> Void
 
@@ -21,6 +22,9 @@ struct RoomDetailView: View {
     }
     private var roomSensors: [EcobeeRemoteSensor] {
         ecobee.sensors.filter { $0.room == roomName }
+    }
+    private var roomSonosPlayer: SonosPlayer? {
+        sonos.player(forRoom: roomName)
     }
 
     var body: some View {
@@ -79,6 +83,56 @@ struct RoomDetailView: View {
                                 )
                             }
                         }
+                    }
+                }
+
+                // Sonos speaker for this room
+                if let player = roomSonosPlayer {
+                    DeviceSection(title: "Music", icon: "hifispeaker.fill", count: 1) {
+                        HStack(spacing: 12) {
+                            Image(systemName: player.state == .playing ? "speaker.wave.2.fill" : "speaker.fill")
+                                .font(.system(size: 16))
+                                .foregroundStyle(.orange)
+                                .frame(width: 22)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(player.name)
+                                    .font(.system(size: 13, weight: .medium))
+                                if let track = player.currentTrack {
+                                    Text("\(track.title) · \(track.artist)")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                } else {
+                                    Text("Not Playing")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+
+                            Spacer()
+
+                            Button {
+                                Task {
+                                    if player.state == .playing {
+                                        try? await sonos.pausePlayback(playerId: player.id)
+                                    } else {
+                                        try? await sonos.play(playerId: player.id)
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: player.state == .playing ? "pause.circle.fill" : "play.circle.fill")
+                                    .font(.system(size: 24))
+                                    .foregroundStyle(.orange)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(12)
+                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color(.separator).opacity(0.4), lineWidth: 0.5)
+                        )
                     }
                 }
 

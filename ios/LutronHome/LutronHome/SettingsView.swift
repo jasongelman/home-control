@@ -10,6 +10,7 @@ struct SettingsView: View {
     @Environment(ChatService.self) var chatService
     @Environment(TotalConnectManager.self) var totalConnect
     @Environment(EcobeeManager.self) var ecobee
+    @Environment(SonosManager.self) var sonos
     @State private var host: String = ""
     @State private var chatApiKey: String = ""
     @State private var hcClientId: String = ""
@@ -21,6 +22,8 @@ struct SettingsView: View {
     @State private var tcUsername: String = ""
     @State private var tcPassword: String = ""
     @State private var tcUserCode: String = ""
+    @State private var sonosClientId: String = ""
+    @State private var sonosClientSecret: String = ""
 
     private let oauthContext = OAuthPresentationContext()
 
@@ -469,6 +472,107 @@ struct SettingsView: View {
                 Text("Thermostats are discovered automatically via HomeKit. Make sure your thermostats are added to the Home app.")
             }
 
+            // MARK: - Sonos
+
+            Section {
+                HStack {
+                    Image(systemName: "hifispeaker.2.fill")
+                        .foregroundStyle(.orange)
+                    Text("Sonos Speakers")
+                        .fontWeight(.medium)
+                    Spacer()
+                    if sonos.hasPlayers {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                }
+
+                if sonos.players.isEmpty {
+                    HStack {
+                        Text("Status")
+                        Spacer()
+                        Text("Discovering...")
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    ForEach(sonos.players) { player in
+                        HStack {
+                            Image(systemName: "hifispeaker.fill")
+                                .foregroundStyle(.orange)
+                                .frame(width: 20)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(player.name)
+                                Text("\(player.modelName) · \(player.ipAddress)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if player.state == .playing {
+                                Image(systemName: "waveform")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                                    .symbolEffect(.variableColor.iterative)
+                            }
+                        }
+                    }
+                }
+
+                // Cloud linking
+                if !sonos.isCloudLinked {
+                    TextField("Sonos Client ID", text: $sonosClientId)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .onChange(of: sonosClientId) { _, val in
+                            sonos.setClientCredentials(clientId: val, clientSecret: sonosClientSecret)
+                        }
+
+                    SecureField("Client Secret", text: $sonosClientSecret)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .onChange(of: sonosClientSecret) { _, val in
+                            sonos.setClientCredentials(clientId: sonosClientId, clientSecret: val)
+                        }
+
+                    Button {
+                        sonos.startOAuth(from: oauthContext)
+                    } label: {
+                        HStack {
+                            Image(systemName: "link")
+                            Text("Link Sonos Account")
+                        }
+                    }
+                    .disabled(sonosClientId.isEmpty || sonosClientSecret.isEmpty)
+                    .tint(.orange)
+                } else {
+                    HStack {
+                        Text("Cloud API")
+                        Spacer()
+                        Text("Connected")
+                            .foregroundStyle(.green)
+                    }
+
+                    Button(role: .destructive) {
+                        sonos.unlinkCloud()
+                    } label: {
+                        HStack {
+                            Image(systemName: "link.badge.plus")
+                                .symbolRenderingMode(.multicolor)
+                            Text("Unlink Account")
+                        }
+                    }
+                }
+
+                if let error = sonos.errorMessage {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            } header: {
+                Text("Sonos")
+            } footer: {
+                Text("Speakers are discovered automatically on your local network. Cloud linking is optional — enables browsing favorites and playlists. Register at developer.sonos.com for credentials.")
+            }
+
             // MARK: - Resideo / Total Connect 2.0
 
             Section {
@@ -615,6 +719,8 @@ struct SettingsView: View {
             muClientSecret = myUplink.clientSecret
             myqEmail = myQ.email
             myqPassword = myQ.password
+            sonosClientId = KeychainHelper.loadString(for: "sonos-clientId") ?? ""
+            sonosClientSecret = KeychainHelper.loadString(for: "sonos-clientSecret") ?? ""
         }
     }
 }
