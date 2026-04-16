@@ -40,7 +40,7 @@ struct RoomDetailView: View {
                                         .font(.system(size: 14))
                                         .foregroundStyle(.green)
                                         .frame(width: 22)
-                                    Text(thermo.name)
+                                    Text(thermo.displayName)
                                         .font(.system(size: 13, weight: .medium))
                                     Spacer()
                                     Text("\(Int(thermo.currentTemp))\u{00B0}F")

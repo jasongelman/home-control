@@ -453,7 +453,17 @@ struct SettingsView: View {
                             Image(systemName: thermo.hvacMode.icon)
                                 .foregroundStyle(.green)
                                 .frame(width: 20)
-                            Text(thermo.name)
+                            VStack(alignment: .leading, spacing: 2) {
+                                TextField("Name", text: Binding(
+                                    get: { thermo.displayName },
+                                    set: { ecobee.setNameOverride(for: thermo.identifier, name: $0) }
+                                ))
+                                if EcobeeManager.nameOverride(for: thermo.identifier) != nil && thermo.name != thermo.displayName {
+                                    Text(thermo.name)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
                             Spacer()
                             Text("\(Int(thermo.currentTemp))\u{00B0}F")
                                 .foregroundStyle(.secondary)
@@ -469,7 +479,7 @@ struct SettingsView: View {
             } header: {
                 Text("Climate")
             } footer: {
-                Text("Thermostats are discovered automatically via HomeKit. Make sure your thermostats are added to the Home app.")
+                Text("Thermostats are discovered automatically via HomeKit. Tap a name to rename it.")
             }
 
             // MARK: - Sonos

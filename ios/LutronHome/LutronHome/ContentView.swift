@@ -440,6 +440,13 @@ struct DashboardView: View {
     private var statusCells: [StatusCell] {
         var cells: [StatusCell] = []
 
+        // Thermostats (first — top row)
+        for thermo in ecobee.thermostats {
+            let value = "\(Int(thermo.currentTemp))°"
+            let suffix = thermo.hvacMode.label
+            cells.append(StatusCell("thermo_\(thermo.id)", label: thermo.displayName, value: value, suffix: suffix, isActive: thermo.hvacMode != .off))
+        }
+
         // Alarm
         if totalConnect.isLinked, let panel = totalConnect.panels.first {
             let faults = (totalConnect.zones[panel.locationId] ?? []).filter { $0.faulted }.count
@@ -513,6 +520,20 @@ struct DashboardView: View {
             cells.append(StatusCell("hvac", label: "HVAC", value: value, suffix: suffix, isActive: true))
         }
 
+        // Sonos speakers
+        for player in sonos.coordinators {
+            let value: String
+            let active: Bool
+            if player.state == .playing, let track = player.currentTrack {
+                value = track.title
+                active = true
+            } else {
+                value = "Off"
+                active = false
+            }
+            cells.append(StatusCell("sonos_\(player.id)", label: player.name, value: value, isActive: active))
+        }
+
         // Lutron lights summary
         if store.connectionState == .connected {
             let onCount = store.devices.values.filter { $0.category == .light && $0.level > 0 }.count
@@ -531,44 +552,26 @@ struct DashboardView: View {
     private var statusGlanceSection: some View {
         let cells = statusCells
         if !cells.isEmpty {
-            let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 4)
-            let row1 = Array(cells.prefix(4))
-            let row2 = Array(cells.dropFirst(4))
+            let colCount = 4
+            let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: colCount)
+            let rows: [[StatusCell]] = stride(from: 0, to: cells.count, by: colCount).map {
+                Array(cells[$0..<min($0 + colCount, cells.count)])
+            }
 
             VStack(spacing: 0) {
-                // Row 1
-                LazyVGrid(columns: columns, spacing: 0) {
-                    ForEach(Array(row1.enumerated()), id: \.element.id) { index, cell in
-                        statusCellView(cell, showRightBorder: index < 3)
+                ForEach(Array(rows.enumerated()), id: \.offset) { rowIdx, row in
+                    if rowIdx > 0 {
+                        Divider().overlay(Color(.separator).opacity(0.15))
                     }
-                    // Pad row 1 to 4 if fewer
-                    if row1.count < 4 {
-                        ForEach(row1.count..<4, id: \.self) { index in
-                            Color.clear.frame(maxWidth: .infinity)
-                                .overlay(alignment: .trailing) {
-                                    if index < 3 {
-                                        Rectangle().fill(Color(.separator).opacity(0.15)).frame(width: 0.5)
-                                    }
-                                }
-                        }
-                    }
-                }
-
-                // Horizontal divider
-                if !row2.isEmpty {
-                    Divider().overlay(Color(.separator).opacity(0.15))
-
-                    // Row 2
                     LazyVGrid(columns: columns, spacing: 0) {
-                        ForEach(Array(row2.enumerated()), id: \.element.id) { index, cell in
-                            statusCellView(cell, showRightBorder: index < 3)
+                        ForEach(Array(row.enumerated()), id: \.element.id) { index, cell in
+                            statusCellView(cell, showRightBorder: index < colCount - 1)
                         }
-                        // Pad row 2 to 4 if fewer
-                        if row2.count < 4 {
-                            ForEach(row2.count..<4, id: \.self) { index in
+                        if row.count < colCount {
+                            ForEach(row.count..<colCount, id: \.self) { index in
                                 Color.clear.frame(maxWidth: .infinity)
                                     .overlay(alignment: .trailing) {
-                                        if index < 3 && index + row2.count < 3 {
+                                        if index < colCount - 1 && index + row.count < colCount - 1 {
                                             Rectangle().fill(Color(.separator).opacity(0.15)).frame(width: 0.5)
                                         }
                                     }
@@ -741,7 +744,7 @@ struct DashboardView: View {
             items.append(.sonosPlayer(player))
         }
 
-        // 2. Active/startable appliances only (skip idle)
+        // 3. Active/startable appliances only (skip idle)
         if homeConnect.isLinked {
             for dw in homeConnect.dishwashers where dw.operationState.isActive || dw.canRemoteStart {
                 guard items.count < maxItems else { break }
@@ -1459,7 +1462,7 @@ struct ThermostatPill: View {
                     .foregroundStyle(modeColor)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(thermostat.name)
+                    Text(thermostat.displayName)
                         .font(.system(size: 12, weight: .semibold))
                         .lineLimit(1)
                     HStack(spacing: 4) {
@@ -1604,7 +1607,7 @@ struct ThermostatDetailView: View {
                             .foregroundStyle(modeColor)
                         Text("\(Int(thermostat.currentTemp))\u{00B0}F")
                             .font(.system(size: 44, weight: .bold))
-                        Text(thermostat.name)
+                        Text(thermostat.displayName)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                         HStack(spacing: 12) {

@@ -1,5 +1,6 @@
 import Foundation
 import AuthenticationServices
+import Network
 
 actor SonosCloudClient {
 
@@ -71,13 +72,30 @@ actor SonosCloudClient {
             throw SonosCloudError.missingCredentials
         }
 
-        let redirectURI = "com.jasongelman.lutronhome://oauth/sonos"
+        let oauthPort: UInt16 = 8923
+        let redirectURI = "http://localhost:\(oauthPort)/oauth/sonos"
         let state = UUID().uuidString
         let scope = "playback-control-all"
 
-        let authURL = URL(string: "https://api.sonos.com/login/v3/oauth?client_id=\(cid)&response_type=code&redirect_uri=\(redirectURI.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? redirectURI)&scope=\(scope)&state=\(state)")!
+        var authComponents = URLComponents(string: "https://api.sonos.com/login/v3/oauth")!
+        authComponents.queryItems = [
+            URLQueryItem(name: "client_id", value: cid),
+            URLQueryItem(name: "response_type", value: "code"),
+            URLQueryItem(name: "redirect_uri", value: redirectURI),
+            URLQueryItem(name: "scope", value: scope),
+            URLQueryItem(name: "state", value: state),
+        ]
+        let authURL = authComponents.url!
+        print("SonosCloudClient: OAuth URL → \(authURL.absoluteString)")
 
-        // ASWebAuthenticationSession must be created and started on the main thread.
+        // Start local HTTP server to bridge Sonos redirect → custom URL scheme.
+        // Sonos redirects to http://localhost:8923/oauth/sonos?code=xxx
+        // Our server responds with 302 → lutronhome://oauth/sonos?code=xxx
+        // ASWebAuthenticationSession intercepts the custom scheme.
+        let oauthListener = try startOAuthListener(port: oauthPort)
+        defer { oauthListener.cancel() }
+
+        // ASWebAuthenticationSession with custom scheme
         let callbackURL: URL = try await sonosWebAuthSession(authURL: authURL, context: context)
 
         // Extract authorization code
@@ -91,6 +109,41 @@ actor SonosCloudClient {
 
         // Fetch household ID
         try await fetchHouseholdId()
+    }
+
+    /// Starts a tiny HTTP server on the given port that receives the OAuth redirect
+    /// and responds with a 302 to the app's custom URL scheme so ASWebAuthenticationSession
+    /// can intercept it.
+    private func startOAuthListener(port: UInt16) throws -> NWListener {
+        let params = NWParameters.tcp
+        let listener = try NWListener(using: params, on: NWEndpoint.Port(rawValue: port)!)
+
+        listener.newConnectionHandler = { connection in
+            connection.start(queue: DispatchQueue(label: "sonos-oauth-conn"))
+            connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, _, _ in
+                guard let data, let request = String(data: data, encoding: .utf8),
+                      let firstLine = request.components(separatedBy: "\r\n").first,
+                      let pathQuery = firstLine.split(separator: " ").dropFirst().first else {
+                    connection.cancel()
+                    return
+                }
+
+                // Forward the query string to the custom scheme
+                let pathStr = String(pathQuery)
+                let query = pathStr.contains("?") ? String(pathStr[pathStr.index(after: pathStr.firstIndex(of: "?")!)...]) : ""
+                let redirectURL = "lutronhome://oauth/sonos?\(query)"
+
+                let responseBody = "<html><body>Authorization complete. Returning to app…</body></html>"
+                let response = "HTTP/1.1 302 Found\r\nLocation: \(redirectURL)\r\nContent-Length: \(responseBody.utf8.count)\r\nContent-Type: text/html\r\n\r\n\(responseBody)"
+
+                connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in
+                    connection.cancel()
+                })
+            }
+        }
+
+        listener.start(queue: DispatchQueue(label: "sonos-oauth-listener"))
+        return listener
     }
 
     private func exchangeCodeForTokens(code: String, redirectURI: String) async throws {
@@ -108,7 +161,14 @@ actor SonosCloudClient {
         let base64Credentials = Data(credentials.utf8).base64EncodedString()
         request.setValue("Basic \(base64Credentials)", forHTTPHeaderField: "Authorization")
 
-        let body = "grant_type=authorization_code&code=\(code)&redirect_uri=\(redirectURI.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? redirectURI)"
+        // Form-urlencoded: percent-encode values (especially redirect_uri which contains ://)
+        var bodyComponents = URLComponents()
+        bodyComponents.queryItems = [
+            URLQueryItem(name: "grant_type", value: "authorization_code"),
+            URLQueryItem(name: "code", value: code),
+            URLQueryItem(name: "redirect_uri", value: redirectURI),
+        ]
+        let body = bodyComponents.percentEncodedQuery ?? ""
         request.httpBody = Data(body.utf8)
 
         let (data, _) = try await URLSession.shared.data(for: request)
@@ -292,7 +352,7 @@ private func sonosWebAuthSession(
     return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
         let session = ASWebAuthenticationSession(
             url: authURL,
-            callbackURLScheme: "com.jasongelman.lutronhome"
+            callbackURLScheme: "lutronhome"
         ) { url, error in
             if let error {
                 continuation.resume(throwing: error)

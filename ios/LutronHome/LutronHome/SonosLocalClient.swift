@@ -7,10 +7,6 @@ actor SonosLocalClient {
 
     // MARK: - Types
 
-    struct DiscoveredDevice {
-        let location: String  // e.g. http://192.168.1.x:1400/xml/device_description.xml
-    }
-
     struct EventSubscription {
         let sid: String
         let service: String
@@ -31,89 +27,108 @@ actor SonosLocalClient {
     var onVolumeEvent: ((String, Int, Bool) -> Void)?  // playerId, volume, isMuted
     var onTopologyEvent: (([SonosPlayer]) -> Void)?
 
-    // MARK: - SSDP Discovery
+    // MARK: - Bonjour Discovery
 
     func discoverPlayers() async -> [SonosPlayer] {
-        let devices = await sendSSDPSearch()
+        let endpoints = await browseBonjourEndpoints()
         var players: [SonosPlayer] = []
-        for device in devices {
-            if let player = await fetchDeviceDescription(location: device.location) {
+        var seenIPs = Set<String>()
+
+        for endpoint in endpoints {
+            guard let ip = await resolveEndpointIP(endpoint) else { continue }
+            guard !seenIPs.contains(ip) else { continue }
+            seenIPs.insert(ip)
+
+            let location = "http://\(ip):1400/xml/device_description.xml"
+            if let player = await fetchDeviceDescription(location: location) {
                 players.append(player)
             }
         }
         return players
     }
 
-    private func sendSSDPSearch() async -> [DiscoveredDevice] {
-        let searchTarget = "urn:schemas-upnp-org:device:ZonePlayer:1"
-        let message = """
-            M-SEARCH * HTTP/1.1\r
-            HOST: 239.255.255.250:1900\r
-            MAN: "ssdp:discover"\r
-            MX: 3\r
-            ST: \(searchTarget)\r
-            \r
-
-            """
-        let messageData = Data(message.utf8)
-
-        // Use a class-based collector to avoid actor-isolation issues with inout in closures
-        final class Collector: @unchecked Sendable {
-            var devices: [DiscoveredDevice] = []
-            var seenLocations = Set<String>()
+    private func browseBonjourEndpoints() async -> [NWEndpoint] {
+        // Use a thread-safe collector for Bonjour results
+        final class EndpointCollector: @unchecked Sendable {
+            var endpoints: [NWEndpoint] = []
             let lock = NSLock()
 
-            func add(location: String) {
+            func add(_ endpoint: NWEndpoint) {
                 lock.lock()
                 defer { lock.unlock() }
-                guard !seenLocations.contains(location) else { return }
-                seenLocations.insert(location)
-                devices.append(DiscoveredDevice(location: location))
+                endpoints.append(endpoint)
             }
 
-            func parseAndAdd(data: Data?) {
-                guard let data, let response = String(data: data, encoding: .utf8) else { return }
-                for line in response.components(separatedBy: "\r\n") {
-                    let lower = line.lowercased()
-                    if lower.hasPrefix("location:") {
-                        let location = String(line.dropFirst(9)).trimmingCharacters(in: .whitespaces)
-                        add(location: location)
-                    }
-                }
+            func getAll() -> [NWEndpoint] {
+                lock.lock()
+                defer { lock.unlock() }
+                return endpoints
             }
         }
 
-        let collector = Collector()
+        let collector = EndpointCollector()
 
         return await withCheckedContinuation { continuation in
-            let queue = DispatchQueue(label: "ssdp-discovery")
+            let params = NWParameters()
+            params.includePeerToPeer = true
+            let browser = NWBrowser(for: .bonjour(type: "_sonos._tcp", domain: nil), using: params)
 
-            let connection = NWConnection(
-                host: "239.255.255.250",
-                port: 1900,
-                using: .udp
-            )
-
-            func receiveLoop() {
-                connection.receiveMessage { data, _, _, _ in
-                    collector.parseAndAdd(data: data)
-                    receiveLoop()
+            browser.browseResultsChangedHandler = { results, _ in
+                for result in results {
+                    collector.add(result.endpoint)
                 }
             }
+
+            browser.start(queue: DispatchQueue(label: "sonos-bonjour"))
+
+            // Browse for 3 seconds, then return results
+            DispatchQueue.global().asyncAfter(deadline: .now() + 3) {
+                browser.cancel()
+                continuation.resume(returning: collector.getAll())
+            }
+        }
+    }
+
+    private func resolveEndpointIP(_ endpoint: NWEndpoint) async -> String? {
+        return await withCheckedContinuation { continuation in
+            let connection = NWConnection(to: endpoint, using: .tcp)
+            var resumed = false
 
             connection.stateUpdateHandler = { state in
-                if case .ready = state {
-                    connection.send(content: messageData, completion: .contentProcessed { _ in })
-                    receiveLoop()
+                guard !resumed else { return }
+                switch state {
+                case .ready:
+                    // Extract the resolved IP from the connection's current path
+                    if let path = connection.currentPath,
+                       let remoteEndpoint = path.remoteEndpoint,
+                       case .hostPort(let host, _) = remoteEndpoint {
+                        resumed = true
+                        connection.cancel()
+                        // Convert NWEndpoint.Host to string, stripping IPv6 scope if present
+                        let hostStr = "\(host)"
+                        let ip = hostStr.contains("%") ? String(hostStr.prefix(while: { $0 != "%" })) : hostStr
+                        continuation.resume(returning: ip)
+                    } else {
+                        resumed = true
+                        connection.cancel()
+                        continuation.resume(returning: nil)
+                    }
+                case .failed, .cancelled:
+                    resumed = true
+                    continuation.resume(returning: nil)
+                default:
+                    break
                 }
             }
 
-            connection.start(queue: queue)
+            connection.start(queue: DispatchQueue(label: "sonos-resolve"))
 
-            // Wait 3 seconds for responses, then return
-            queue.asyncAfter(deadline: .now() + 3) {
+            // Timeout after 2 seconds
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
+                guard !resumed else { return }
+                resumed = true
                 connection.cancel()
-                continuation.resume(returning: collector.devices)
+                continuation.resume(returning: nil)
             }
         }
     }

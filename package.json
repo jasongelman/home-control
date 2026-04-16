@@ -1,5 +1,5 @@
 {
-  "name": "lutron-home",
+  "name": "home-control",
   "private": true,
   "workspaces": [
     "server",

@@ -50,14 +50,19 @@ enum HvacMode: String, Codable, CaseIterable {
 struct EcobeeThermostat: Identifiable, Codable {
     var id: String { identifier }
     var identifier: String
-    var name: String
-    var currentTemp: Double   // °F
-    var desiredHeat: Double   // °F
-    var desiredCool: Double   // °F
+    var name: String            // HomeKit name (may be serial number)
+    var currentTemp: Double     // °F
+    var desiredHeat: Double     // °F
+    var desiredCool: Double     // °F
     var hvacMode: HvacMode
     var humidity: Int?
     var room: String?
     var lastUpdated: Date
+
+    /// User-set display name, or falls back to HomeKit name
+    var displayName: String {
+        EcobeeManager.nameOverride(for: identifier) ?? name
+    }
 }
 
 struct EcobeeRemoteSensor: Identifiable, Codable {
@@ -78,6 +83,26 @@ class EcobeeManager: NSObject, @unchecked Sendable {
     var isLoading = false
     var errorMessage: String?
     var hasThermostats: Bool { !thermostats.isEmpty }
+
+    // MARK: - Name Overrides
+
+    private static let nameOverridesKey = "ecobee-nameOverrides"
+
+    static func nameOverride(for identifier: String) -> String? {
+        let overrides = UserDefaults.standard.dictionary(forKey: nameOverridesKey) as? [String: String] ?? [:]
+        let value = overrides[identifier]
+        return (value?.isEmpty == true) ? nil : value
+    }
+
+    func setNameOverride(for identifier: String, name: String) {
+        var overrides = UserDefaults.standard.dictionary(forKey: Self.nameOverridesKey) as? [String: String] ?? [:]
+        if name.isEmpty {
+            overrides.removeValue(forKey: identifier)
+        } else {
+            overrides[identifier] = name
+        }
+        UserDefaults.standard.set(overrides, forKey: Self.nameOverridesKey)
+    }
 
     private var homeManager: HMHomeManager?
     private var pollTimer: Timer?

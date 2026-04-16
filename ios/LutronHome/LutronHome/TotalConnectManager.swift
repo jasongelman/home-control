@@ -201,6 +201,13 @@ class TotalConnectManager: @unchecked Sendable {
         startPolling()
     }
 
+    /// Does a single login + status fetch without starting the polling timer.
+    /// Used by the widget background refresh task.
+    func refreshOnce() async {
+        guard hasStoredCredentials else { return }
+        await loginAndFetch()
+    }
+
     /// One-shot sign-in: takes the user-entered credentials, stores them in
     /// Keychain, then authenticates and fetches state. SettingsView calls
     /// this once when the user taps "Sign In", and zeros its local @State
