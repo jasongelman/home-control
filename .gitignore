@@ -29,6 +29,8 @@ server/data/
 
 # Large files
 *.pdf
+/*.jpg
+/*.jpeg
 
 # Worktrees
 .worktrees/
