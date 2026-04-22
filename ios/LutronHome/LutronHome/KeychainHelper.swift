@@ -1,8 +1,17 @@
 import Foundation
 import Security
 
-/// Simple Keychain wrapper for storing strings and Codable objects securely
+/// Simple Keychain wrapper for storing strings and Codable objects securely.
+///
+/// Uses a shared Keychain access group so multiple apps signed by the same
+/// team (e.g. main app + editorial re-skin) can share credentials.
+/// New writes go to the shared group; reads fall back to the legacy
+/// (app-scoped) location for backward compatibility. Legacy items are
+/// never deleted — they remain as a safety net.
 enum KeychainHelper {
+
+    private static let service = "com.jasongelman.LutronHome"
+    private static let sharedAccessGroup = "WRS5YQAAC6.com.jasongelman.shared"
 
     // MARK: - String Storage
 
@@ -31,45 +40,104 @@ enum KeychainHelper {
     // MARK: - Delete
 
     static func delete(for key: String) {
-        let query: [String: Any] = [
+        // Delete from shared group
+        let sharedQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key,
-            kSecAttrService as String: "com.jasongelman.LutronHome",
+            kSecAttrService as String: service,
+            kSecAttrAccessGroup as String: sharedAccessGroup,
         ]
-        SecItemDelete(query as CFDictionary)
+        SecItemDelete(sharedQuery as CFDictionary)
+
+        // Also delete from legacy location
+        let legacyQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key,
+            kSecAttrService as String: service,
+        ]
+        SecItemDelete(legacyQuery as CFDictionary)
     }
 
     // MARK: - Private
 
     private static func save(data: Data, for key: String) {
-        // Delete existing item first
-        delete(for: key)
+        // Delete existing item in shared group first
+        let deleteQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key,
+            kSecAttrService as String: service,
+            kSecAttrAccessGroup as String: sharedAccessGroup,
+        ]
+        SecItemDelete(deleteQuery as CFDictionary)
 
+        // Write to shared group
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key,
-            kSecAttrService as String: "com.jasongelman.LutronHome",
+            kSecAttrService as String: service,
+            kSecAttrAccessGroup as String: sharedAccessGroup,
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
         ]
 
         let status = SecItemAdd(query as CFDictionary, nil)
-        if status != errSecSuccess {
+        if status == errSecSuccess { return }
+
+        // If shared group write fails (entitlement not provisioned), fall back
+        // to writing without an access group so the app still works.
+        if status == errSecMissingEntitlement || status == errSecParam {
+            print("Keychain: shared group unavailable for '\(key)', writing to app-scoped Keychain")
+            let fallbackDelete: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrAccount as String: key,
+                kSecAttrService as String: service,
+            ]
+            SecItemDelete(fallbackDelete as CFDictionary)
+
+            let fallbackQuery: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrAccount as String: key,
+                kSecAttrService as String: service,
+                kSecValueData as String: data,
+                kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+            ]
+            let fallbackStatus = SecItemAdd(fallbackQuery as CFDictionary, nil)
+            if fallbackStatus != errSecSuccess {
+                print("Keychain: save failed for '\(key)' — status \(fallbackStatus)")
+            }
+        } else if status != errSecSuccess {
             print("Keychain: save failed for '\(key)' — status \(status)")
         }
     }
 
     private static func loadData(for key: String) -> Data? {
-        let query: [String: Any] = [
+        // Try shared access group first
+        let sharedQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key,
-            kSecAttrService as String: "com.jasongelman.LutronHome",
+            kSecAttrService as String: service,
+            kSecAttrAccessGroup as String: sharedAccessGroup,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
 
         var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        var status = SecItemCopyMatching(sharedQuery as CFDictionary, &result)
+        if status == errSecSuccess, let data = result as? Data { return data }
+
+        // Fall back to legacy (no access group) — handles the case where the
+        // shared group entitlement isn't provisioned yet or items haven't been
+        // re-saved to the shared group.
+        let legacyQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key,
+            kSecAttrService as String: service,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+
+        result = nil
+        status = SecItemCopyMatching(legacyQuery as CFDictionary, &result)
         guard status == errSecSuccess else { return nil }
         return result as? Data
     }
