@@ -55,6 +55,32 @@ class LutronStore: @unchecked Sendable {
 
     /// True if we loaded topology from cache and haven't done a full LEAP fetch yet.
     private var usingCachedTopology = false
+
+    // MARK: - Keypad Integration
+
+    struct KeypadOffButton {
+        let room: String
+        let buttonId: Int
+    }
+
+    struct ColorKeypadButton: Identifiable {
+        let id: Int
+        let engraving: String
+        let ledId: Int?
+        let isOff: Bool
+    }
+
+    struct ColorKeypadEntry: Identifiable {
+        let id: Int // deviceId
+        let room: String
+        var buttons: [ColorKeypadButton]
+        var activeButtonId: Int? // which button's LED is currently on
+    }
+
+    /// Keypad "Off" buttons to press during bulk-off actions
+    var keypadOffButtons: [KeypadOffButton] = []
+    /// Colors keypads for Gym/Playroom/Secret Room
+    var colorKeypads: [ColorKeypadEntry] = []
     private var pathMonitor: NWPathMonitor?
     private var currentPath: NWPath?
 
@@ -100,6 +126,96 @@ class LutronStore: @unchecked Sendable {
         try? FileManager.default.removeItem(at: url)
     }
 
+    // MARK: - Keypad Cache Loading
+
+    private var keypadCacheURL: URL? {
+        FileManager.default
+            .urls(for: .documentDirectory, in: .userDomainMask)
+            .first?
+            .appendingPathComponent("lutron-keypads.json")
+    }
+
+    /// Load keypad off-buttons and color keypads from the keypad cache file.
+    private func loadKeypadData() {
+        guard let url = keypadCacheURL,
+              FileManager.default.fileExists(atPath: url.path),
+              let data = try? Data(contentsOf: url),
+              let keypads = try? JSONDecoder().decode([KeypadInfo].self, from: data) else { return }
+
+        let offRooms: Set<String> = ["Gym", "Playroom", "Secret Room"]
+
+        // Extract off-buttons for bulk-off actions
+        var offButtons: [KeypadOffButton] = []
+        for kp in keypads where offRooms.contains(kp.areaName) {
+            // Skip Colors keypads — their Off button is for color lights only
+            if kp.name.localizedCaseInsensitiveContains("Colors") { continue }
+            for btn in kp.buttons {
+                let eng = btn.engraving.lowercased()
+                if eng == "off" || eng == "room off" {
+                    offButtons.append(KeypadOffButton(room: kp.areaName, buttonId: btn.id))
+                }
+            }
+        }
+        keypadOffButtons = offButtons
+        print("LEAP: loaded \(offButtons.count) keypad off-buttons from cache")
+
+        // Extract Colors keypads
+        var colors: [ColorKeypadEntry] = []
+        for kp in keypads where kp.name.localizedCaseInsensitiveContains("Colors") {
+            let buttons = kp.buttons.map { btn in
+                let eng = btn.engraving.lowercased()
+                let isOff = eng == "off" || eng.contains("off")
+                return ColorKeypadButton(id: btn.id, engraving: btn.engraving, ledId: btn.ledId, isOff: isOff)
+            }
+            // Sort: non-off buttons first, then off button last
+            let sorted = buttons.sorted { a, b in
+                if a.isOff != b.isOff { return !a.isOff }
+                return a.id < b.id
+            }
+            colors.append(ColorKeypadEntry(id: kp.deviceId, room: kp.areaName, buttons: sorted, activeButtonId: nil))
+        }
+        colorKeypads = colors
+        print("LEAP: loaded \(colors.count) color keypads from cache")
+    }
+
+    /// Press a keypad button via LEAP PressAndRelease command.
+    func pressKeypadButton(_ buttonId: Int) {
+        guard let client = leapClient else { return }
+        Task {
+            _ = try? await client.send(LEAPMessagePayload(
+                CommuniqueType: "CreateRequest",
+                Header: LEAPMessageHeader(Url: "/button/\(buttonId)/commandprocessor"),
+                Body: LEAPBodyPayload(Command: LEAPCommand(
+                    CommandType: "PressAndRelease"
+                ))
+            ))
+        }
+    }
+
+    /// Refresh LED states for color keypads (determines which color is active).
+    func refreshColorKeypadLEDs() async {
+        guard let client = leapClient else { return }
+        for (i, entry) in colorKeypads.enumerated() {
+            var activeId: Int?
+            for btn in entry.buttons where !btn.isOff {
+                guard let ledId = btn.ledId else { continue }
+                do {
+                    let resp = try await client.send(LEAPMessagePayload(
+                        CommuniqueType: "ReadRequest",
+                        Header: LEAPMessageHeader(Url: "/led/\(ledId)/status")
+                    ))
+                    if let status = resp.Body?.additionalValues?["LEDStatus"]?.dictValue,
+                       status["State"]?.stringValue == "On" {
+                        activeId = btn.id
+                    }
+                } catch {}
+            }
+            await MainActor.run {
+                self.colorKeypads[i].activeButtonId = activeId
+            }
+        }
+    }
+
     // Computed properties
     var lightsOn: [DeviceState] {
         devices.values
@@ -120,6 +236,7 @@ class LutronStore: @unchecked Sendable {
         guard !started else { return }
         started = true
         _ = loadCachedTopology()
+        loadKeypadData()
         startNetworkMonitoring()
         connect()
     }
@@ -147,10 +264,16 @@ class LutronStore: @unchecked Sendable {
             print("LEAP: connected to \(self.processorHost)")
             if self.usingCachedTopology || !self.devices.isEmpty {
                 self.statusMessage = "Subscribing to updates..."
-                Task { await self.subscribeToZoneStatus() }
+                Task {
+                    await self.subscribeToZoneStatus()
+                    await self.refreshColorKeypadLEDs()
+                }
             } else {
                 self.statusMessage = "Connected, loading devices..."
-                Task { await self.loadTopology() }
+                Task {
+                    await self.loadTopology()
+                    await self.refreshColorKeypadLEDs()
+                }
             }
         }
 
@@ -533,6 +656,10 @@ class LutronStore: @unchecked Sendable {
         for device in floorDevices {
             setLevel(device.integrationId, level: 0, fadeTime: 1)
         }
+        // Also press keypad off-buttons for rooms on this floor
+        for entry in keypadOffButtons where Floor.floor(for: entry.room) == floor {
+            pressKeypadButton(entry.buttonId)
+        }
     }
 
     /// Turn off all lights in the house, optionally excluding specific device names
@@ -544,6 +671,10 @@ class LutronStore: @unchecked Sendable {
         }
         for device in lightsOn {
             setLevel(device.integrationId, level: 0, fadeTime: 1)
+        }
+        // Also press keypad off-buttons for all rooms not excluded
+        for entry in keypadOffButtons where !excludingRooms.contains(entry.room) {
+            pressKeypadButton(entry.buttonId)
         }
     }
 
