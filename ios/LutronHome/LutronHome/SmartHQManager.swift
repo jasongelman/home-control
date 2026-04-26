@@ -181,7 +181,7 @@ class SmartHQManager: @unchecked Sendable {
     // MARK: - Authentication (OAuth2 authorization_code via ASWebAuthenticationSession)
 
     func startOAuth(from anchor: ASWebAuthenticationPresentationContextProviding) {
-        var components = URLComponents(string: "\(loginBase)/oauth2/g_authenticate")!
+        var components = URLComponents(string: "\(loginBase)/oauth2/auth")!
         components.queryItems = [
             URLQueryItem(name: "client_id",     value: clientId),
             URLQueryItem(name: "response_type", value: "code"),
@@ -221,6 +221,12 @@ class SmartHQManager: @unchecked Sendable {
         var request = URLRequest(url: URL(string: "\(loginBase)/oauth2/token")!)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+
+        // Basic Auth header (matches gehomesdk)
+        let credentials = "\(clientId):\(clientSecret)"
+        if let credData = credentials.data(using: .utf8) {
+            request.setValue("Basic \(credData.base64EncodedString())", forHTTPHeaderField: "Authorization")
+        }
 
         let body = [
             "grant_type=authorization_code",
@@ -266,11 +272,18 @@ class SmartHQManager: @unchecked Sendable {
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
+        // Basic Auth header (matches gehomesdk)
+        let credentials = "\(clientId):\(clientSecret)"
+        if let credData = credentials.data(using: .utf8) {
+            request.setValue("Basic \(credData.base64EncodedString())", forHTTPHeaderField: "Authorization")
+        }
+
         let body = [
             "grant_type=refresh_token",
             "refresh_token=\(currentTokens.refreshToken)",
             "client_id=\(clientId)",
             "client_secret=\(clientSecret)",
+            "redirect_uri=\(redirectURI.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? redirectURI)",
         ].joined(separator: "&")
         request.httpBody = body.data(using: .utf8)
 

@@ -151,15 +151,18 @@ struct SunCalculator {
         switch currentPeriod() {
         case .earlyMorning:
             return [
-                (title: "Morning Lights", icon: "sunrise", id: "morning"),
-                (title: "Open Shades", icon: "blinds.vertical.open", id: "shades_open"),
+                (title: "Rise & Shine", icon: "sunrise", id: "rise_and_shine"),
+                (title: "Morning Lights", icon: "lightbulb", id: "morning"),
             ]
         case .morning:
             return [
+                (title: "Rise & Shine", icon: "sunrise", id: "rise_and_shine"),
                 (title: "All Lights Off", icon: "lightbulb.slash", id: "all_off"),
             ]
         case .midday:
-            return []
+            return [
+                (title: "Block Out The Sun", icon: "sun.max.trianglebadge.exclamationmark", id: "block_sun"),
+            ]
         case .evening:
             return [
                 (title: "Evening", icon: "moon.fill", id: "evening"),

@@ -1,14 +1,22 @@
 import SwiftUI
 import WidgetKit
 
+/// Editorial design constants for the widget extension.
+/// Duplicated from the main app's EditorialTheme because widget
+/// extensions are a separate target that cannot share app sources.
+enum WidgetTheme {
+    static let accent = Color(red: 0.93, green: 0.36, blue: 0.13)  // #ED5B21
+    static let secondaryText = Color(white: 0, opacity: 0.45)
+    static let border = Color(white: 0, opacity: 0.12)
+    static let cardRadius: CGFloat = 8
+}
+
 struct MediumWidgetView: View {
     let entry: LutronWidgetEntry
 
     private let columnCount = 4
     private let maxRows = 2
 
-    /// Show up to 8 cells (2 rows of 4) — same columnCount as the main-app
-    /// dashboard. Alarming cells are bumped to the front so they always render.
     private var visibleCells: [AppGroupManager.StatusCellSnapshot] {
         let prioritized = entry.statusCells.sorted { $0.isAlarming && !$1.isAlarming }
         return Array(prioritized.prefix(columnCount * maxRows))
@@ -32,17 +40,23 @@ struct MediumWidgetView: View {
     // MARK: - Header
 
     private var headerRow: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text("LUTRON HOME")
-                .font(.system(size: 9, weight: .semibold))
-                .tracking(0.6)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Link(destination: URL(string: "lutronhome://voice")!) {
-                Image(systemName: "mic.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("LUTRON HOME")
+                    .font(.system(size: 9, weight: .semibold))
+                    .tracking(1.2)
+                    .foregroundStyle(Color.black)
+                Spacer()
+                Link(destination: URL(string: "lutronhome://voice")!) {
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(WidgetTheme.accent)
+                }
             }
+            // Accent rule
+            Rectangle()
+                .fill(WidgetTheme.accent)
+                .frame(height: 1.5)
         }
     }
 
@@ -62,7 +76,9 @@ struct MediumWidgetView: View {
         return VStack(spacing: 0) {
             ForEach(Array(rows.enumerated()), id: \.offset) { rowIdx, row in
                 if rowIdx > 0 {
-                    Divider().overlay(Color(.separator).opacity(0.2))
+                    Rectangle()
+                        .fill(WidgetTheme.border)
+                        .frame(height: 0.5)
                 }
                 LazyVGrid(columns: columns, spacing: 0) {
                     ForEach(Array(row.enumerated()), id: \.element.id) { index, cell in
@@ -77,9 +93,9 @@ struct MediumWidgetView: View {
             }
         }
         .background(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: WidgetTheme.cardRadius)
                 .stroke(
-                    hasAlarmTriggered ? Color.red.opacity(0.3) : Color(.separator).opacity(0.25),
+                    hasAlarmTriggered ? Color.red.opacity(0.4) : WidgetTheme.border,
                     lineWidth: 0.5
                 )
         )
@@ -92,23 +108,23 @@ struct MediumWidgetView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(cell.label)
-                .font(.system(size: 8, weight: .medium))
+                .font(.system(size: 8, weight: .semibold))
                 .textCase(.uppercase)
-                .tracking(0.4)
+                .tracking(0.6)
                 .foregroundStyle(labelColor(for: cell))
                 .lineLimit(1)
 
             HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text(cell.value)
-                    .font(.system(size: 12, weight: cell.isAlarming ? .heavy : cell.isActive ? .bold : .medium))
+                    .font(.system(size: 12, weight: cell.isAlarming ? .heavy : cell.isActive ? .bold : .medium, design: .monospaced))
                     .foregroundStyle(valueColor(for: cell))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
 
                 if let suffix = cell.suffix {
                     Text(suffix)
-                        .font(.system(size: 8))
-                        .foregroundStyle(Color.primary.opacity(0.45))
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundStyle(WidgetTheme.secondaryText)
                         .lineLimit(1)
                 }
             }
@@ -120,7 +136,7 @@ struct MediumWidgetView: View {
         .overlay(alignment: .trailing) {
             if showRightBorder {
                 Rectangle()
-                    .fill(Color(.separator).opacity(0.2))
+                    .fill(WidgetTheme.border)
                     .frame(width: 0.5)
             }
         }
@@ -130,22 +146,20 @@ struct MediumWidgetView: View {
 
     private func labelColor(for cell: AppGroupManager.StatusCellSnapshot) -> Color {
         if cell.isAlarming { return Color.red.opacity(0.8) }
-        if cell.isActive { return Color.blue.opacity(0.7) }
-        return Color.primary.opacity(0.4)
+        if cell.isActive { return WidgetTheme.accent }
+        return WidgetTheme.secondaryText
     }
 
     private func valueColor(for cell: AppGroupManager.StatusCellSnapshot) -> Color {
         if cell.isAlarming { return .red }
-        if cell.isActive { return .blue }
-        return Color.primary.opacity(0.4)
+        if cell.isActive { return Color.black }
+        return WidgetTheme.secondaryText
     }
 
     @ViewBuilder
     private func cellBackground(for cell: AppGroupManager.StatusCellSnapshot) -> some View {
         if cell.isAlarming {
-            Color.red.opacity(0.12)
-        } else if cell.isActive {
-            Color.blue.opacity(0.08)
+            Color.red.opacity(0.08)
         } else {
             Color.clear
         }
@@ -157,10 +171,11 @@ struct MediumWidgetView: View {
         VStack(spacing: 4) {
             Image(systemName: "house")
                 .font(.system(size: 20))
-                .foregroundStyle(.tertiary)
-            Text("Open Lutron Home to set up")
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(WidgetTheme.secondaryText)
+            Text("OPEN LUTRON HOME TO SET UP")
+                .font(.system(size: 9, weight: .semibold))
+                .tracking(0.8)
+                .foregroundStyle(WidgetTheme.secondaryText)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

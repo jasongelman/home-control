@@ -8,18 +8,24 @@ struct SmallWidgetView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header
-            HStack {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text("LUTRON HOME")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .tracking(0.5)
+                    .font(.system(size: 9, weight: .semibold))
+                    .tracking(1.2)
+                    .foregroundStyle(Color.black)
                 Spacer()
                 Link(destination: URL(string: "lutronhome://voice")!) {
                     Image(systemName: "mic.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.tertiary)
+                        .font(.system(size: 10))
+                        .foregroundStyle(WidgetTheme.accent)
                 }
             }
+
+            // Thin accent rule
+            Rectangle()
+                .fill(WidgetTheme.accent)
+                .frame(height: 1.5)
+                .padding(.top, 6)
 
             Spacer()
 
@@ -30,7 +36,7 @@ struct SmallWidgetView: View {
 
             // Divider
             Rectangle()
-                .fill(.quaternary)
+                .fill(WidgetTheme.border)
                 .frame(height: 0.5)
                 .padding(.vertical, 6)
 
@@ -61,13 +67,14 @@ struct SmallWidgetView: View {
 
     private func actionLabel(_ action: SuggestedAction) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(action.label)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.primary.opacity(0.92))
+            Text(action.label.uppercased())
+                .font(.system(size: 11, weight: .semibold))
+                .tracking(0.6)
+                .foregroundStyle(Color.black)
                 .lineLimit(1)
             Text(action.subtitle)
-                .font(.system(size: 11))
-                .foregroundStyle(.primary.opacity(0.35))
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(WidgetTheme.secondaryText)
                 .lineLimit(1)
         }
     }

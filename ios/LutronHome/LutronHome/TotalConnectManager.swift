@@ -137,6 +137,11 @@ class TotalConnectManager: @unchecked Sendable {
     var isLoading = false
     var errorMessage: String?
 
+    /// When true, auth has failed in a way that won't resolve on its own
+    /// (wrong password, account locked, etc.). Stops automatic retries.
+    /// Cleared on next explicit `signIn()` or `unlink()`.
+    var authFailed = false
+
     /// True iff we have credentials stored AND either an active session or
     /// cached topology — i.e. the UI should show the panel list, not the
     /// credentials form.
@@ -146,6 +151,7 @@ class TotalConnectManager: @unchecked Sendable {
     private var pollTimer: Timer?
     private let pollInterval: TimeInterval = 30
     private let sessionTTL: TimeInterval = 25 * 60   // tokens expire ~30 min
+    private var consecutiveAuthFailures = 0
 
     // TC2 endpoints
     private let appConfigURL = "https://totalconnect2.com/application.config.json"
@@ -196,7 +202,7 @@ class TotalConnectManager: @unchecked Sendable {
     /// credentials, (re)authenticate and refresh state. Also kicks off the
     /// 30 s polling timer.
     func resume() {
-        guard hasStoredCredentials else { return }
+        guard hasStoredCredentials, !authFailed else { return }
         Task { await loginAndFetch() }
         startPolling()
     }
@@ -217,7 +223,9 @@ class TotalConnectManager: @unchecked Sendable {
         await MainActor.run {
             isLoading = true
             errorMessage = nil
+            authFailed = false
         }
+        consecutiveAuthFailures = 0
         defer { Task { @MainActor in isLoading = false } }
 
         guard !username.isEmpty, !password.isEmpty else {
@@ -233,12 +241,14 @@ class TotalConnectManager: @unchecked Sendable {
     func unlink() {
         stopPolling()
         session = nil
+        consecutiveAuthFailures = 0
         clearCredentials()
         deleteCachedTopology()
         Task { @MainActor in
             panels = []
             zones = [:]
             errorMessage = nil
+            authFailed = false
         }
     }
 
@@ -268,11 +278,14 @@ class TotalConnectManager: @unchecked Sendable {
         do {
             let sess = try await authenticate(username: creds.username, password: creds.password)
             session = sess
+            consecutiveAuthFailures = 0
 
             // Seed/update panels from session locations using cached state
             // where available so the UI flips to "named, but unknown" before
             // the first fullStatus comes back.
             await MainActor.run {
+                authFailed = false
+                errorMessage = nil
                 let cachedByLoc = Dictionary(uniqueKeysWithValues: panels.map { ($0.locationId, $0) })
                 panels = sess.locations.map { loc in
                     let prev = cachedByLoc[loc.locationId]
@@ -289,21 +302,42 @@ class TotalConnectManager: @unchecked Sendable {
 
             await fetchStatus()
         } catch {
-            await MainActor.run { errorMessage = "Login failed: \(error.localizedDescription)" }
-            print("TC2: login error — \(error)")
+            consecutiveAuthFailures += 1
+            let shouldGiveUp = consecutiveAuthFailures >= 2
+            print("TC2: login error (attempt \(consecutiveAuthFailures)) — \(error)")
+
+            await MainActor.run {
+                if shouldGiveUp {
+                    authFailed = true
+                    errorMessage = "Alarm sign-in failed. Check your credentials in Settings."
+                    stopPolling()
+                } else {
+                    errorMessage = "Login failed: \(error.localizedDescription)"
+                }
+            }
         }
     }
 
     private func ensureSession() async -> TCSession? {
         if let sess = session, sess.expiresAt > Date() { return sess }
+        guard !authFailed else { return nil }
         guard let creds = loadStoredCredentials() else { return nil }
         do {
             let sess = try await authenticate(username: creds.username, password: creds.password)
             session = sess
+            consecutiveAuthFailures = 0
+            await MainActor.run { authFailed = false }
             return sess
         } catch {
-            await MainActor.run { errorMessage = "Re-auth failed: \(error.localizedDescription)" }
-            print("TC2: re-auth error — \(error)")
+            consecutiveAuthFailures += 1
+            print("TC2: re-auth error (attempt \(consecutiveAuthFailures)) — \(error)")
+            if consecutiveAuthFailures >= 2 {
+                await MainActor.run {
+                    authFailed = true
+                    errorMessage = "Alarm sign-in failed. Check your credentials in Settings."
+                }
+                stopPolling()
+            }
             return nil
         }
     }
@@ -417,9 +451,12 @@ class TotalConnectManager: @unchecked Sendable {
             if let s = brandEntry["AppID"] as? String   { return s }
             return ""
         }()
-        let appVersion = (configJson["version"] as? String)
-                       ?? (configJson["RevisionNumber"] as? String)
-                       ?? "5.0.0"
+        // Match the Python total-connect-client: RevisionNumber + "." + last
+        // component of version → e.g. "3.53.1" + "." + "1805" = "3.53.1.1805"
+        let revisionNumber = configJson["RevisionNumber"] as? String ?? "3.53.1"
+        let versionStr = configJson["version"] as? String ?? "0.0.0"
+        let lastComponent = versionStr.split(separator: ".").last.map(String.init) ?? "0"
+        let appVersion = "\(revisionNumber).\(lastComponent)"
 
         guard !rsaSpkiB64.isEmpty, !clientId.isEmpty else {
             throw NSError(domain: "TC2", code: 0,
@@ -447,22 +484,28 @@ class TotalConnectManager: @unchecked Sendable {
         var tokenReq = URLRequest(url: tokenUrl)
         tokenReq.httpMethod = "POST"
         tokenReq.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        // The Python total-connect-client (via requests_oauthlib) sends the
+        // client_id as HTTP Basic Auth (with empty secret), NOT in the body.
+        // The TC2 OAuth endpoint requires this.
+        let basicCreds = Data("\(clientId):".utf8).base64EncodedString()
+        tokenReq.setValue("Basic \(basicCreds)", forHTTPHeaderField: "Authorization")
         let unreserved = CharacterSet(charactersIn:
             "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
         let encUserQ = encUser.addingPercentEncoding(withAllowedCharacters: unreserved) ?? encUser
         let encPassQ = encPass.addingPercentEncoding(withAllowedCharacters: unreserved) ?? encPass
-        let body = "grant_type=password&client_id=\(clientId)&username=\(encUserQ)&password=\(encPassQ)"
+        let body = "grant_type=password&username=\(encUserQ)&password=\(encPassQ)"
         tokenReq.httpBody = body.data(using: .utf8)
-
         let (tokenData, tokenResp) = try await URLSession.shared.data(for: tokenReq)
-        guard let http = tokenResp as? HTTPURLResponse, http.statusCode == 200 else {
-            let msg = String(data: tokenData, encoding: .utf8) ?? ""
-            throw NSError(domain: "TC2", code: (tokenResp as? HTTPURLResponse)?.statusCode ?? 0,
-                          userInfo: [NSLocalizedDescriptionKey: "Token request failed: \(msg)"])
-        }
-        let tokenJson = try JSONSerialization.jsonObject(with: tokenData) as? [String: Any] ?? [:]
+        let tokenStatusCode = (tokenResp as? HTTPURLResponse)?.statusCode ?? 0
+
+        // Try to extract the token regardless of status code — the TC2 OAuth
+        // endpoint sometimes returns non-200 (e.g. 400) but still includes a
+        // valid access_token in the body.
+        let tokenJson = (try? JSONSerialization.jsonObject(with: tokenData) as? [String: Any]) ?? [:]
         guard let token = tokenJson["access_token"] as? String, !token.isEmpty else {
-            throw NSError(domain: "TC2", code: 0, userInfo: [NSLocalizedDescriptionKey: "No access_token in response"])
+            let msg = String(data: tokenData, encoding: .utf8) ?? ""
+            throw NSError(domain: "TC2", code: tokenStatusCode,
+                          userInfo: [NSLocalizedDescriptionKey: "Token request failed (HTTP \(tokenStatusCode)): \(msg)"])
         }
 
         // Step 4: session details (URL query — `.urlQueryAllowed` is fine here)
@@ -474,8 +517,11 @@ class TotalConnectManager: @unchecked Sendable {
         sessionReq.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
         let (sessionData, sessionResp) = try await URLSession.shared.data(for: sessionReq)
+        let sessionStatus = (sessionResp as? HTTPURLResponse)?.statusCode ?? 0
         guard let shttp = sessionResp as? HTTPURLResponse, shttp.statusCode == 200 else {
-            throw NSError(domain: "TC2", code: 0, userInfo: [NSLocalizedDescriptionKey: "Session details failed"])
+            let body = String(data: sessionData, encoding: .utf8) ?? ""
+            throw NSError(domain: "TC2", code: sessionStatus,
+                          userInfo: [NSLocalizedDescriptionKey: "Session details failed (HTTP \(sessionStatus)): \(body.prefix(200))"])
         }
         let sessionJson = try JSONSerialization.jsonObject(with: sessionData) as? [String: Any] ?? [:]
         let rawLocations = ((sessionJson["SessionDetailsResult"] as? [String: Any])?["Locations"] as? [[String: Any]]) ?? []
@@ -519,21 +565,56 @@ class TotalConnectManager: @unchecked Sendable {
                          expiresAt: Date().addingTimeInterval(sessionTTL))
     }
 
-    private func getPanelStatus(session: TCSession, locationId: String) async throws -> (Int, [AlarmZone]) {
-        let urlStr = "\(apiBase)api/v3/locations/\(locationId)/partitions/fullStatus"
-        guard let url = URL(string: urlStr) else { throw URLError(.badURL) }
-        var req = URLRequest(url: url)
-        req.setValue("Bearer \(session.token)", forHTTPHeaderField: "Authorization")
+    // MARK: - Retry Helper
+    //
+    // Matches the Python total-connect-client: up to 5 attempts, 6s delay,
+    // retry on 429/500/502/503/504 and connection errors.
 
-        let (data, resp) = try await URLSession.shared.data(for: req)
-        guard let http = resp as? HTTPURLResponse else { throw URLError(.badServerResponse) }
-        if http.statusCode == 401 {
-            throw NSError(domain: "TC2", code: 401, userInfo: [NSLocalizedDescriptionKey: "Session expired"])
+    private static let maxRetries = 3
+    private static let retryDelay: TimeInterval = 10
+    private static let retryableStatuses: Set<Int> = [429, 500, 502, 503, 504]
+
+    /// Execute an async block with retries on transient failures. On 401 the
+    /// session is cleared so the next `ensureSession` will re-authenticate.
+    private func withRetry<T>(label: String, _ block: () async throws -> T) async throws -> T {
+        var lastError: Error?
+        for attempt in 1...Self.maxRetries {
+            do {
+                return try await block()
+            } catch let error as NSError where error.code == 401 && error.domain == "TC2" {
+                print("TC2: \(label) got 401 — clearing session (attempt \(attempt)/\(Self.maxRetries))")
+                session = nil
+                throw error // don't retry 401, re-auth at caller level
+            } catch let error as NSError where Self.retryableStatuses.contains(error.code) && error.domain == "TC2" {
+                lastError = error
+                print("TC2: \(label) got \(error.code) — retrying in \(Int(Self.retryDelay))s (attempt \(attempt)/\(Self.maxRetries))")
+            } catch let error as URLError {
+                lastError = error
+                print("TC2: \(label) connection error — retrying in \(Int(Self.retryDelay))s (attempt \(attempt)/\(Self.maxRetries))")
+            } catch {
+                throw error // non-retryable
+            }
+            try await Task.sleep(nanoseconds: UInt64(Self.retryDelay * 1_000_000_000))
         }
-        guard http.statusCode == 200 else {
-            throw NSError(domain: "TC2", code: http.statusCode,
-                          userInfo: [NSLocalizedDescriptionKey: "Status failed"])
-        }
+        throw lastError!
+    }
+
+    private func getPanelStatus(session: TCSession, locationId: String) async throws -> (Int, [AlarmZone]) {
+        return try await withRetry(label: "getPanelStatus") {
+            let urlStr = "\(self.apiBase)api/v3/locations/\(locationId)/partitions/fullStatus"
+            guard let url = URL(string: urlStr) else { throw URLError(.badURL) }
+            var req = URLRequest(url: url)
+            req.setValue("Bearer \(session.token)", forHTTPHeaderField: "Authorization")
+
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            guard let http = resp as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+            if http.statusCode == 401 {
+                throw NSError(domain: "TC2", code: 401, userInfo: [NSLocalizedDescriptionKey: "Session expired"])
+            }
+            guard http.statusCode == 200 else {
+                throw NSError(domain: "TC2", code: http.statusCode,
+                              userInfo: [NSLocalizedDescriptionKey: "Status failed (\(http.statusCode))"])
+            }
 
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
         let panelStatus = json["PanelStatus"] as? [String: Any] ?? [:]
@@ -552,47 +633,54 @@ class TotalConnectManager: @unchecked Sendable {
             )
         }
 
-        return (armingState, fetchedZones)
+            return (armingState, fetchedZones)
+        }
     }
 
     private func sendArm(session: TCSession, locationId: String, securityDeviceId: String,
                          armType: Int, userCode: String, partitionIds: [Int]) async throws {
-        let urlStr = "\(apiBase)api/v3/locations/\(locationId)/devices/\(securityDeviceId)/partitions/arm"
-        guard let url = URL(string: urlStr) else { throw URLError(.badURL) }
-        var req = URLRequest(url: url)
-        req.httpMethod = "PUT"
-        req.setValue("Bearer \(session.token)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: [
-            "armType":    armType,
-            "userCode":   Int(userCode) ?? 0,
-            "partitions": partitionIds,
-        ])
-        let (data, resp) = try await URLSession.shared.data(for: req)
-        guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
-            let msg = String(data: data, encoding: .utf8) ?? ""
-            throw NSError(domain: "TC2", code: (resp as? HTTPURLResponse)?.statusCode ?? 0,
-                          userInfo: [NSLocalizedDescriptionKey: "Arm failed: \(msg)"])
+        try await withRetry(label: "sendArm") {
+            let urlStr = "\(self.apiBase)api/v3/locations/\(locationId)/devices/\(securityDeviceId)/partitions/arm"
+            guard let url = URL(string: urlStr) else { throw URLError(.badURL) }
+            var req = URLRequest(url: url)
+            req.httpMethod = "PUT"
+            req.setValue("Bearer \(session.token)", forHTTPHeaderField: "Authorization")
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try JSONSerialization.data(withJSONObject: [
+                "armType":    armType,
+                "userCode":   Int(userCode) ?? 0,
+                "partitions": partitionIds,
+            ])
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard status == 200 else {
+                let msg = String(data: data, encoding: .utf8) ?? ""
+                throw NSError(domain: "TC2", code: status,
+                              userInfo: [NSLocalizedDescriptionKey: "Arm failed (\(status)): \(msg)"])
+            }
         }
     }
 
     private func sendDisarm(session: TCSession, locationId: String, securityDeviceId: String,
                             userCode: String, partitionIds: [Int]) async throws {
-        let urlStr = "\(apiBase)api/v3/locations/\(locationId)/devices/\(securityDeviceId)/partitions/disArm"
-        guard let url = URL(string: urlStr) else { throw URLError(.badURL) }
-        var req = URLRequest(url: url)
-        req.httpMethod = "PUT"
-        req.setValue("Bearer \(session.token)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: [
-            "userCode":   Int(userCode) ?? 0,
-            "partitions": partitionIds,
-        ])
-        let (data, resp) = try await URLSession.shared.data(for: req)
-        guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
-            let msg = String(data: data, encoding: .utf8) ?? ""
-            throw NSError(domain: "TC2", code: (resp as? HTTPURLResponse)?.statusCode ?? 0,
-                          userInfo: [NSLocalizedDescriptionKey: "Disarm failed: \(msg)"])
+        try await withRetry(label: "sendDisarm") {
+            let urlStr = "\(self.apiBase)api/v3/locations/\(locationId)/devices/\(securityDeviceId)/partitions/disArm"
+            guard let url = URL(string: urlStr) else { throw URLError(.badURL) }
+            var req = URLRequest(url: url)
+            req.httpMethod = "PUT"
+            req.setValue("Bearer \(session.token)", forHTTPHeaderField: "Authorization")
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try JSONSerialization.data(withJSONObject: [
+                "userCode":   Int(userCode) ?? 0,
+                "partitions": partitionIds,
+            ])
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard status == 200 else {
+                let msg = String(data: data, encoding: .utf8) ?? ""
+                throw NSError(domain: "TC2", code: status,
+                              userInfo: [NSLocalizedDescriptionKey: "Disarm failed (\(status)): \(msg)"])
+            }
         }
     }
 

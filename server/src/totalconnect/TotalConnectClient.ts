@@ -41,7 +41,11 @@ export async function authenticate(username: string, password: string): Promise<
   const rsaKeyPem = appConfig?.tc2APIKey;
   const clientId  = appConfig?.tc2ClientId;
   const appId     = brandEntry?.AppID != null ? String(brandEntry.AppID) : '';
-  const appVersion = configData.version ?? configData.RevisionNumber ?? '5.0.0';
+  // Match the Python total-connect-client: RevisionNumber + "." + last component of version
+  const revNum = configData.RevisionNumber ?? '3.53.1';
+  const verStr = configData.version ?? '0.0.0';
+  const lastPart = verStr.split('.').pop() ?? '0';
+  const appVersion = `${revNum}.${lastPart}`;
 
   if (!rsaKeyPem || !clientId) {
     throw new Error('TC2: missing RSA key or clientId in app config');
@@ -65,12 +69,17 @@ export async function authenticate(username: string, password: string): Promise<
   const encPassword = encrypt(password);
 
   // Step 3: OAuth2 password grant
+  // The Python total-connect-client (via requests_oauthlib) sends client_id
+  // as HTTP Basic Auth (with empty secret), not in the body.
+  const basicCreds = Buffer.from(`${clientId}:`).toString('base64');
   const tokenRes = await fetch(TOKEN_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': `Basic ${basicCreds}`,
+    },
     body: new URLSearchParams({
       grant_type: 'password',
-      client_id:  clientId,
       username:   encUsername,
       password:   encPassword,
     }).toString(),
