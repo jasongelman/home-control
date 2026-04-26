@@ -205,6 +205,7 @@ struct CategoryTab: View {
                         Text(floor.rawValue.uppercased())
                             .font(.system(size: 10, weight: .semibold))
                             .tracking(0.6)
+                            .lineLimit(1)
                     }
                     .foregroundStyle(EditorialTheme.primaryText)
                     .padding(.horizontal, 10)
@@ -213,6 +214,7 @@ struct CategoryTab: View {
                     .overlay(
                         Rectangle().stroke(EditorialTheme.cardBorder, lineWidth: 0.5)
                     )
+                    .fixedSize()
                 }
                 .buttonStyle(.plain)
             }
@@ -228,27 +230,23 @@ struct CategoryTab: View {
             )
 
             if isLightsOrShadesTab {
-                // Lights & shades: 2-column pills grouped by room with tappable headers
-                ForEach(rooms, id: \.name) { room in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Button { selectedRoom = room.name } label: {
-                            HStack(spacing: 4) {
-                                Text(room.name.uppercased())
-                                    .font(.system(size: 9, weight: .medium))
-                                    .tracking(0.8)
-                                    .foregroundStyle(EditorialTheme.secondaryText)
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 7, weight: .semibold))
-                                    .foregroundStyle(EditorialTheme.tertiaryText)
+                // Lights & shades: masonry 2-column, each room kept together
+                MasonryTwoColumn(spacing: EditorialTheme.gridSpacing) {
+                    ForEach(rooms, id: \.name) { room in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Button { selectedRoom = room.name } label: {
+                                HStack(spacing: 4) {
+                                    Text(room.name.uppercased())
+                                        .font(.system(size: 9, weight: .medium))
+                                        .tracking(0.8)
+                                        .foregroundStyle(EditorialTheme.secondaryText)
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 7, weight: .semibold))
+                                        .foregroundStyle(EditorialTheme.tertiaryText)
+                                }
                             }
-                        }
-                        .buttonStyle(.plain)
+                            .buttonStyle(.plain)
 
-                        LazyVGrid(
-                            columns: [GridItem(.flexible(), spacing: EditorialTheme.gridSpacing),
-                                      GridItem(.flexible(), spacing: EditorialTheme.gridSpacing)],
-                            spacing: EditorialTheme.gridSpacing
-                        ) {
                             ForEach(room.devices) { device in
                                 let fade: Double? = device.category == .shadesAndDrapes ? 2 : nil
                                 DimmablePill(device: device, fadeTime: fade)
