@@ -206,12 +206,12 @@ struct CategoryTab: View {
                             .font(.system(size: 10, weight: .semibold))
                             .tracking(0.6)
                     }
+                    .foregroundStyle(EditorialTheme.primaryText)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(EditorialTheme.cardBackground)
-                    .clipShape(Capsule())
                     .overlay(
-                        Capsule().stroke(EditorialTheme.cardBorder, lineWidth: 0.5)
+                        Rectangle().stroke(EditorialTheme.cardBorder, lineWidth: 0.5)
                     )
                 }
                 .buttonStyle(.plain)
@@ -228,7 +228,7 @@ struct CategoryTab: View {
             )
 
             if isLightsOrShadesTab {
-                // Lights & shades: full-width pills grouped by room with tappable headers
+                // Lights & shades: 2-column pills grouped by room with tappable headers
                 ForEach(rooms, id: \.name) { room in
                     VStack(alignment: .leading, spacing: 6) {
                         Button { selectedRoom = room.name } label: {
@@ -244,9 +244,15 @@ struct CategoryTab: View {
                         }
                         .buttonStyle(.plain)
 
-                        ForEach(room.devices) { device in
-                            let fade: Double? = device.category == .shadesAndDrapes ? 2 : nil
-                            DimmablePill(device: device, fadeTime: fade)
+                        LazyVGrid(
+                            columns: [GridItem(.flexible(), spacing: EditorialTheme.gridSpacing),
+                                      GridItem(.flexible(), spacing: EditorialTheme.gridSpacing)],
+                            spacing: EditorialTheme.gridSpacing
+                        ) {
+                            ForEach(room.devices) { device in
+                                let fade: Double? = device.category == .shadesAndDrapes ? 2 : nil
+                                DimmablePill(device: device, fadeTime: fade)
+                            }
                         }
                     }
                 }
