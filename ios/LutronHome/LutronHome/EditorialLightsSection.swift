@@ -122,16 +122,18 @@ struct EditorialLightsSection: View {
                 let byRoom = Dictionary(grouping: lights, by: \.room)
                 let sortedRooms = byRoom.keys.sorted()
 
-                ForEach(sortedRooms, id: \.self) { room in
-                    let roomLights = byRoom[room]!
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(room.uppercased())
-                            .font(.system(size: 9, weight: .medium))
-                            .tracking(0.8)
-                            .foregroundStyle(EditorialTheme.secondaryText)
+                MasonryTwoColumn(spacing: EditorialTheme.gridSpacing) {
+                    ForEach(sortedRooms, id: \.self) { room in
+                        let roomLights = byRoom[room]!
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(room.uppercased())
+                                .font(.system(size: 9, weight: .medium))
+                                .tracking(0.8)
+                                .foregroundStyle(EditorialTheme.secondaryText)
 
-                        ForEach(roomLights) { device in
-                            DimmablePill(device: device)
+                            ForEach(roomLights) { device in
+                                DimmablePill(device: device)
+                            }
                         }
                     }
                 }

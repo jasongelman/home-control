@@ -359,7 +359,6 @@ struct DashboardView: View {
                 EditorialClimateSection()
                 EditorialCameraSection()
                 EditorialLightsSection()
-                EditorialShadesSection()
             }
             .padding(.horizontal)
             .padding(.top, 12)
