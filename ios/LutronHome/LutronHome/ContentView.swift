@@ -234,9 +234,11 @@ struct CategoryTab: View {
                 // Lights & shades: masonry 2-column, each room kept together
                 MasonryTwoColumn(spacing: EditorialTheme.gridSpacing) {
                     ForEach(rooms, id: \.name) { room in
-                        VStack(alignment: .leading, spacing: 6) {
+                        VStack(alignment: .leading, spacing: EditorialTheme.gridSpacing) {
                             Button { selectedRoom = room.name } label: {
                                 HStack(spacing: 4) {
+                                    Text(roomIcon(for: room.name))
+                                        .font(.system(size: 12))
                                     Text(room.name.uppercased())
                                         .font(.system(size: 9, weight: .medium))
                                         .tracking(0.8)
@@ -2194,6 +2196,35 @@ struct DimPill: View {
     }
 }
 
+// MARK: - Room Icon Lookup
+
+private let roomIcons: [String: String] = [
+    "Kitchen": "🍳", "Master Suite": "🛏️", "Primary Bedroom": "🛏️",
+    "Primary Bathroom": "🛁", "Rachel Closet": "👗", "Jason Closet": "👔",
+    "Living Room": "🛋️", "Family Room": "📺", "Dining Room": "🍽️",
+    "Office": "💻", "Jason Office": "💻", "Rachel Office": "💻",
+    "Garage": "🚗", "Laundry": "🧺", "Bathroom": "🚿",
+    "Hallway": "🚪", "Entry": "🚪", "Powder Room": "🚿",
+    "Ronan's Room": "🧒", "Sebastian's Room": "👦",
+    "Nursery": "👶", "Kids Room": "🧸", "Guest Room": "🛏️",
+    "Theater": "🎬", "Gym": "🏋️", "Pool": "🏊",
+    "Stairway": "📶", "Playroom": "🎮", "Secret Room": "🔒",
+    "Nanny Suite": "🛏️", "Mechanical": "⚙️",
+    "Guest Bathroom": "🚿", "Guest Bedroom": "🛏️",
+    "Breakfast Nook": "🥐", "Mudroom": "🥾",
+    "Front": "🏡", "Driveway": "🚗", "Rear": "🌳",
+    "Exterior": "🌳", "Gelman": "🏠",
+]
+
+func roomIcon(for name: String) -> String {
+    if let icon = roomIcons[name] { return icon }
+    let lower = name.lowercased()
+    for (key, icon) in roomIcons {
+        if lower.contains(key.lowercased()) { return icon }
+    }
+    return "🏠"
+}
+
 // MARK: - Category Room Card (icon + name, device toggles, no counts)
 
 struct CategoryRoomCard: View {
@@ -2262,7 +2293,7 @@ struct CategoryRoomCard: View {
                 if isSingleDevice {
                     // Single device: room name + toggle on one line
                     SingleDeviceRoomRow(
-                        roomIcon: roomIcon,
+                        roomIcon: icon,
                         roomName: name,
                         device: devices[0],
                         accentColor: accentColor
@@ -2270,7 +2301,7 @@ struct CategoryRoomCard: View {
                 } else {
                     // Icon + name on same line
                     HStack(spacing: 6) {
-                        Text(roomIcon)
+                        Text(icon)
                             .font(.system(size: 14))
                         Text(name.uppercased())
                             .font(.system(size: 10, weight: .semibold))
@@ -2304,31 +2335,7 @@ struct CategoryRoomCard: View {
         .buttonStyle(.plain)
     }
 
-    private var roomIcon: String {
-        let icons: [String: String] = [
-            "Kitchen": "🍳", "Master Suite": "🛏️", "Primary Bedroom": "🛏️",
-            "Primary Bathroom": "🛁", "Rachel Closet": "👗", "Jason Closet": "👔",
-            "Living Room": "🛋️", "Family Room": "📺", "Dining Room": "🍽️",
-            "Office": "💻", "Jason Office": "💻", "Rachel Office": "💻",
-            "Garage": "🚗", "Laundry": "🧺", "Bathroom": "🚿",
-            "Hallway": "🚪", "Entry": "🚪", "Powder Room": "🚿",
-            "Ronan's Room": "🧒", "Sebastian's Room": "👦",
-            "Nursery": "👶", "Kids Room": "🧸", "Guest Room": "🛏️",
-            "Theater": "🎬", "Gym": "🏋️", "Pool": "🏊",
-            "Stairway": "📶", "Playroom": "🎮", "Secret Room": "🔒",
-            "Nanny Suite": "🛏️", "Mechanical": "⚙️",
-            "Guest Bathroom": "🚿", "Guest Bedroom": "🛏️",
-            "Breakfast Nook": "🥐", "Mudroom": "🥾",
-            "Front": "🏡", "Driveway": "🚗", "Rear": "🌳",
-            "Exterior": "🌳", "Gelman": "🏠",
-        ]
-        if let icon = icons[name] { return icon }
-        let lower = name.lowercased()
-        for (key, icon) in icons {
-            if lower.contains(key.lowercased()) { return icon }
-        }
-        return "🏠"
-    }
+    private var icon: String { roomIcon(for: name) }
 }
 
 // MARK: - Device Toggle Row (on/off toggle per device in room card)
