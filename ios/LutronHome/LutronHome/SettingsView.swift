@@ -29,7 +29,7 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("Processor Connection") {
+            Section("Lutron") {
                 TextField("Processor IP Address", text: $host)
                     .keyboardType(.decimalPad)
                     .autocorrectionDisabled()
@@ -40,11 +40,9 @@ struct SettingsView: View {
                     store.connect()
                 }
                 .tint(.orange)
-            }
 
-            Section("Status") {
                 HStack {
-                    Text("Processor")
+                    Text("Status")
                     Spacer()
                     HStack(spacing: 4) {
                         Circle()
@@ -62,12 +60,16 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                HStack {
-                    Text("Lights On")
-                    Spacer()
-                    Text("\(store.lightsOn.count)")
-                        .foregroundStyle(.secondary)
+                Button {
+                    Task { await store.refreshDevices() }
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Refresh Devices")
+                    }
                 }
+                .disabled(!store.isConnected)
+                .tint(.orange)
             }
 
             // MARK: - Home Connect (Bosch Dishwasher)
