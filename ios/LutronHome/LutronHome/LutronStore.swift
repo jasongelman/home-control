@@ -31,12 +31,74 @@ class LutronStore: @unchecked Sendable {
     var usageTracker: UsageTracker?
 
     private var leapClient: LEAPClient?
+    /// Exposes the LEAP client for keypad discovery (read-only).
+    var leapClientForKeypads: LEAPClient? { leapClient }
     private var reconnectTimer: Timer?
     private var reconnectAttempt = 0
     private let maxReconnectDelay: TimeInterval = 60
     private var started = false
+
+    // MARK: - Topology Cache
+
+    private struct CachedTopology: Codable {
+        var devices: [DeviceState]
+        var processorHost: String
+        var savedAt: Double
+    }
+
+    private var topologyCacheURL: URL? {
+        FileManager.default
+            .urls(for: .documentDirectory, in: .userDomainMask)
+            .first?
+            .appendingPathComponent("lutron-topology.json")
+    }
+
+    /// True if we loaded topology from cache and haven't done a full LEAP fetch yet.
+    private var usingCachedTopology = false
     private var pathMonitor: NWPathMonitor?
     private var currentPath: NWPath?
+
+    private func loadCachedTopology() -> Bool {
+        guard let url = topologyCacheURL,
+              FileManager.default.fileExists(atPath: url.path),
+              let data = try? Data(contentsOf: url),
+              let cache = try? JSONDecoder().decode(CachedTopology.self, from: data),
+              cache.processorHost == processorHost,
+              !cache.devices.isEmpty else {
+            return false
+        }
+        var newDevices: [Int: DeviceState] = [:]
+        for var d in cache.devices {
+            d.level = 0
+            d.lastUpdated = Date().timeIntervalSince1970
+            newDevices[d.integrationId] = d
+        }
+        devices = newDevices
+        usingCachedTopology = true
+        print("LEAP: loaded \(newDevices.count) devices from topology cache")
+        return true
+    }
+
+    private func saveCachedTopology() {
+        guard let url = topologyCacheURL else { return }
+        let cache = CachedTopology(
+            devices: Array(devices.values),
+            processorHost: processorHost,
+            savedAt: Date().timeIntervalSince1970
+        )
+        do {
+            let data = try JSONEncoder().encode(cache)
+            try data.write(to: url, options: .atomic)
+            print("LEAP: saved topology cache (\(devices.count) devices)")
+        } catch {
+            print("LEAP: failed to write topology cache — \(error.localizedDescription)")
+        }
+    }
+
+    private func deleteCachedTopology() {
+        guard let url = topologyCacheURL else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
 
     // Computed properties
     var lightsOn: [DeviceState] {
@@ -57,6 +119,7 @@ class LutronStore: @unchecked Sendable {
     func start() {
         guard !started else { return }
         started = true
+        _ = loadCachedTopology()
         startNetworkMonitoring()
         connect()
     }
@@ -81,9 +144,14 @@ class LutronStore: @unchecked Sendable {
             self.isConnected = true
             self.reconnectAttempt = 0
             self.updateConnectionState()
-            self.statusMessage = "Connected, loading devices..."
             print("LEAP: connected to \(self.processorHost)")
-            Task { await self.loadTopology() }
+            if self.usingCachedTopology || !self.devices.isEmpty {
+                self.statusMessage = "Subscribing to updates..."
+                Task { await self.subscribeToZoneStatus() }
+            } else {
+                self.statusMessage = "Connected, loading devices..."
+                Task { await self.loadTopology() }
+            }
         }
 
         client.onDisconnect = { [weak self] reason in
@@ -126,11 +194,22 @@ class LutronStore: @unchecked Sendable {
         await loadTopology()
     }
 
+    /// Force a full topology re-fetch from the LEAP processor, ignoring cache.
+    func refreshDevices() async {
+        guard leapClient != nil else {
+            connect()
+            return
+        }
+        usingCachedTopology = false
+        await loadTopology()
+    }
+
     // MARK: - Topology Loading
 
     private func loadTopology() async {
         guard let client = leapClient else { return }
 
+        usingCachedTopology = false
         await MainActor.run { isLoading = true }
 
         do {
@@ -265,26 +344,11 @@ class LutronStore: @unchecked Sendable {
 
             // 4. Subscribe to zone status updates (if not already from QSX path)
             if initialLevels.isEmpty {
-                await MainActor.run { statusMessage = "Subscribing to updates..." }
-                let subResp = try await client.send(LEAPMessagePayload(
-                    CommuniqueType: "SubscribeRequest",
-                    Header: LEAPMessageHeader(Url: "/zone/status")
-                ))
-                if let statuses = subResp.Body?.ZoneStatuses {
-                    await MainActor.run {
-                        for zs in statuses {
-                            let zoneHref = zs["Zone"]?.dictValue?["href"]?.stringValue ?? ""
-                            let zid = self.hrefToId(zoneHref)
-                            let level = zs["Level"]?.doubleValue ?? 0
-                            if zid > 0 { self.devices[zid]?.level = level }
-                        }
-                    }
-                }
+                await subscribeToZoneStatus()
             }
 
-            await MainActor.run { statusMessage = "\(self.devices.count) devices • \(areas.count) rooms" }
-            print("LEAP: fully connected and subscribed")
             syncToAppGroup()
+            saveCachedTopology()
 
         } catch {
             print("LEAP: topology load failed: \(error)")
@@ -292,6 +356,34 @@ class LutronStore: @unchecked Sendable {
                 self.statusMessage = "Load failed: \(error.localizedDescription)"
                 self.isLoading = false
             }
+        }
+    }
+
+    /// Subscribe to /zone/status for real-time level updates. Also applies
+    /// the initial status snapshot returned by the SubscribeRequest.
+    private func subscribeToZoneStatus() async {
+        guard let client = leapClient else { return }
+        do {
+            let subResp = try await client.send(LEAPMessagePayload(
+                CommuniqueType: "SubscribeRequest",
+                Header: LEAPMessageHeader(Url: "/zone/status")
+            ))
+            if let statuses = subResp.Body?.ZoneStatuses {
+                await MainActor.run {
+                    for zs in statuses {
+                        let zoneHref = zs["Zone"]?.dictValue?["href"]?.stringValue ?? ""
+                        let zid = self.hrefToId(zoneHref)
+                        let level = zs["Level"]?.doubleValue ?? 0
+                        if zid > 0 { self.devices[zid]?.level = level }
+                    }
+                    self.statusMessage = "\(self.devices.count) devices"
+                }
+            }
+            syncToAppGroup()
+            print("LEAP: subscribed to zone status updates")
+        } catch {
+            print("LEAP: subscribe failed: \(error)")
+            await MainActor.run { self.statusMessage = "Subscribe failed: \(error.localizedDescription)" }
         }
     }
 
@@ -444,12 +536,66 @@ class LutronStore: @unchecked Sendable {
     }
 
     /// Turn off all lights in the house, optionally excluding specific device names
-    func turnOffAllLights(excludingNames: Set<String> = []) {
+    func turnOffAllLights(excludingNames: Set<String> = [], excludingRooms: Set<String> = []) {
         let lightsOn = devices.values.filter {
-            $0.category == .light && $0.level > 0 && !excludingNames.contains($0.name)
+            $0.category == .light && $0.level > 0
+            && !excludingNames.contains($0.name)
+            && !excludingRooms.contains($0.room)
         }
         for device in lightsOn {
             setLevel(device.integrationId, level: 0, fadeTime: 1)
+        }
+    }
+
+    // MARK: - Garage Door Lights Automation
+
+    private var garageLightsOffTimer: Timer?
+
+    /// Turn on garage lights and auto-off after delay
+    func triggerGarageDoorLights() {
+        let garageLightNames: Set<String> = ["garage surface", "stairs recessed"]
+        let matches = devices.values.filter {
+            garageLightNames.contains($0.name.lowercased())
+        }
+        guard !matches.isEmpty else { return }
+
+        for device in matches {
+            setLevel(device.integrationId, level: 100, fadeTime: 0)
+        }
+        print("Lutron: garage lights ON (\(matches.count) devices)")
+
+        // Cancel any existing timer and schedule auto-off in 5 minutes
+        garageLightsOffTimer?.invalidate()
+        garageLightsOffTimer = Timer.scheduledTimer(withTimeInterval: 5 * 60, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            for device in matches {
+                self.setLevel(device.integrationId, level: 0, fadeTime: 2)
+            }
+            print("Lutron: garage lights auto-OFF (5 min timer)")
+        }
+    }
+
+    /// Rise & Shine: raise all downstairs shades to fully open
+    func raiseDownstairsShades() {
+        let downstairsShades = devices.values.filter {
+            ($0.category == .shadesAndDrapes || $0.category == .window)
+            && Floor.floor(for: $0.room) == .downstairs
+        }
+        for shade in downstairsShades {
+            setLevel(shade.integrationId, level: 100, fadeTime: 2)
+        }
+    }
+
+    /// Block Out The Sun: close Family Room rear shades, Dining shades,
+    /// and Jason Office rear solar shade
+    func blockOutTheSun() {
+        let targetNames = ["shades rear", "dining shade", "rear solar"]
+        let targetShades = devices.values.filter { device in
+            (device.category == .shadesAndDrapes || device.category == .window) &&
+            targetNames.contains(where: { device.name.lowercased().contains($0) })
+        }
+        for shade in targetShades {
+            setLevel(shade.integrationId, level: 0, fadeTime: 2)
         }
     }
 
