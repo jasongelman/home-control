@@ -194,31 +194,32 @@ struct CategoryTab: View {
     }
 
     private func floorAnchorBar(proxy: ScrollViewProxy) -> some View {
-        HStack(spacing: 8) {
-            ForEach(activeFloors, id: \.self) { floor in
-                Button {
-                    proxy.scrollTo(floor, anchor: .top)
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: floor.icon)
-                            .font(.system(size: 9))
-                        Text(floor.rawValue.uppercased())
-                            .font(.system(size: 10, weight: .semibold))
-                            .tracking(0.6)
-                            .lineLimit(1)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(activeFloors, id: \.self) { floor in
+                    Button {
+                        proxy.scrollTo(floor, anchor: .top)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: floor.icon)
+                                .font(.system(size: 9))
+                            Text(floor.rawValue.uppercased())
+                                .font(.system(size: 10, weight: .semibold))
+                                .tracking(0.6)
+                                .lineLimit(1)
+                        }
+                        .foregroundStyle(EditorialTheme.primaryText)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(EditorialTheme.cardBackground)
+                        .overlay(
+                            Rectangle().stroke(EditorialTheme.cardBorder, lineWidth: 0.5)
+                        )
+                        .fixedSize()
                     }
-                    .foregroundStyle(EditorialTheme.primaryText)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(EditorialTheme.cardBackground)
-                    .overlay(
-                        Rectangle().stroke(EditorialTheme.cardBorder, lineWidth: 0.5)
-                    )
-                    .fixedSize()
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
-            Spacer()
         }
     }
 
