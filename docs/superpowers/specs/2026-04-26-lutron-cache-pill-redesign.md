@@ -110,6 +110,7 @@ Single section titled **"Lutron"**:
 - Pill tap does NOT navigate to room detail — room name header does that instead
 - Match the editorial aesthetic of the climate section (clean, minimal, no heavy rounded corners)
 - Same pill component for both lights and shades
+- The device name stays left aligned and the fill moves from the left edge to the right edge depending on the dim level
 
 ### Pill anatomy
 

@@ -18,6 +18,10 @@ class HomeKitManager: NSObject, @unchecked Sendable {
     // Cached camera images (keyed by camera name)
     var cachedImages: [String: UIImage] = [:]
 
+    // Incremented when a snapshot arrives — used to trigger SwiftUI updates
+    // for the live HMCameraView tiles on the dashboard.
+    var snapshotGeneration: Int = 0
+
     // Two-way audio support
     var isMicrophoneActive = false
 
@@ -31,6 +35,7 @@ class HomeKitManager: NSObject, @unchecked Sendable {
     // Garage door support
     var garageDoors: [HMAccessory] = []
     var garageDoorStates: [UUID: GarageDoorState] = [:]  // keyed by accessory uniqueIdentifier
+    var onGarageDoorOpened: (() -> Void)?
 
     private var homeManager: HMHomeManager?
     private var rotationTimer: Timer?
@@ -156,10 +161,18 @@ class HomeKitManager: NSObject, @unchecked Sendable {
             obstructionDetected: obstructed
         )
 
+        let previousState = garageDoorStates[accessory.uniqueIdentifier]
         DispatchQueue.main.async {
             self.garageDoorStates[accessory.uniqueIdentifier] = state
         }
         print("HomeKit: garage '\(accessory.name)' state: \(state.current.label)")
+
+        // Trigger lights when door opens (transition from non-open to opening/open)
+        let wasOpen = previousState?.current == .open || previousState?.current == .opening
+        let isNowOpen = state.current == .open || state.current == .opening
+        if !wasOpen && isNowOpen {
+            DispatchQueue.main.async { self.onGarageDoorOpened?() }
+        }
     }
 
     private func enableGarageDoorNotifications(_ accessory: HMAccessory) {
@@ -239,6 +252,15 @@ class HomeKitManager: NSObject, @unchecked Sendable {
             print("HomeKit: no snapshot control available")
             return
         }
+        snapshotControl.delegate = self
+        snapshotControl.takeSnapshot()
+    }
+
+    /// Request a snapshot for a specific camera by index (used by dashboard tiles).
+    func requestSnapshotForTile(cameraIndex: Int) {
+        guard cameraIndex < cameras.count else { return }
+        let profile = cameras[cameraIndex].profile
+        guard let snapshotControl = profile.snapshotControl else { return }
         snapshotControl.delegate = self
         snapshotControl.takeSnapshot()
     }
@@ -595,24 +617,38 @@ extension HomeKitManager: HMCameraSnapshotControlDelegate {
             return
         }
         if snapshot != nil {
-            print("HomeKit: snapshot taken")
+            let name = cameraNameForControl(cameraSnapshotControl)
+            print("HomeKit: snapshot taken for \(name)")
             statusMessage = "Snapshot captured"
-            // The mostRecentSnapshot gives us the HMCameraSource to render
+            snapshotGeneration += 1
             if let mostRecent = cameraSnapshotControl.mostRecentSnapshot {
-                renderAndCacheSnapshot(mostRecent)
+                renderAndCacheSnapshot(mostRecent, cameraName: name)
             }
         }
     }
 
     func cameraSnapshotControlDidUpdateMostRecentSnapshot(_ cameraSnapshotControl: HMCameraSnapshotControl) {
-        print("HomeKit: most recent snapshot updated")
+        let name = cameraNameForControl(cameraSnapshotControl)
+        print("HomeKit: most recent snapshot updated for \(name)")
         if let mostRecent = cameraSnapshotControl.mostRecentSnapshot {
-            renderAndCacheSnapshot(mostRecent)
+            renderAndCacheSnapshot(mostRecent, cameraName: name)
         }
     }
 
-    /// Render a snapshot via HMCameraView and cache the result
-    private func renderAndCacheSnapshot(_ snapshot: HMCameraSnapshot) {
+    /// Resolve which camera a snapshot control belongs to by identity.
+    private func cameraNameForControl(_ control: HMCameraSnapshotControl) -> String {
+        for (accessory, profile) in cameras {
+            if profile.snapshotControl === control {
+                return accessory.name
+            }
+        }
+        return currentCameraName
+    }
+
+    /// Render a snapshot via HMCameraView and cache the result.
+    /// Uses `layer.render(in:)` instead of `drawHierarchy` because the view
+    /// is hidden and `drawHierarchy` skips hidden views.
+    private func renderAndCacheSnapshot(_ snapshot: HMCameraSnapshot, cameraName: String) {
         // Capture pending activity state before async
         let activityCapture = pendingActivityCapture
         pendingActivityCapture = nil
@@ -621,12 +657,23 @@ extension HomeKitManager: HMCameraSnapshotControlDelegate {
             guard let self else { return }
             let cameraView = HMCameraView(frame: CGRect(x: 0, y: 0, width: 640, height: 480))
             cameraView.cameraSource = snapshot
-            // Give the view a moment to render, then capture
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            cameraView.isHidden = true
+
+            // Attach to key window so the CALayer gets a backing
+            let window = UIApplication.shared.connectedScenes
+                .compactMap { ($0 as? UIWindowScene)?.keyWindow }
+                .first
+            window?.addSubview(cameraView)
+            cameraView.layoutIfNeeded()
+
+            // Give the view a moment to load the snapshot source
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                 let renderer = UIGraphicsImageRenderer(bounds: cameraView.bounds)
-                let image = renderer.image { _ in
-                    cameraView.drawHierarchy(in: cameraView.bounds, afterScreenUpdates: true)
+                let image = renderer.image { ctx in
+                    cameraView.layer.render(in: ctx.cgContext)
                 }
+                cameraView.removeFromSuperview()
+
                 // Only process if image has actual content (not all black)
                 guard let data = image.pngData(), data.count > 1000 else { return }
 
@@ -635,13 +682,14 @@ extension HomeKitManager: HMCameraSnapshotControlDelegate {
                     self.saveActivitySnapshot(image, cameraName: activity.cameraName, timestamp: activity.timestamp)
                 } else {
                     // Normal live snapshot caching
-                    self.cacheImage(image, for: self.currentCameraName)
+                    self.cacheImage(image, for: cameraName)
                     self.snapshotImage = image.jpegData(compressionQuality: 0.8)
-                    print("HomeKit: cached snapshot for \(self.currentCameraName)")
+                    print("HomeKit: cached snapshot for \(cameraName)")
                 }
             }
         }
     }
+
 }
 
 // MARK: - HMAccessoryDelegate (garage door state changes)

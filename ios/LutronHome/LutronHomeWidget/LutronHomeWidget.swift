@@ -15,7 +15,7 @@ struct LutronHomeSmallWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: LutronTimelineProvider()) { entry in
             SmallWidgetView(entry: entry)
-                .containerBackground(.fill.tertiary, for: .widget)
+                .containerBackground(Color.white, for: .widget)
         }
         .configurationDisplayName("Lutron Home")
         .description("Quick actions for your home")
@@ -29,7 +29,7 @@ struct LutronHomeMediumWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: LutronTimelineProvider()) { entry in
             MediumWidgetView(entry: entry)
-                .containerBackground(.fill.tertiary, for: .widget)
+                .containerBackground(Color.white, for: .widget)
         }
         .configurationDisplayName("Lutron Home")
         .description("Quick actions, status, and controls")

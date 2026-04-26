@@ -105,8 +105,20 @@ struct CategoryTab: View {
     /// Floors that actually have rooms in this category
     private var activeFloors: [Floor] {
         Floor.allCases.filter { floor in
-            categoryRooms.contains { Floor.floor(for: $0.name) == floor }
+            !floorRoomsIncludingKeypads(for: floor).isEmpty
         }
+    }
+
+    /// Rooms for a floor, including color-keypad-only rooms (lights tab only)
+    private func floorRoomsIncludingKeypads(for floor: Floor) -> [(name: String, devices: [DeviceState])] {
+        var rooms = categoryRooms.filter { Floor.floor(for: $0.name) == floor }
+        if isLightsTab {
+            let existingNames = Set(rooms.map(\.name))
+            for entry in store.colorKeypads where Floor.floor(for: entry.room) == floor && !existingNames.contains(entry.room) {
+                rooms.append((name: entry.room, devices: []))
+            }
+        }
+        return rooms
     }
 
     var body: some View {
@@ -167,7 +179,7 @@ struct CategoryTab: View {
                                     }
                                 } else {
                                     ForEach(Floor.allCases, id: \.self) { floor in
-                                        let floorRooms = categoryRooms.filter { Floor.floor(for: $0.name) == floor }
+                                        let floorRooms = floorRoomsIncludingKeypads(for: floor)
                                         if !floorRooms.isEmpty {
                                             floorSection(floor: floor, rooms: floorRooms)
                                                 .id(floor)
@@ -235,20 +247,31 @@ struct CategoryTab: View {
                 MasonryTwoColumn(spacing: EditorialTheme.gridSpacing) {
                     ForEach(rooms, id: \.name) { room in
                         VStack(alignment: .leading, spacing: EditorialTheme.gridSpacing) {
-                            Button { selectedRoom = room.name } label: {
-                                HStack(spacing: 4) {
-                                    Text(roomIcon(for: room.name))
-                                        .font(.system(size: 12))
-                                    Text(room.name.uppercased())
-                                        .font(.system(size: 9, weight: .medium))
-                                        .tracking(0.8)
-                                        .foregroundStyle(EditorialTheme.secondaryText)
-                                    Image(systemName: "chevron.right")
-                                        .font(.system(size: 7, weight: .semibold))
-                                        .foregroundStyle(EditorialTheme.tertiaryText)
+                            HStack(spacing: 0) {
+                                Button { selectedRoom = room.name } label: {
+                                    HStack(spacing: 4) {
+                                        Text(roomIcon(for: room.name))
+                                            .font(.system(size: 12))
+                                        Text(room.name.uppercased())
+                                            .font(.system(size: 9, weight: .medium))
+                                            .tracking(0.8)
+                                            .foregroundStyle(EditorialTheme.secondaryText)
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 7, weight: .semibold))
+                                            .foregroundStyle(EditorialTheme.tertiaryText)
+                                    }
                                 }
+                                .buttonStyle(.plain)
+
+                                Spacer(minLength: 4)
+
+                                Button { turnOffRoom(room.name, devices: room.devices) } label: {
+                                    Image(systemName: "lightbulb.slash")
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundStyle(EditorialTheme.secondaryText)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
 
                             ForEach(room.devices) { device in
                                 let fade: Double? = device.category == .shadesAndDrapes ? 2 : nil
@@ -275,6 +298,17 @@ struct CategoryTab: View {
                     }
                 }
             }
+        }
+    }
+
+    private func turnOffRoom(_ name: String, devices: [DeviceState]) {
+        // Turn off zone devices
+        for d in devices where d.level > 0 {
+            store.setLevel(d.integrationId, level: 0, fadeTime: 1)
+        }
+        // Press keypad off button (covers color fixtures + non-zone lights)
+        for entry in store.keypadOffButtons where entry.room == name {
+            store.pressKeypadButton(entry.buttonId)
         }
     }
 
@@ -351,14 +385,16 @@ struct DashboardView: View {
     @Environment(MyQManager.self) var myQ
     @Environment(EcobeeManager.self) var ecobee
     @Environment(SonosManager.self) var sonos
+    @Environment(ChatService.self) var chatService
 
     @State private var showDishwasherStartSheet = false
     @State private var selectedDishwasherId: String?
+    @State private var showVoiceInput = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: EditorialTheme.sectionSpacing) {
-                EditorialTopBar()
+                EditorialTopBar(onTalkToMe: { showVoiceInput = true })
                 EditorialHeroSection()
                 EditorialStatsRow()
                 EditorialSuggestedAction()
@@ -379,6 +415,20 @@ struct DashboardView: View {
         .sheet(isPresented: $showDishwasherStartSheet) {
             if let id = selectedDishwasherId {
                 DishwasherStartSheet(applianceId: id)
+            }
+        }
+        .sheet(isPresented: $showVoiceInput) {
+            NavigationStack {
+                VoiceInputView()
+                    .environment(store)
+                    .environment(chatService)
+                    .navigationTitle("Voice Command")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { showVoiceInput = false }
+                        }
+                    }
             }
         }
     }

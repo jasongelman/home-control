@@ -52,6 +52,19 @@
 		A100004E /* SonosManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200004E /* SonosManager.swift */; };
 		A100004F /* SonosDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200004F /* SonosDetailView.swift */; };
 		A1000060 /* WidgetBackgroundRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000060 /* WidgetBackgroundRefresh.swift */; };
+		E1000001 /* EditorialTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2000001 /* EditorialTheme.swift */; };
+		E1000002 /* EditorialTopBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2000002 /* EditorialTopBar.swift */; };
+		E1000003 /* EditorialHeroSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2000003 /* EditorialHeroSection.swift */; };
+		E1000004 /* EditorialStatsRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2000004 /* EditorialStatsRow.swift */; };
+		E1000005 /* EditorialSuggestedAction.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2000005 /* EditorialSuggestedAction.swift */; };
+		E1000006 /* EditorialStatusGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2000006 /* EditorialStatusGrid.swift */; };
+		E1000007 /* EditorialClimateSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2000007 /* EditorialClimateSection.swift */; };
+		E1000008 /* EditorialShadesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2000008 /* EditorialShadesSection.swift */; };
+		E1000009 /* EditorialLightsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2000009 /* EditorialLightsSection.swift */; };
+		E100000A /* EditorialCameraSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E200000A /* EditorialCameraSection.swift */; };
+		E100000B /* KeypadsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = E200000B /* KeypadsTab.swift */; };
+		E100000C /* WeatherManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E200000C /* WeatherManager.swift */; };
+		E1000010 /* BebasNeue-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E2000010 /* BebasNeue-Regular.ttf */; };
 		B1000004 /* AppGroupManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000004 /* AppGroupManagerTests.swift */; };
 		B1000005 /* RecommendationEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000005 /* RecommendationEngineTests.swift */; };
 		W1000001 /* LutronHomeWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = W2000001 /* LutronHomeWidget.swift */; };
@@ -162,6 +175,19 @@
 		A2000023 /* TotalConnectManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TotalConnectManager.swift; sourceTree = "<group>"; };
 		A2000024 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
 		A2000025 /* EcobeeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EcobeeManager.swift; sourceTree = "<group>"; };
+		E2000001 /* EditorialTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorialTheme.swift; sourceTree = "<group>"; };
+		E2000002 /* EditorialTopBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorialTopBar.swift; sourceTree = "<group>"; };
+		E2000003 /* EditorialHeroSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorialHeroSection.swift; sourceTree = "<group>"; };
+		E2000004 /* EditorialStatsRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorialStatsRow.swift; sourceTree = "<group>"; };
+		E2000005 /* EditorialSuggestedAction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorialSuggestedAction.swift; sourceTree = "<group>"; };
+		E2000006 /* EditorialStatusGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorialStatusGrid.swift; sourceTree = "<group>"; };
+		E2000007 /* EditorialClimateSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorialClimateSection.swift; sourceTree = "<group>"; };
+		E2000008 /* EditorialShadesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorialShadesSection.swift; sourceTree = "<group>"; };
+		E2000009 /* EditorialLightsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorialLightsSection.swift; sourceTree = "<group>"; };
+		E200000A /* EditorialCameraSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorialCameraSection.swift; sourceTree = "<group>"; };
+		E200000B /* KeypadsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeypadsTab.swift; sourceTree = "<group>"; };
+		E200000C /* WeatherManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherManager.swift; sourceTree = "<group>"; };
+		E2000010 /* BebasNeue-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "BebasNeue-Regular.ttf"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -238,6 +264,19 @@
 				A200004E /* SonosManager.swift */,
 				A200004F /* SonosDetailView.swift */,
 				A2000060 /* WidgetBackgroundRefresh.swift */,
+				E2000001 /* EditorialTheme.swift */,
+				E2000002 /* EditorialTopBar.swift */,
+				E2000003 /* EditorialHeroSection.swift */,
+				E2000004 /* EditorialStatsRow.swift */,
+				E2000005 /* EditorialSuggestedAction.swift */,
+				E2000006 /* EditorialStatusGrid.swift */,
+				E2000007 /* EditorialClimateSection.swift */,
+				E2000008 /* EditorialShadesSection.swift */,
+				E2000009 /* EditorialLightsSection.swift */,
+				E200000A /* EditorialCameraSection.swift */,
+				E200000B /* KeypadsTab.swift */,
+				E200000C /* WeatherManager.swift */,
+				E5000001 /* Fonts */,
 				A2000012 /* LutronHome.entitlements */,
 				A2000050 /* Info.plist */,
 				A2000010 /* Assets.xcassets */,
@@ -291,6 +330,14 @@
 				W2000006 /* Info.plist */,
 			);
 			path = LutronHomeWidget;
+			sourceTree = "<group>";
+		};
+		E5000001 /* Fonts */ = {
+			isa = PBXGroup;
+			children = (
+				E2000010 /* BebasNeue-Regular.ttf */,
+			);
+			path = Fonts;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -399,6 +446,7 @@
 								A100000E /* secrets.json in Resources */,
 A1000010 /* Assets.xcassets in Resources */,
 				A1000011 /* lutron_client.p12 in Resources */,
+				E1000010 /* BebasNeue-Regular.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -454,6 +502,18 @@ A1000010 /* Assets.xcassets in Resources */,
 				A100004E /* SonosManager.swift in Sources */,
 				A100004F /* SonosDetailView.swift in Sources */,
 				A1000060 /* WidgetBackgroundRefresh.swift in Sources */,
+				E1000001 /* EditorialTheme.swift in Sources */,
+				E1000002 /* EditorialTopBar.swift in Sources */,
+				E1000003 /* EditorialHeroSection.swift in Sources */,
+				E1000004 /* EditorialStatsRow.swift in Sources */,
+				E1000005 /* EditorialSuggestedAction.swift in Sources */,
+				E1000006 /* EditorialStatusGrid.swift in Sources */,
+				E1000007 /* EditorialClimateSection.swift in Sources */,
+				E1000008 /* EditorialShadesSection.swift in Sources */,
+				E1000009 /* EditorialLightsSection.swift in Sources */,
+				E100000A /* EditorialCameraSection.swift in Sources */,
+				E100000B /* KeypadsTab.swift in Sources */,
+				E100000C /* WeatherManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -564,7 +624,7 @@ A1000010 /* Assets.xcassets in Resources */,
 				DEVELOPMENT_TEAM = WRS5YQAAC6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LutronHome/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Home Control";
+				INFOPLIST_KEY_CFBundleDisplayName = "LH Editorial";
 				INFOPLIST_KEY_NSHomeKitUsageDescription = "Home Control needs HomeKit access to show your camera feeds.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "LutronHome needs local network access to communicate with your Lutron processor.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -574,7 +634,7 @@ A1000010 /* Assets.xcassets in Resources */,
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.jasongelman.LutronHome;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jasongelman.LutronHome.Editorial;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -593,7 +653,7 @@ A1000010 /* Assets.xcassets in Resources */,
 				DEVELOPMENT_TEAM = WRS5YQAAC6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LutronHome/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Home Control";
+				INFOPLIST_KEY_CFBundleDisplayName = "LH Editorial";
 				INFOPLIST_KEY_NSHomeKitUsageDescription = "Home Control needs HomeKit access to show your camera feeds.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "LutronHome needs local network access to communicate with your Lutron processor.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -603,7 +663,7 @@ A1000010 /* Assets.xcassets in Resources */,
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.jasongelman.LutronHome;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jasongelman.LutronHome.Editorial;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -662,7 +722,7 @@ A1000010 /* Assets.xcassets in Resources */,
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.jasongelman.LutronHome.Widget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jasongelman.LutronHome.Editorial.Widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -684,7 +744,7 @@ A1000010 /* Assets.xcassets in Resources */,
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.jasongelman.LutronHome.Widget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jasongelman.LutronHome.Editorial.Widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;

@@ -38,6 +38,8 @@ export class TotalConnectPoller extends EventEmitter {
   private zones: Map<string, AlarmZone[]> = new Map();  // keyed by locationId
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private _connected = false;
+  private consecutiveFailures = 0;
+  private _authFailed = false;
 
   constructor(config: TotalConnectConfig) {
     super();
@@ -118,6 +120,10 @@ export class TotalConnectPoller extends EventEmitter {
     return this._connected;
   }
 
+  get authFailed(): boolean {
+    return this._authFailed;
+  }
+
   getPanels(): AlarmPanel[] {
     return Array.from(this.panels.values());
   }
@@ -130,6 +136,8 @@ export class TotalConnectPoller extends EventEmitter {
     this.config = config;
     this.session = null;
     this.sessionExpiry = 0;
+    this.consecutiveFailures = 0;
+    this._authFailed = false;
 
     if (config.enabled && config.username && config.password) {
       if (!this.pollTimer) this.start();
@@ -246,9 +254,12 @@ export class TotalConnectPoller extends EventEmitter {
 
       if (!this._connected) {
         this._connected = true;
+        this._authFailed = false;
+        this.consecutiveFailures = 0;
         this.emit('connected');
         this.emit('stateChange', this.getPanels(), Object.fromEntries(this.zones));
       } else if (stateChanged || topologyChanged) {
+        this.consecutiveFailures = 0;
         this.emit('stateChange', this.getPanels(), Object.fromEntries(this.zones));
       }
     } catch (err) {
@@ -256,6 +267,17 @@ export class TotalConnectPoller extends EventEmitter {
       this._connected = false;
       this.session = null;
       this.sessionExpiry = 0;
+      this.consecutiveFailures++;
+
+      if (this.consecutiveFailures >= 2) {
+        this._authFailed = true;
+        console.error(`TC2: auth failed after ${this.consecutiveFailures} attempts — stopping poll. Update credentials to retry.`);
+        if (this.pollTimer) {
+          clearInterval(this.pollTimer);
+          this.pollTimer = null;
+        }
+      }
+
       if (wasConnected) this.emit('disconnected', (err as Error).message);
       this.emit('error', err as Error);
       console.error('TC2 poll error:', (err as Error).message);

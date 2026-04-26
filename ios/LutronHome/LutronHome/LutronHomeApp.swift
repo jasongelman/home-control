@@ -14,6 +14,7 @@ struct LutronHomeApp: App {
     @State private var totalConnect = TotalConnectManager()
     @State private var ecobee = EcobeeManager()
     @State private var sonos = SonosManager()
+    @State private var weather = WeatherManager()
     @Environment(\.scenePhase) private var scenePhase
     @State private var showVoiceInput = false
 
@@ -45,13 +46,18 @@ struct LutronHomeApp: App {
                 .environment(totalConnect)
                 .environment(ecobee)
                 .environment(sonos)
-                .preferredColorScheme(.dark)
+                .environment(weather)
+                .preferredColorScheme(.light)
                 .onAppear {
                     store.usageTracker = usageTracker
+                    homeKit.onGarageDoorOpened = { [weak store] in
+                        store?.triggerGarageDoorLights()
+                    }
                     homeKit.start()
                     homeKit.cleanupOldActivitySnapshots()
                     homeKit.loadTodayActivitySnapshots()
                     NotificationManager.shared.requestPermission()
+                    weather.resume()
                     // Register Siri shortcuts
                     LutronShortcutsProvider.updateAppShortcutParameters()
                 }
@@ -66,6 +72,7 @@ struct LutronHomeApp: App {
                         totalConnect.resume()
                         ecobee.resume()
                         sonos.resume()
+                        weather.resume()
                         // Sync widget state on foreground
                         syncWidgetState()
                     } else if newPhase == .background {

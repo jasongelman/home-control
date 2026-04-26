@@ -135,6 +135,16 @@ class LutronStore: @unchecked Sendable {
             .appendingPathComponent("lutron-keypads.json")
     }
 
+    /// Area renames applied to keypad data (same as zone topology renames).
+    private static let areaRenames: [String: String] = [
+        "Bedroom 1": "Ronan's Room",
+        "Bedroom 2": "Sebastian's Room",
+        "Safe Room": "Secret Room",
+        "Attic Bathroom": "Guest Bathroom",
+        "Attic Guest Bedroom": "Guest Bedroom",
+        "Mudroom Entry": "Mudroom",
+    ]
+
     /// Load keypad off-buttons and color keypads from the keypad cache file.
     private func loadKeypadData() {
         guard let url = keypadCacheURL,
@@ -146,13 +156,15 @@ class LutronStore: @unchecked Sendable {
 
         // Extract off-buttons for bulk-off actions
         var offButtons: [KeypadOffButton] = []
-        for kp in keypads where offRooms.contains(kp.areaName) {
+        for kp in keypads {
+            let room = Self.areaRenames[kp.areaName] ?? kp.areaName
+            guard offRooms.contains(room) else { continue }
             // Skip Colors keypads — their Off button is for color lights only
             if kp.name.localizedCaseInsensitiveContains("Colors") { continue }
             for btn in kp.buttons {
                 let eng = btn.engraving.lowercased()
                 if eng == "off" || eng == "room off" {
-                    offButtons.append(KeypadOffButton(room: kp.areaName, buttonId: btn.id))
+                    offButtons.append(KeypadOffButton(room: room, buttonId: btn.id))
                 }
             }
         }
@@ -162,6 +174,7 @@ class LutronStore: @unchecked Sendable {
         // Extract Colors keypads
         var colors: [ColorKeypadEntry] = []
         for kp in keypads where kp.name.localizedCaseInsensitiveContains("Colors") {
+            let room = Self.areaRenames[kp.areaName] ?? kp.areaName
             let buttons = kp.buttons.map { btn in
                 let eng = btn.engraving.lowercased()
                 let isOff = eng == "off" || eng.contains("off")
@@ -172,7 +185,7 @@ class LutronStore: @unchecked Sendable {
                 if a.isOff != b.isOff { return !a.isOff }
                 return a.id < b.id
             }
-            colors.append(ColorKeypadEntry(id: kp.deviceId, room: kp.areaName, buttons: sorted, activeButtonId: nil))
+            colors.append(ColorKeypadEntry(id: kp.deviceId, room: room, buttons: sorted, activeButtonId: nil))
         }
         colorKeypads = colors
         print("LEAP: loaded \(colors.count) color keypads from cache")

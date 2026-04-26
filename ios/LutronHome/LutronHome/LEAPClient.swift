@@ -302,12 +302,23 @@ struct LEAPBody: Codable {
     var Login: [String: AnyCodable]?
     var Server: [String: AnyCodable]?
 
-    // Catch anything else we don't explicitly model
-    var additionalProperties: [String: AnyCodable]?
+    // Catch anything else we don't explicitly model (ControlStations, ButtonGroups, Buttons, Device, LEDStatus, etc.)
+    var additionalValues: [String: AnyCodable]?
+
+    struct DynamicCodingKey: CodingKey {
+        var stringValue: String
+        var intValue: Int?
+        init?(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { self.stringValue = "\(intValue)"; self.intValue = intValue }
+    }
 
     enum CodingKeys: String, CodingKey {
         case Areas, Zones, Zone, ZoneStatuses, ZoneStatus, VirtualButtons, Login, Server
     }
+
+    private static let knownKeys: Set<String> = [
+        "Areas", "Zones", "Zone", "ZoneStatuses", "ZoneStatus", "VirtualButtons", "Login", "Server"
+    ]
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -319,6 +330,16 @@ struct LEAPBody: Codable {
         VirtualButtons = try container.decodeIfPresent([[String: AnyCodable]].self, forKey: .VirtualButtons)
         Login = try container.decodeIfPresent([String: AnyCodable].self, forKey: .Login)
         Server = try container.decodeIfPresent([String: AnyCodable].self, forKey: .Server)
+
+        // Decode any keys not in CodingKeys into additionalValues
+        let dynamicContainer = try decoder.container(keyedBy: DynamicCodingKey.self)
+        var extras: [String: AnyCodable] = [:]
+        for key in dynamicContainer.allKeys where !Self.knownKeys.contains(key.stringValue) {
+            if let val = try? dynamicContainer.decode(AnyCodable.self, forKey: key) {
+                extras[key.stringValue] = val
+            }
+        }
+        additionalValues = extras.isEmpty ? nil : extras
     }
 
     func encode(to encoder: Encoder) throws {
@@ -337,6 +358,11 @@ struct LEAPBody: Codable {
 struct LEAPBodyPayload: Encodable {
     var Command: LEAPCommand?
     var Login: LEAPLogin?
+    var LEDStatus: LEAPLEDStatus?
+}
+
+struct LEAPLEDStatus: Encodable {
+    var State: String  // "On" or "Off"
 }
 
 struct LEAPCommand: Encodable {

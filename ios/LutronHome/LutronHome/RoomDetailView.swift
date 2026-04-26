@@ -29,58 +29,78 @@ struct RoomDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: EditorialTheme.sectionSpacing) {
+                // Header with back button
+                HStack(alignment: .firstTextBaseline) {
+                    Button(action: onBack) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("BACK")
+                                .font(.system(size: 10, weight: .semibold))
+                                .tracking(0.8)
+                        }
+                        .foregroundStyle(EditorialTheme.accent)
+                    }
+                    .buttonStyle(.plain)
+
+                    Spacer()
+                }
+
+                Text(roomName.uppercased())
+                    .font(EditorialTheme.bebasNeue(size: 32))
+                    .foregroundStyle(EditorialTheme.primaryText)
+
                 // Climate sensors/thermostats for this room
                 if !roomThermostats.isEmpty || !roomSensors.isEmpty {
-                    DeviceSection(title: "Climate", icon: "thermometer.medium", count: roomThermostats.count + roomSensors.count) {
-                        VStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: EditorialTheme.gridSpacing) {
+                        EditorialSectionHeader(title: "Climate", trailing: "\(roomThermostats.count + roomSensors.count)")
+                        VStack(spacing: 6) {
                             ForEach(roomThermostats) { thermo in
                                 HStack(spacing: 10) {
                                     Image(systemName: thermo.hvacMode.icon)
-                                        .font(.system(size: 14))
-                                        .foregroundStyle(.green)
-                                        .frame(width: 22)
-                                    Text(thermo.displayName)
-                                        .font(.system(size: 13, weight: .medium))
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(EditorialTheme.accent)
+                                        .frame(width: 20)
+                                    Text(thermo.displayName.uppercased())
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .tracking(0.6)
+                                        .foregroundStyle(EditorialTheme.primaryText)
                                     Spacer()
                                     Text("\(Int(thermo.currentTemp))\u{00B0}F")
-                                        .font(.system(size: 14, weight: .semibold))
-                                    Text(thermo.hvacMode.label)
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.secondary)
+                                        .font(EditorialTheme.monoValue(size: 14))
+                                        .foregroundStyle(EditorialTheme.accent)
+                                    Text(thermo.hvacMode.label.uppercased())
+                                        .font(.system(size: 9, weight: .medium))
+                                        .tracking(0.4)
+                                        .foregroundStyle(EditorialTheme.secondaryText)
                                 }
-                                .padding(12)
-                                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(Color(.separator).opacity(0.4), lineWidth: 0.5)
-                                )
+                                .editorialCard(padding: 10)
                             }
                             ForEach(roomSensors) { sensor in
                                 HStack(spacing: 10) {
                                     Image(systemName: sensor.occupancy ? "person.fill" : "thermometer")
-                                        .font(.system(size: 14))
-                                        .foregroundStyle(sensor.occupancy ? .green : .secondary)
-                                        .frame(width: 22)
-                                    Text(sensor.name)
-                                        .font(.system(size: 13, weight: .medium))
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(sensor.occupancy ? EditorialTheme.accent : EditorialTheme.secondaryText)
+                                        .frame(width: 20)
+                                    Text(sensor.name.uppercased())
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .tracking(0.6)
+                                        .foregroundStyle(EditorialTheme.primaryText)
                                     Spacer()
                                     if let temp = sensor.temp {
                                         Text("\(Int(temp))\u{00B0}F")
-                                            .font(.system(size: 14, weight: .semibold))
+                                            .font(EditorialTheme.monoValue(size: 14))
+                                            .foregroundStyle(EditorialTheme.accent)
                                     }
                                     if sensor.occupancy {
-                                        Text("Occupied")
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(.green)
+                                        Text("OCCUPIED")
+                                            .font(.system(size: 9, weight: .medium))
+                                            .tracking(0.4)
+                                            .foregroundStyle(EditorialTheme.accent)
                                     }
                                 }
-                                .padding(12)
-                                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(Color(.separator).opacity(0.4), lineWidth: 0.5)
-                                )
+                                .editorialCard(padding: 10)
                             }
                         }
                     }
@@ -88,25 +108,29 @@ struct RoomDetailView: View {
 
                 // Sonos speaker for this room
                 if let player = roomSonosPlayer {
-                    DeviceSection(title: "Music", icon: "hifispeaker.fill", count: 1) {
+                    VStack(alignment: .leading, spacing: EditorialTheme.gridSpacing) {
+                        EditorialSectionHeader(title: "Music")
                         HStack(spacing: 12) {
                             Image(systemName: player.state == .playing ? "speaker.wave.2.fill" : "speaker.fill")
-                                .font(.system(size: 16))
-                                .foregroundStyle(.orange)
-                                .frame(width: 22)
+                                .font(.system(size: 14))
+                                .foregroundStyle(EditorialTheme.accent)
+                                .frame(width: 20)
 
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(player.name)
-                                    .font(.system(size: 13, weight: .medium))
+                                Text(player.name.uppercased())
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .tracking(0.6)
+                                    .foregroundStyle(EditorialTheme.primaryText)
                                 if let track = player.currentTrack {
                                     Text("\(track.title) · \(track.artist)")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.secondary)
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(EditorialTheme.secondaryText)
                                         .lineLimit(1)
                                 } else {
-                                    Text("Not Playing")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.secondary)
+                                    Text("NOT PLAYING")
+                                        .font(.system(size: 9, weight: .medium))
+                                        .tracking(0.4)
+                                        .foregroundStyle(EditorialTheme.secondaryText)
                                 }
                             }
 
@@ -122,23 +146,19 @@ struct RoomDetailView: View {
                                 }
                             } label: {
                                 Image(systemName: player.state == .playing ? "pause.circle.fill" : "play.circle.fill")
-                                    .font(.system(size: 24))
-                                    .foregroundStyle(.orange)
+                                    .font(.system(size: 22))
+                                    .foregroundStyle(EditorialTheme.accent)
                             }
                             .buttonStyle(.plain)
                         }
-                        .padding(12)
-                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color(.separator).opacity(0.4), lineWidth: 0.5)
-                        )
+                        .editorialCard(padding: 10)
                     }
                 }
 
                 if !lights.isEmpty {
-                    DeviceSection(title: "Lights", icon: "lightbulb.fill", count: lights.count) {
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    VStack(alignment: .leading, spacing: EditorialTheme.gridSpacing) {
+                        EditorialSectionHeader(title: "Lights", trailing: "\(lights.count)")
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: EditorialTheme.gridSpacing) {
                             ForEach(lights) { device in
                                 LightControlCard(device: device)
                             }
@@ -147,8 +167,9 @@ struct RoomDetailView: View {
                 }
 
                 if !shades.isEmpty {
-                    DeviceSection(title: "Shades", icon: "blinds.vertical.open", count: shades.count) {
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    VStack(alignment: .leading, spacing: EditorialTheme.gridSpacing) {
+                        EditorialSectionHeader(title: "Shades", trailing: "\(shades.count)")
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: EditorialTheme.gridSpacing) {
                             ForEach(shades) { device in
                                 ShadeControlCard(device: device)
                             }
@@ -157,8 +178,9 @@ struct RoomDetailView: View {
                 }
 
                 if !keypads.isEmpty {
-                    DeviceSection(title: "Scenes", icon: "keyboard", count: keypads.count) {
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    VStack(alignment: .leading, spacing: EditorialTheme.gridSpacing) {
+                        EditorialSectionHeader(title: "Scenes", trailing: "\(keypads.count)")
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: EditorialTheme.gridSpacing) {
                             ForEach(keypads) { device in
                                 KeypadCard(device: device)
                             }
@@ -166,22 +188,11 @@ struct RoomDetailView: View {
                     }
                 }
             }
-            .padding()
+            .padding(.horizontal)
+            .padding(.top, 12)
         }
-        .navigationTitle(roomName)
-        .navigationBarTitleDisplayMode(.large)
-        .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button(action: onBack) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                        Text("Back")
-                    }
-                    .foregroundStyle(.orange)
-                }
-            }
-        }
+        .background(EditorialTheme.background.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
     }
 }
 
@@ -194,29 +205,8 @@ struct DeviceSection<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(title)
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .textCase(.uppercase)
-                    .tracking(0.5)
-                    .foregroundStyle(.secondary)
-                Text("\(count)")
-                    .font(.caption2)
-                    .fontWeight(.bold)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color(.systemGray5))
-                    .foregroundStyle(.secondary)
-                    .clipShape(Capsule())
-                Rectangle()
-                    .fill(Color(.separator).opacity(0.3))
-                    .frame(height: 0.5)
-            }
+        VStack(alignment: .leading, spacing: EditorialTheme.gridSpacing) {
+            EditorialSectionHeader(title: title, trailing: "\(count)")
             content
         }
     }
@@ -245,26 +235,26 @@ struct LightControlCard: View {
                     store.setLevel(device.integrationId, level: newLevel, fadeTime: 1)
                 } label: {
                     Image(systemName: "power")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(isOn ? .orange : Color(.systemGray3))
-                        .frame(width: 44, height: 44)
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(isOn ? EditorialTheme.accent : EditorialTheme.secondaryText)
+                        .frame(width: 32, height: 32)
                         .overlay(
                             Circle()
-                                .stroke(isOn ? Color.orange.opacity(0.4) : Color(.separator).opacity(0.4), lineWidth: 0.5)
+                                .stroke(isOn ? EditorialTheme.accent.opacity(0.4) : EditorialTheme.cardBorder, lineWidth: 0.5)
                         )
                 }
                 .buttonStyle(.plain)
 
-                Text(device.name)
-                    .font(.caption)
-                    .fontWeight(.medium)
+                Text(device.name.uppercased())
+                    .font(.system(size: 9, weight: .semibold))
+                    .tracking(0.4)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .foregroundStyle(EditorialTheme.primaryText)
 
                 Text("\(Int(localLevel))%")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
+                    .font(EditorialTheme.monoValue(size: 11))
+                    .foregroundStyle(isOn ? EditorialTheme.accent : EditorialTheme.secondaryText)
             }
 
             Slider(value: $localLevel, in: 0...100, step: 1) { editing in
@@ -272,30 +262,17 @@ struct LightControlCard: View {
                     store.setLevel(device.integrationId, level: localLevel)
                 }
             }
-            .tint(isOn ? .orange : .secondary)
+            .tint(isOn ? EditorialTheme.accent : EditorialTheme.secondaryText)
         }
-        .padding(12)
-        .background(lightCardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(10)
+        .background(EditorialTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: EditorialTheme.cardRadius))
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(isOn ? Color.orange.opacity(0.2) : Color(.separator).opacity(0.4), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: EditorialTheme.cardRadius)
+                .stroke(isOn ? EditorialTheme.accent.opacity(0.3) : EditorialTheme.cardBorder, lineWidth: 0.5)
         )
         .onChange(of: device.level) { _, newValue in
             localLevel = newValue
-        }
-    }
-
-    @ViewBuilder
-    private var lightCardBackground: some View {
-        if isOn {
-            LinearGradient(
-                colors: [Color.orange.opacity(0.08), Color(.secondarySystemBackground)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        } else {
-            Color(.secondarySystemBackground)
         }
     }
 }
@@ -316,19 +293,19 @@ struct ShadeControlCard: View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "blinds.vertical.open")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.teal)
+                    .font(.system(size: 12))
+                    .foregroundStyle(EditorialTheme.accent)
 
-                Text(device.name)
-                    .font(.caption)
-                    .fontWeight(.medium)
+                Text(device.name.uppercased())
+                    .font(.system(size: 9, weight: .semibold))
+                    .tracking(0.4)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .foregroundStyle(EditorialTheme.primaryText)
 
                 Text("\(Int(localLevel))%")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
+                    .font(EditorialTheme.monoValue(size: 11))
+                    .foregroundStyle(EditorialTheme.accent)
             }
 
             Slider(value: $localLevel, in: 0...100, step: 1) { editing in
@@ -336,7 +313,7 @@ struct ShadeControlCard: View {
                     store.setLevel(device.integrationId, level: localLevel, fadeTime: 2)
                 }
             }
-            .tint(.teal)
+            .tint(EditorialTheme.accent)
 
             HStack(spacing: 4) {
                 ForEach([0, 25, 50, 75, 100], id: \.self) { preset in
@@ -344,27 +321,33 @@ struct ShadeControlCard: View {
                         localLevel = Double(preset)
                         store.setLevel(device.integrationId, level: Double(preset), fadeTime: 2)
                     } label: {
-                        Text(preset == 0 ? "Close" : preset == 100 ? "Open" : "\(preset)%")
-                            .font(.system(size: 10, weight: .medium))
+                        Text(preset == 0 ? "CLOSE" : preset == 100 ? "OPEN" : "\(preset)%")
+                            .font(.system(size: 9, weight: .semibold))
+                            .tracking(0.4)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 4)
                             .background(
                                 Int(localLevel) == preset
-                                    ? Color.teal
-                                    : Color(.tertiarySystemBackground)
+                                    ? EditorialTheme.accent
+                                    : EditorialTheme.cardBackground
                             )
-                            .foregroundStyle(Int(localLevel) == preset ? .white : .secondary)
+                            .foregroundStyle(Int(localLevel) == preset ? .white : EditorialTheme.secondaryText)
                             .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(EditorialTheme.cardBorder, lineWidth: 0.5)
+                            )
                     }
                     .buttonStyle(.plain)
                 }
             }
         }
-        .padding(12)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+        .padding(10)
+        .background(EditorialTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: EditorialTheme.cardRadius))
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color(.separator).opacity(0.4), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: EditorialTheme.cardRadius)
+                .stroke(EditorialTheme.cardBorder, lineWidth: 0.5)
         )
         .onChange(of: device.level) { _, newValue in
             localLevel = newValue
@@ -379,38 +362,46 @@ struct KeypadCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Image(systemName: "keyboard")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
-                Text(device.name)
-                    .font(.caption)
-                    .fontWeight(.medium)
+                    .font(.system(size: 10))
+                    .foregroundStyle(EditorialTheme.secondaryText)
+                Text(device.name.uppercased())
+                    .font(.system(size: 9, weight: .semibold))
+                    .tracking(0.4)
                     .lineLimit(1)
+                    .foregroundStyle(EditorialTheme.primaryText)
             }
             if let components = device.components, !components.isEmpty {
                 ForEach(components) { comp in
-                    Button(comp.name) {
+                    Button(comp.name.uppercased()) {
                         // TODO: press/release
                     }
-                    .font(.caption)
+                    .font(.system(size: 9, weight: .semibold))
+                    .tracking(0.4)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color(.tertiarySystemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .padding(.vertical, 5)
+                    .background(EditorialTheme.cardBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(EditorialTheme.cardBorder, lineWidth: 0.5)
+                    )
                 }
             } else {
-                Text("No buttons")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                Text("NO BUTTONS")
+                    .font(.system(size: 9, weight: .medium))
+                    .tracking(0.4)
+                    .foregroundStyle(EditorialTheme.secondaryText)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+        .padding(10)
+        .background(EditorialTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: EditorialTheme.cardRadius))
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color(.separator).opacity(0.4), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: EditorialTheme.cardRadius)
+                .stroke(EditorialTheme.cardBorder, lineWidth: 0.5)
         )
     }
 }

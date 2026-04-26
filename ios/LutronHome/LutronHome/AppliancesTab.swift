@@ -11,7 +11,15 @@ struct AppliancesTab: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: EditorialTheme.sectionSpacing) {
+                    // Tab header
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("APPLIANCES")
+                            .font(EditorialTheme.bebasNeue(size: 32))
+                            .foregroundStyle(EditorialTheme.primaryText)
+                        Spacer()
+                    }
+
                     // Garage Doors (MyQ)
                     if myQ.isLinked && !myQ.doors.isEmpty {
                         garageSection
@@ -47,17 +55,16 @@ struct AppliancesTab: View {
                 async let hp: () = myUplink.fetchDataPoints()
                 _ = await (garage, dw, ge, hp)
             }
-            .background(Color(.systemBackground))
-            .navigationTitle("Appliances")
-            .navigationBarTitleDisplayMode(.large)
+            .background(EditorialTheme.background.ignoresSafeArea())
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 
     // MARK: - Garage Doors
 
     private var garageSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(icon: "door.garage.closed", color: .brown, title: "Garage")
+        VStack(alignment: .leading, spacing: EditorialTheme.gridSpacing) {
+            EditorialSectionHeader(title: "Garage", trailing: "\(myQ.doors.count)")
             ForEach(myQ.doors) { door in
                 GarageRow(door: door)
             }
@@ -67,8 +74,8 @@ struct AppliancesTab: View {
     // MARK: - Dishwashers
 
     private var dishwasherSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(icon: "dishwasher", color: .cyan, title: "Dishwashers")
+        VStack(alignment: .leading, spacing: EditorialTheme.gridSpacing) {
+            EditorialSectionHeader(title: "Dishwashers", trailing: "\(homeConnect.dishwashers.count)")
 
             ForEach(homeConnect.dishwashers) { dw in
                 NavigationLink(destination: DishwasherDetailView(dishwasherId: dw.applianceId)) {
@@ -82,8 +89,8 @@ struct AppliancesTab: View {
     // MARK: - Laundry
 
     private var laundrySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(icon: "washer", color: .indigo, title: "Laundry")
+        VStack(alignment: .leading, spacing: EditorialTheme.gridSpacing) {
+            EditorialSectionHeader(title: "Laundry", trailing: "\(smartHQ.appliances.count)")
 
             ForEach(smartHQ.appliances) { appliance in
                 NavigationLink(destination: LaundryDetailView(applianceId: appliance.applianceId)) {
@@ -97,8 +104,8 @@ struct AppliancesTab: View {
     // MARK: - Climate
 
     private var climateSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(icon: "leaf.fill", color: .green, title: "Climate")
+        VStack(alignment: .leading, spacing: EditorialTheme.gridSpacing) {
+            EditorialSectionHeader(title: "Climate")
 
             NavigationLink(destination: HeatPumpDetailView()) {
                 HeatPumpRow()
@@ -107,30 +114,16 @@ struct AppliancesTab: View {
         }
     }
 
-    // MARK: - Helpers
-
-    private func sectionHeader(icon: String, color: Color, title: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.caption)
-                .foregroundStyle(color)
-            Text(title)
-                .font(.caption)
-                .fontWeight(.semibold)
-                .textCase(.uppercase)
-                .tracking(0.5)
-                .foregroundStyle(.secondary)
-        }
-    }
+    // MARK: - Empty State
 
     private var emptyState: some View {
         HStack(spacing: 8) {
             Image(systemName: "washer")
                 .font(.system(size: 14))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(EditorialTheme.secondaryText)
             Text("No appliances linked — connect in Settings")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(EditorialTheme.secondaryText)
         }
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -143,89 +136,64 @@ struct DishwasherRow: View {
     let status: DishwasherStatus
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             // Icon
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(statusColor.opacity(0.12))
-                    .frame(width: 48, height: 48)
-                Image(systemName: status.operationState.icon)
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(statusColor)
-                    .symbolEffect(.pulse, isActive: status.operationState == .run)
-            }
+            Image(systemName: status.operationState.icon)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(status.operationState.isActive ? EditorialTheme.accent : EditorialTheme.secondaryText)
+                .symbolEffect(.pulse, isActive: status.operationState == .run)
+                .frame(width: 32)
 
             // Info
-            VStack(alignment: .leading, spacing: 3) {
-                Text(status.applianceName.isEmpty ? "Dishwasher" : status.applianceName)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.primary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text((status.applianceName.isEmpty ? "Dishwasher" : status.applianceName).uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(0.6)
+                    .foregroundStyle(EditorialTheme.primaryText)
 
-                HStack(spacing: 6) {
-                    Text(status.operationState.label)
-                        .font(.system(size: 13))
-                        .foregroundStyle(statusColor)
+                HStack(spacing: 4) {
+                    Text(status.operationState.label.uppercased())
+                        .font(.system(size: 9, weight: .medium))
+                        .tracking(0.4)
+                        .foregroundStyle(status.operationState.isActive ? EditorialTheme.accent : EditorialTheme.secondaryText)
 
                     if let program = status.programDisplayName {
-                        Text("- \(program)")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.secondary)
+                        Text("· \(program)")
+                            .font(.system(size: 9))
+                            .foregroundStyle(EditorialTheme.secondaryText)
                     }
                 }
             }
 
             Spacer()
 
-            // Right side: progress or time
+            // Right side
             if status.operationState.isActive {
-                VStack(alignment: .trailing, spacing: 4) {
+                VStack(alignment: .trailing, spacing: 2) {
                     if let progress = status.progress {
-                        CircularProgressView(progress: Double(progress) / 100, color: statusColor)
-                            .frame(width: 32, height: 32)
+                        Text("\(progress)%")
+                            .font(EditorialTheme.monoValue(size: 14))
+                            .foregroundStyle(EditorialTheme.accent)
                     }
                     if let time = status.remainingTimeFormatted {
                         Text(time)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.secondary)
+                            .font(EditorialTheme.monoValue(size: 10, weight: .medium))
+                            .foregroundStyle(EditorialTheme.secondaryText)
                     }
                 }
             } else {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(EditorialTheme.tertiaryText)
             }
         }
-        .padding(14)
-        .background(cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .padding(12)
+        .background(EditorialTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: EditorialTheme.cardRadius))
         .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(status.operationState.isActive ? statusColor.opacity(0.3) : Color(.separator).opacity(0.3), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: EditorialTheme.cardRadius)
+                .stroke(status.operationState.isActive ? EditorialTheme.accent.opacity(0.3) : EditorialTheme.cardBorder, lineWidth: 0.5)
         )
-    }
-
-    private var statusColor: Color {
-        switch status.operationState {
-        case .run: return .cyan
-        case .finished: return .green
-        case .error, .actionRequired: return .red
-        case .ready: return .green
-        case .delayedStart, .pause: return .orange
-        default: return .secondary
-        }
-    }
-
-    @ViewBuilder
-    private var cardBackground: some View {
-        if status.operationState.isActive {
-            LinearGradient(
-                colors: [statusColor.opacity(0.06), Color(.secondarySystemBackground)],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-        } else {
-            Color(.secondarySystemBackground)
-        }
     }
 }
 
@@ -235,97 +203,57 @@ struct LaundryRow: View {
     let status: LaundryApplianceStatus
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             // Icon
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(statusColor.opacity(0.12))
-                    .frame(width: 48, height: 48)
-                Image(systemName: status.typeIcon)
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(statusColor)
-                    .symbolEffect(.pulse, isActive: status.machineState.isRunning)
-            }
+            Image(systemName: status.typeIcon)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(status.machineState.isActive ? EditorialTheme.accent : EditorialTheme.secondaryText)
+                .symbolEffect(.pulse, isActive: status.machineState.isRunning)
+                .frame(width: 32)
 
             // Info
-            VStack(alignment: .leading, spacing: 3) {
-                Text(status.applianceName)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.primary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(status.applianceName.uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(0.6)
+                    .foregroundStyle(EditorialTheme.primaryText)
 
-                HStack(spacing: 6) {
-                    Text(status.machineState.label)
-                        .font(.system(size: 13))
-                        .foregroundStyle(statusColor)
+                HStack(spacing: 4) {
+                    Text(status.machineState.label.uppercased())
+                        .font(.system(size: 9, weight: .medium))
+                        .tracking(0.4)
+                        .foregroundStyle(status.machineState.isActive ? EditorialTheme.accent : EditorialTheme.secondaryText)
 
                     if let cycle = status.cycleName {
-                        Text("- \(cycle)")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.secondary)
+                        Text("· \(cycle)")
+                            .font(.system(size: 9))
+                            .foregroundStyle(EditorialTheme.secondaryText)
                     }
                 }
             }
 
             Spacer()
 
-            // Right side: time remaining
+            // Right side
             if status.machineState.isActive {
-                VStack(alignment: .trailing, spacing: 4) {
-                    Image(systemName: status.machineState.icon)
-                        .font(.system(size: 18))
-                        .foregroundStyle(statusColor)
-                    if let time = status.remainingTimeFormatted {
-                        Text(time)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                    }
+                if let time = status.remainingTimeFormatted {
+                    Text(time)
+                        .font(EditorialTheme.monoValue(size: 14))
+                        .foregroundStyle(EditorialTheme.accent)
                 }
             } else {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(EditorialTheme.tertiaryText)
             }
         }
-        .padding(14)
-        .background(cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .padding(12)
+        .background(EditorialTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: EditorialTheme.cardRadius))
         .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(status.machineState.isActive ? statusColor.opacity(0.3) : Color(.separator).opacity(0.3), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: EditorialTheme.cardRadius)
+                .stroke(status.machineState.isActive ? EditorialTheme.accent.opacity(0.3) : EditorialTheme.cardBorder, lineWidth: 0.5)
         )
-    }
-
-    private var statusColor: Color {
-        if status.isWasher {
-            switch status.machineState {
-            case .run: return .indigo
-            case .endOfCycle: return .green
-            case .pause, .delayRun, .delayPause, .dsmDelayRun: return .orange
-            case .drainTimeout: return .red
-            default: return .secondary
-            }
-        } else {
-            switch status.machineState {
-            case .run: return .purple
-            case .endOfCycle: return .green
-            case .pause, .delayRun, .delayPause, .dsmDelayRun: return .orange
-            case .drainTimeout: return .red
-            default: return .secondary
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var cardBackground: some View {
-        if status.machineState.isActive {
-            LinearGradient(
-                colors: [statusColor.opacity(0.06), Color(.secondarySystemBackground)],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-        } else {
-            Color(.secondarySystemBackground)
-        }
     }
 }
 
@@ -337,60 +265,53 @@ struct HeatPumpRow: View {
     private var status: HeatPumpStatus { myUplink.heatPump }
 
     var body: some View {
-        HStack(spacing: 14) {
-            // Icon
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(modeColor.opacity(0.12))
-                    .frame(width: 48, height: 48)
-                Image(systemName: modeIcon)
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(modeColor)
-            }
+        HStack(spacing: 12) {
+            Image(systemName: modeIcon)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(EditorialTheme.accent)
+                .frame(width: 32)
 
-            // Info
-            VStack(alignment: .leading, spacing: 3) {
-                Text(status.systemName.isEmpty ? "Geothermal" : status.systemName)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.primary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text((status.systemName.isEmpty ? "Geothermal" : status.systemName).uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(0.6)
+                    .foregroundStyle(EditorialTheme.primaryText)
 
-                HStack(spacing: 6) {
+                HStack(spacing: 4) {
                     if let mode = status.operatingMode {
-                        Text(mode)
-                            .font(.system(size: 13))
-                            .foregroundStyle(modeColor)
+                        Text(mode.uppercased())
+                            .font(.system(size: 9, weight: .medium))
+                            .tracking(0.4)
+                            .foregroundStyle(EditorialTheme.accent)
                     }
                     if let outdoor = status.outdoorTemp {
-                        Text(String(format: "%.0f°F outside", outdoor))
-                            .font(.system(size: 13))
-                            .foregroundStyle(.secondary)
+                        Text(String(format: "%.0f°F OUTSIDE", outdoor))
+                            .font(.system(size: 9, weight: .medium))
+                            .tracking(0.4)
+                            .foregroundStyle(EditorialTheme.secondaryText)
                     }
                 }
             }
 
             Spacer()
 
-            VStack(alignment: .trailing, spacing: 4) {
+            HStack(spacing: 8) {
                 if let power = status.currentPower {
-                    HStack(spacing: 2) {
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 10))
-                        Text(String(format: "%.1f kW", power))
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .foregroundStyle(.yellow)
+                    Text(String(format: "%.1f kW", power))
+                        .font(EditorialTheme.monoValue(size: 12))
+                        .foregroundStyle(EditorialTheme.accent)
                 }
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(EditorialTheme.tertiaryText)
             }
         }
-        .padding(14)
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .padding(12)
+        .background(EditorialTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: EditorialTheme.cardRadius))
         .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(Color(.separator).opacity(0.3), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: EditorialTheme.cardRadius)
+                .stroke(EditorialTheme.cardBorder, lineWidth: 0.5)
         )
     }
 
@@ -401,14 +322,6 @@ struct HeatPumpRow: View {
         if mode.contains("hot water") || mode.contains("dhw") { return "drop.fill" }
         return "leaf.fill"
     }
-
-    private var modeColor: Color {
-        let mode = (status.operatingMode ?? "").lowercased()
-        if mode.contains("heat") { return .orange }
-        if mode.contains("cool") { return .cyan }
-        if mode.contains("hot water") || mode.contains("dhw") { return .blue }
-        return .green
-    }
 }
 
 // MARK: - Garage Row
@@ -417,39 +330,28 @@ struct GarageRow: View {
     @Environment(MyQManager.self) var myQ
     let door: MyQDoor
 
-    private var statusColor: Color {
-        switch door.state {
-        case .open:            return .orange
-        case .closed:          return .green
-        case .opening, .closing, .transition: return .yellow
-        case .stopped:         return .red
-        case .unknown:         return .secondary
-        }
-    }
-
     var body: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(statusColor.opacity(0.12))
-                    .frame(width: 48, height: 48)
-                Image(systemName: door.state.icon)
-                    .font(.system(size: 22, weight: .medium))
-                    .foregroundStyle(statusColor)
-                    .symbolEffect(.pulse, isActive: door.state.isMoving)
-            }
+        HStack(spacing: 12) {
+            Image(systemName: door.state.icon)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(door.state == .open ? EditorialTheme.accent : EditorialTheme.secondaryText)
+                .symbolEffect(.pulse, isActive: door.state.isMoving)
+                .frame(width: 32)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(door.name)
-                    .font(.system(size: 15, weight: .semibold))
-                Text(door.state.label)
-                    .font(.system(size: 13))
-                    .foregroundStyle(statusColor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(door.name.uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(0.6)
+                    .foregroundStyle(EditorialTheme.primaryText)
+
+                Text(door.state.label.uppercased())
+                    .font(.system(size: 9, weight: .medium))
+                    .tracking(0.4)
+                    .foregroundStyle(door.state == .open ? EditorialTheme.accent : EditorialTheme.secondaryText)
             }
 
             Spacer()
 
-            // Open / Close button
             if door.online && !door.state.isMoving {
                 Button {
                     Task {
@@ -460,14 +362,15 @@ struct GarageRow: View {
                         }
                     }
                 } label: {
-                    Text(door.state == .closed ? "Open" : door.state == .open ? "Close" : "")
-                        .font(.system(size: 13, weight: .semibold))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(
-                            Capsule().fill(statusColor.opacity(0.15))
-                        )
-                        .foregroundStyle(statusColor)
+                    Text((door.state == .closed ? "OPEN" : door.state == .open ? "CLOSE" : "").uppercased())
+                        .font(.system(size: 9, weight: .bold))
+                        .tracking(0.8)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(EditorialTheme.accent.opacity(0.1))
+                        .foregroundStyle(EditorialTheme.accent)
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(EditorialTheme.accent.opacity(0.3), lineWidth: 0.5))
                 }
                 .buttonStyle(.plain)
                 .opacity((door.state == .open || door.state == .closed) ? 1 : 0)
@@ -476,16 +379,12 @@ struct GarageRow: View {
                     .scaleEffect(0.8)
             }
         }
-        .padding(14)
-        .background(
-            door.state == .open
-                ? LinearGradient(colors: [Color.orange.opacity(0.06), Color(.secondarySystemBackground)], startPoint: .leading, endPoint: .trailing)
-                : LinearGradient(colors: [Color(.secondarySystemBackground), Color(.secondarySystemBackground)], startPoint: .leading, endPoint: .trailing)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .padding(12)
+        .background(EditorialTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: EditorialTheme.cardRadius))
         .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(door.state == .open ? Color.orange.opacity(0.3) : Color(.separator).opacity(0.3), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: EditorialTheme.cardRadius)
+                .stroke(door.state == .open ? EditorialTheme.accent.opacity(0.3) : EditorialTheme.cardBorder, lineWidth: 0.5)
         )
     }
 }

@@ -105,56 +105,74 @@ struct DimmablePill: View {
     }
 }
 
-// MARK: - Color Keypad Pill (segmented color selector)
+// MARK: - Color Keypad Pill (colored circle buttons)
 
 struct ColorKeypadPill: View {
     @Environment(LutronStore.self) var store
     let entry: LutronStore.ColorKeypadEntry
 
+    private static let colorMap: [String: Color] = [
+        "white": .white,
+        "blue": .blue,
+        "red": .red,
+        "green": .green,
+        "purple": .purple,
+        "pink": .pink,
+        "aqua": .cyan,
+        "yellow": .yellow,
+        "orange": .orange,
+    ]
+
     var body: some View {
-        GeometryReader { geo in
-            HStack(spacing: 0) {
-                ForEach(Array(entry.buttons.enumerated()), id: \.element.id) { idx, btn in
-                    let isActive = entry.activeButtonId == btn.id
-                    Button {
-                        store.pressKeypadButton(btn.id)
-                        // Optimistic: set this as active (or nil if off)
-                        if let i = store.colorKeypads.firstIndex(where: { $0.id == entry.id }) {
-                            store.colorKeypads[i].activeButtonId = btn.isOff ? nil : btn.id
-                        }
-                    } label: {
-                        ZStack(alignment: .leading) {
+        let colorButtons = entry.buttons.filter { !$0.isOff }
+        let offBtn = entry.buttons.first(where: { $0.isOff })
+        let totalCount = colorButtons.count + (offBtn != nil ? 1 : 0)
+
+        HStack(spacing: 2) {
+            ForEach(colorButtons) { btn in
+                let isActive = entry.activeButtonId == btn.id
+                let color = Self.colorMap[btn.engraving.lowercased()] ?? .gray
+                Button {
+                    store.pressKeypadButton(btn.id)
+                    if let i = store.colorKeypads.firstIndex(where: { $0.id == entry.id }) {
+                        store.colorKeypads[i].activeButtonId = btn.id
+                    }
+                } label: {
+                    Rectangle()
+                        .fill(color)
+                        .overlay(
                             Rectangle()
-                                .fill(isActive ? EditorialTheme.accent.opacity(0.15) : EditorialTheme.cardBackground)
-
-                            if isActive {
-                                Rectangle()
-                                    .fill(EditorialTheme.accent)
-                                    .frame(width: 2)
-                            }
-
-                            Text(btn.engraving.uppercased())
-                                .font(.system(size: 10, weight: .semibold))
-                                .tracking(0.6)
-                                .foregroundStyle(isActive ? EditorialTheme.accent : EditorialTheme.secondaryText)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.6)
-                                .frame(maxWidth: .infinity)
-                        }
-                    }
-                    .buttonStyle(.plain)
-
-                    // Divider between segments (except after last)
-                    if idx < entry.buttons.count - 1 {
-                        Rectangle()
-                            .fill(EditorialTheme.cardBorder)
-                            .frame(width: 0.5)
-                    }
+                                .stroke(isActive ? EditorialTheme.accent : Color.clear, lineWidth: 2.5)
+                        )
+                        .overlay(
+                            Rectangle()
+                                .stroke(btn.engraving.lowercased() == "white" ? EditorialTheme.cardBorder : Color.clear, lineWidth: 0.5)
+                        )
                 }
+                .buttonStyle(.plain)
             }
-            .overlay(
-                Rectangle().stroke(EditorialTheme.cardBorder, lineWidth: 0.5)
-            )
+
+            if let offBtn {
+                Button {
+                    store.pressKeypadButton(offBtn.id)
+                    if let i = store.colorKeypads.firstIndex(where: { $0.id == entry.id }) {
+                        store.colorKeypads[i].activeButtonId = nil
+                    }
+                } label: {
+                    Rectangle()
+                        .fill(EditorialTheme.cardBackground)
+                        .overlay(
+                            Image(systemName: "xmark")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(EditorialTheme.secondaryText)
+                        )
+                        .overlay(
+                            Rectangle()
+                                .stroke(EditorialTheme.cardBorder, lineWidth: 0.5)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
         }
         .frame(height: 40)
     }
