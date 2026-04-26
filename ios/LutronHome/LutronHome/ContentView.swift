@@ -11,40 +11,40 @@ struct ContentView: View {
             HomeTab()
                 .tabItem {
                     Image(systemName: "house.fill")
-                    Text("Home")
+                    Text("HOME")
                 }
                 .tag(0)
 
             CategoryTab(category: .light)
                 .tabItem {
                     Image(systemName: "lightbulb.fill")
-                    Text("Lights")
+                    Text("LIGHTS")
                 }
                 .tag(1)
 
             CategoryTab(categories: [.shadesAndDrapes, .window], title: "Shades & Windows")
                 .tabItem {
                     Image(systemName: "blinds.vertical.open")
-                    Text("Shades")
+                    Text("SHADES")
                 }
                 .tag(2)
 
             AppliancesTab()
                 .tabItem {
                     Image(systemName: "washer")
-                    Text("Appliances")
+                    Text("APPLIANCES")
                 }
                 .tag(3)
 
-            CategoryTab(categories: [.outlet, .fan], title: "More", showAlarmZones: true)
+            CategoryTab(categories: [.outlet, .fan], title: "More", showAlarmZones: true, showKeypads: true)
                 .tabItem {
                     Image(systemName: "poweroutlet.type.b")
-                    Text("More")
+                    Text("MORE")
                 }
                 .tag(4)
         }
         .onAppear { store.start() }
-        .tint(SunCalculator.TimeTheme.current().accent)
+        .tint(EditorialTheme.accent)
     }
 }
 
@@ -73,18 +73,21 @@ struct CategoryTab: View {
     let categories: [DeviceCategory]
     let title: String
     let showAlarmZones: Bool
+    let showKeypads: Bool
     @State private var selectedRoom: String?
 
     init(category: DeviceCategory) {
         self.categories = [category]
         self.title = category.rawValue
         self.showAlarmZones = false
+        self.showKeypads = false
     }
 
-    init(categories: [DeviceCategory], title: String, showAlarmZones: Bool = false) {
+    init(categories: [DeviceCategory], title: String, showAlarmZones: Bool = false, showKeypads: Bool = false) {
         self.categories = categories
         self.title = title
         self.showAlarmZones = showAlarmZones
+        self.showKeypads = showKeypads
     }
 
     private var categoryRooms: [(name: String, devices: [DeviceState])] {
@@ -95,6 +98,9 @@ struct CategoryTab: View {
     }
 
     private var isLightsTab: Bool { categories == [.light] }
+    private var isLightsOrShadesTab: Bool {
+        categories.count == 1 && (categories[0] == .light || categories[0] == .shadesAndDrapes)
+    }
 
     /// Floors that actually have rooms in this category
     private var activeFloors: [Floor] {
@@ -110,128 +116,159 @@ struct CategoryTab: View {
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        if isLightsTab && activeFloors.count > 1 {
-                            LazyVStack(alignment: .leading, spacing: 20, pinnedViews: [.sectionHeaders]) {
-                                Section {
-                                    lightsContent
-                                } header: {
-                                    floorAnchorBar(proxy: proxy)
-                                        .padding(.horizontal)
-                                        .padding(.vertical, 8)
-                                        .background(.bar)
-                                        .frame(maxWidth: .infinity)
+                        VStack(alignment: .leading, spacing: EditorialTheme.sectionSpacing) {
+                            // Tab header
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(title.uppercased())
+                                    .font(EditorialTheme.bebasNeue(size: 32))
+                                    .foregroundStyle(EditorialTheme.primaryText)
+                                Spacer()
+                                if !categoryRooms.isEmpty {
+                                    Text("\(categoryRooms.flatMap(\.devices).count) DEVICES")
+                                        .font(EditorialTheme.sectionLabel(size: 10))
+                                        .tracking(0.8)
+                                        .foregroundStyle(EditorialTheme.secondaryText)
                                 }
                             }
-                            .padding(.top, 12)
-                        } else {
-                            VStack(alignment: .leading, spacing: 20) {
-                                if categoryRooms.isEmpty && !(showAlarmZones && totalConnect.isLinked) {
-                                    emptyState
+
+                            if isLightsTab && activeFloors.count > 1 {
+                                floorAnchorBar(proxy: proxy)
+                            }
+
+                            if categoryRooms.isEmpty && !(showAlarmZones && totalConnect.isLinked) && !showKeypads {
+                                emptyState
+                            } else {
+                                // Group devices by category when showing multiple categories
+                                if categories.count > 1 {
+                                    ForEach(categories, id: \.self) { cat in
+                                        let catRooms = categoryRooms.compactMap { room -> (name: String, devices: [DeviceState])? in
+                                            let filtered = room.devices.filter { $0.category == cat }
+                                            return filtered.isEmpty ? nil : (name: room.name, devices: filtered)
+                                        }
+                                        if !catRooms.isEmpty {
+                                            VStack(alignment: .leading, spacing: EditorialTheme.gridSpacing) {
+                                                EditorialSectionHeader(
+                                                    title: cat.rawValue,
+                                                    trailing: "\(catRooms.flatMap(\.devices).count) DEVICES"
+                                                )
+
+                                                MasonryTwoColumn(spacing: EditorialTheme.gridSpacing) {
+                                                    ForEach(catRooms, id: \.name) { room in
+                                                        CategoryRoomCard(
+                                                            name: room.name,
+                                                            devices: room.devices,
+                                                            category: cat,
+                                                            onTap: { selectedRoom = room.name }
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 } else {
                                     ForEach(Floor.allCases, id: \.self) { floor in
                                         let floorRooms = categoryRooms.filter { Floor.floor(for: $0.name) == floor }
                                         if !floorRooms.isEmpty {
                                             floorSection(floor: floor, rooms: floorRooms)
+                                                .id(floor)
                                         }
                                     }
-                                    if showAlarmZones && totalConnect.isLinked {
-                                        alarmZonesSection
-                                    }
+                                }
+                                if showAlarmZones && totalConnect.isLinked {
+                                    alarmZonesSection
+                                }
+                                if showKeypads {
+                                    KeypadsSection()
                                 }
                             }
-                            .padding(.horizontal)
-                            .padding(.top, 12)
                         }
+                        .padding(.horizontal)
+                        .padding(.top, 12)
                     }
                 }
                 .refreshable { await store.refresh() }
-                .background(Color(.systemBackground))
-                .navigationTitle(title)
-                .navigationBarTitleDisplayMode(.large)
+                .background(EditorialTheme.background.ignoresSafeArea())
+                .toolbar(.hidden, for: .navigationBar)
             }
         }
-    }
-
-    private var lightsContent: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            if categoryRooms.isEmpty {
-                emptyState
-            } else {
-                ForEach(Floor.allCases, id: \.self) { floor in
-                    let floorRooms = categoryRooms.filter { Floor.floor(for: $0.name) == floor }
-                    if !floorRooms.isEmpty {
-                        floorSection(floor: floor, rooms: floorRooms)
-                            .id(floor)
-                    }
-                }
-            }
-        }
-        .padding(.horizontal)
     }
 
     private func floorAnchorBar(proxy: ScrollViewProxy) -> some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 8) {
             ForEach(activeFloors, id: \.self) { floor in
                 Button {
                     proxy.scrollTo(floor, anchor: .top)
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: floor.icon)
-                            .font(.system(size: 10))
-                        Text(floor.rawValue)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.system(size: 9))
+                        Text(floor.rawValue.uppercased())
+                            .font(.system(size: 10, weight: .semibold))
+                            .tracking(0.6)
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(Color(.tertiarySystemBackground), in: Capsule())
+                    .background(EditorialTheme.cardBackground)
+                    .clipShape(Capsule())
+                    .overlay(
+                        Capsule().stroke(EditorialTheme.cardBorder, lineWidth: 0.5)
+                    )
                 }
                 .buttonStyle(.plain)
-
-                if floor != activeFloors.last {
-                    Spacer(minLength: 4)
-                }
             }
+            Spacer()
         }
     }
 
     private func floorSection(floor: Floor, rooms: [(name: String, devices: [DeviceState])]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 4) {
-                Image(systemName: floor.icon)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.tertiary)
-                Text(floor.rawValue)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.tertiary)
-                    .textCase(.uppercase)
-            }
-            .padding(.leading, 4)
+        VStack(alignment: .leading, spacing: EditorialTheme.gridSpacing) {
+            EditorialSectionHeader(
+                title: floor.rawValue,
+                trailing: "\(rooms.flatMap(\.devices).count) DEVICES"
+            )
 
-            MasonryTwoColumn(spacing: 10) {
+            if isLightsOrShadesTab {
+                // Lights & shades: full-width pills grouped by room with tappable headers
                 ForEach(rooms, id: \.name) { room in
-                    CategoryRoomCard(
-                        name: room.name,
-                        devices: room.devices,
-                        category: room.devices.first?.category ?? categories.first ?? .light,
-                        onTap: { selectedRoom = room.name }
-                    )
+                    VStack(alignment: .leading, spacing: 6) {
+                        Button { selectedRoom = room.name } label: {
+                            HStack(spacing: 4) {
+                                Text(room.name.uppercased())
+                                    .font(.system(size: 9, weight: .medium))
+                                    .tracking(0.8)
+                                    .foregroundStyle(EditorialTheme.secondaryText)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 7, weight: .semibold))
+                                    .foregroundStyle(EditorialTheme.tertiaryText)
+                            }
+                        }
+                        .buttonStyle(.plain)
+
+                        ForEach(room.devices) { device in
+                            let fade: Double? = device.category == .shadesAndDrapes ? 2 : nil
+                            DimmablePill(device: device, fadeTime: fade)
+                        }
+                    }
+                }
+            } else {
+                // Other categories: room cards with masonry layout
+                MasonryTwoColumn(spacing: EditorialTheme.gridSpacing) {
+                    ForEach(rooms, id: \.name) { room in
+                        CategoryRoomCard(
+                            name: room.name,
+                            devices: room.devices,
+                            category: room.devices.first?.category ?? categories.first ?? .light,
+                            onTap: { selectedRoom = room.name }
+                        )
+                    }
                 }
             }
         }
     }
 
     private var alarmZonesSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 4) {
-                Image(systemName: "shield.lefthalf.filled")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.tertiary)
-                Text("Alarm Zones")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.tertiary)
-                    .textCase(.uppercase)
-            }
-            .padding(.leading, 4)
+        VStack(alignment: .leading, spacing: EditorialTheme.gridSpacing) {
+            EditorialSectionHeader(title: "Alarm Zones")
 
             let allZones = totalConnect.panels.flatMap { panel in
                 (totalConnect.zones[panel.locationId] ?? []).map { (panel, $0) }
@@ -239,18 +276,29 @@ struct CategoryTab: View {
 
             if allZones.isEmpty {
                 Text("No zones reported")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 10, weight: .medium))
+                    .tracking(0.6)
+                    .foregroundStyle(EditorialTheme.secondaryText)
                     .padding()
                     .frame(maxWidth: .infinity)
-                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                    .background(EditorialTheme.cardBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: EditorialTheme.cardRadius))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: EditorialTheme.cardRadius)
+                            .stroke(EditorialTheme.cardBorder, lineWidth: 0.5)
+                    )
             } else {
                 VStack(spacing: 1) {
                     ForEach(allZones, id: \.1.id) { _, zone in
                         AlarmZoneRow(zone: zone)
                     }
                 }
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                .background(EditorialTheme.cardBackground)
+                .clipShape(RoundedRectangle(cornerRadius: EditorialTheme.cardRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: EditorialTheme.cardRadius)
+                        .stroke(EditorialTheme.cardBorder, lineWidth: 0.5)
+                )
             }
         }
     }
@@ -261,15 +309,20 @@ struct CategoryTab: View {
             VStack(spacing: 8) {
                 Image(systemName: categories.first?.icon ?? "questionmark")
                     .font(.largeTitle)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(EditorialTheme.secondaryText)
                 Text(store.isConnected ? "No \(title.lowercased()) found" : "Not connected")
-                    .foregroundStyle(.secondary)
-                    .font(.subheadline)
+                    .foregroundStyle(EditorialTheme.secondaryText)
+                    .font(.system(size: 12, weight: .medium))
             }
             Spacer()
         }
         .padding(.vertical, 40)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+        .background(EditorialTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: EditorialTheme.cardRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: EditorialTheme.cardRadius)
+                .stroke(EditorialTheme.cardBorder, lineWidth: 0.5)
+        )
     }
 }
 
@@ -292,58 +345,16 @@ struct DashboardView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                // Time-aware header
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 6) {
-                                Image(systemName: timeTheme.periodIcon)
-                                    .font(.system(size: 15))
-                                    .foregroundStyle(Color.orange)
-                                Text(timeTheme.greeting)
-                                    .font(.subheadline)
-                                    .foregroundStyle(Color.orange.opacity(0.85))
-                            }
-                            Text("8 Highclere")
-                                .font(.largeTitle)
-                                .fontWeight(.bold)
-                        }
-                        Spacer()
-                        HStack(spacing: 12) {
-                            connectionIndicator
-                            NavigationLink(destination: SettingsView()) {
-                                Image(systemName: "gear")
-                                    .font(.system(size: 17))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 14)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(Color.white.opacity(0.03))
-                        .padding(.horizontal, -16)
-                )
-
-                if store.connectionState != .connected {
-                    ConnectionBanner()
-                }
-
-                statusGlanceSection
-
-                ChatCard()
-
-                if !homeKit.cameras.isEmpty || !homeKit.isReady {
-                    CameraCarouselCard(homeKit: homeKit)
-                }
-                // garageDoorSection  // Hidden until HomeKit garage door integration is working
-                unifiedControlSection
-                sceneSuggestionsSection
-                lightsOnSection
+            VStack(spacing: EditorialTheme.sectionSpacing) {
+                EditorialTopBar()
+                EditorialHeroSection()
+                EditorialStatsRow()
+                EditorialSuggestedAction()
+                EditorialStatusGrid()
+                EditorialClimateSection()
+                EditorialCameraSection()
+                EditorialLightsSection()
+                EditorialShadesSection()
             }
             .padding(.horizontal)
             .padding(.top, 12)
@@ -351,9 +362,7 @@ struct DashboardView: View {
         .refreshable {
             await store.refresh()
         }
-        .background {
-            timeTheme.theme.backgroundTint.ignoresSafeArea()
-        }
+        .background(EditorialTheme.background.ignoresSafeArea())
         .scrollContentBackground(.hidden)
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showDishwasherStartSheet) {
@@ -449,11 +458,15 @@ struct DashboardView: View {
 
         // Alarm
         if totalConnect.isLinked, let panel = totalConnect.panels.first {
-            let faults = (totalConnect.zones[panel.locationId] ?? []).filter { $0.faulted }.count
-            let value = panel.state.label
-            let suffix: String? = faults > 0 ? "\(faults)f" : nil
-            let active = panel.state.isArmed || panel.state == .alarming || faults > 0
-            cells.append(StatusCell("alarm", label: "Alarm", value: value, suffix: suffix, isActive: active, isAlarming: panel.state == .alarming))
+            if totalConnect.authFailed {
+                cells.append(StatusCell("alarm", label: "Alarm", value: "Unavailable", suffix: nil, isActive: false))
+            } else {
+                let faults = (totalConnect.zones[panel.locationId] ?? []).filter { $0.faulted }.count
+                let value = panel.state.label
+                let suffix: String? = faults > 0 ? "\(faults)f" : nil
+                let active = panel.state.isArmed || panel.state == .alarming || faults > 0
+                cells.append(StatusCell("alarm", label: "Alarm", value: value, suffix: suffix, isActive: active, isAlarming: panel.state == .alarming))
+            }
         }
 
         // Dishwashers
@@ -1193,6 +1206,7 @@ struct AlarmPill: View {
     @State private var showDetail = false
 
     private var stateColor: Color {
+        if manager.authFailed { return .secondary }
         switch panel.state {
         case .disarmed:              return .green
         case .armedAway, .armedHome, .armedNight: return .orange
@@ -1205,12 +1219,12 @@ struct AlarmPill: View {
         (manager.zones[panel.locationId] ?? []).filter { $0.faulted }.count
     }
 
-    private var hasFault: Bool { faultedCount > 0 }
+    private var hasFault: Bool { faultedCount > 0 && !manager.authFailed }
 
     var body: some View {
         Button { showDetail = true } label: {
             HStack(spacing: 10) {
-                Image(systemName: panel.state.icon)
+                Image(systemName: manager.authFailed ? "exclamationmark.shield" : panel.state.icon)
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(stateColor)
 
@@ -1218,9 +1232,9 @@ struct AlarmPill: View {
                     Text("Alarm")
                         .font(.system(size: 12, weight: .semibold))
                         .lineLimit(1)
-                    Text(panel.state.label)
+                    Text(manager.authFailed ? "Sign-in required" : panel.state.label)
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(manager.authFailed ? .red : .secondary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                 }
@@ -2233,15 +2247,7 @@ struct CategoryRoomCard: View {
         return groups
     }
 
-    private var accentColor: Color {
-        switch category {
-        case .light: return .orange
-        case .shadesAndDrapes: return .blue
-        case .outlet: return .green
-        case .fan: return .teal
-        case .window: return .purple
-        }
-    }
+    private var accentColor: Color { EditorialTheme.accent }
 
     /// Whether this room has exactly one device (after grouping)
     private var isSingleDevice: Bool { groupedDevices.count == 1 && devices.count == 1 }
@@ -2262,11 +2268,12 @@ struct CategoryRoomCard: View {
                     HStack(spacing: 6) {
                         Text(roomIcon)
                             .font(.system(size: 14))
-                        Text(name)
-                            .font(.system(size: 13, weight: .bold))
+                        Text(name.uppercased())
+                            .font(.system(size: 10, weight: .semibold))
+                            .tracking(0.8)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(EditorialTheme.primaryText)
                     }
 
                     // Device toggles (with A/B grouping)
@@ -2282,29 +2289,15 @@ struct CategoryRoomCard: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .padding(10)
+            .background(EditorialTheme.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: EditorialTheme.cardRadius))
             .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(hasActiveDevice ? accentColor.opacity(0.3) : Color(.separator).opacity(0.4), lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: EditorialTheme.cardRadius)
+                    .stroke(hasActiveDevice ? EditorialTheme.accent.opacity(0.3) : EditorialTheme.cardBorder, lineWidth: 0.5)
             )
         }
         .buttonStyle(.plain)
-    }
-
-    @ViewBuilder
-    private var cardBackground: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial)
-            if hasActiveDevice {
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(LinearGradient(
-                        colors: [accentColor.opacity(0.12), accentColor.opacity(0.03)],
-                        startPoint: .topLeading, endPoint: .bottomTrailing
-                    ))
-            }
-        }
     }
 
     private var roomIcon: String {
@@ -2359,22 +2352,22 @@ struct DeviceToggleRow: View {
         switch device.category {
         case .light:
             DimPill(devices: [device], displayName: displayName,
-                    accentColor: .orange, leftIcon: "power", rightIcon: "lightbulb.max.fill")
+                    accentColor: EditorialTheme.accent, leftIcon: "power", rightIcon: "lightbulb.max.fill")
         case .shadesAndDrapes:
             DimPill(devices: [device], displayName: displayName,
-                    accentColor: .blue, leftIcon: "blinds.vertical.closed", rightIcon: "blinds.vertical.open")
+                    accentColor: EditorialTheme.accent, leftIcon: "blinds.vertical.closed", rightIcon: "blinds.vertical.open")
         default:
             HStack(spacing: 6) {
                 Image(systemName: deviceIcon)
                     .font(.system(size: 9))
-                    .foregroundStyle(device.isOn ? iconColor : Color(.systemGray3))
+                    .foregroundStyle(device.isOn ? EditorialTheme.accent : EditorialTheme.secondaryText)
                     .frame(width: 14)
 
                 Text(displayName)
                     .font(.system(size: 10))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                    .foregroundStyle(device.isOn ? .primary : .secondary)
+                    .foregroundStyle(device.isOn ? EditorialTheme.primaryText : EditorialTheme.secondaryText)
 
                 Spacer()
 
@@ -2382,12 +2375,15 @@ struct DeviceToggleRow: View {
                     store.setLevel(device.integrationId, level: device.isOn ? 0 : 100, fadeTime: 1)
                 } label: {
                     Circle()
-                        .fill(device.isOn ? iconColor : Color(.systemGray5))
+                        .fill(device.isOn ? EditorialTheme.accent : EditorialTheme.cardBackground)
                         .frame(width: 20, height: 20)
                         .overlay(
                             Image(systemName: "power")
                                 .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(device.isOn ? .white : Color(.systemGray3))
+                                .foregroundStyle(device.isOn ? .white : EditorialTheme.secondaryText)
+                        )
+                        .overlay(
+                            Circle().stroke(EditorialTheme.cardBorder, lineWidth: 0.5)
                         )
                 }
                 .buttonStyle(.plain)
@@ -2404,16 +2400,6 @@ struct DeviceToggleRow: View {
         case .window: return "window.vertical.open"
         }
     }
-
-    private var iconColor: Color {
-        switch device.category {
-        case .light: return .orange
-        case .shadesAndDrapes: return .blue
-        case .outlet: return .green
-        case .fan: return .teal
-        case .window: return .purple
-        }
-    }
 }
 
 // MARK: - Grouped Device Toggle Row (controls multiple devices as one)
@@ -2425,17 +2411,7 @@ struct GroupedDeviceToggleRow: View {
 
     private var isOn: Bool { devices.contains { $0.isOn } }
     private var isLightGroup: Bool { devices.first?.category == .light }
-
-    private var iconColor: Color {
-        guard let cat = devices.first?.category else { return .orange }
-        switch cat {
-        case .light: return .orange
-        case .shadesAndDrapes: return .blue
-        case .outlet: return .green
-        case .fan: return .teal
-        case .window: return .purple
-        }
-    }
+    private var isShadeGroup: Bool { devices.first?.category == .shadesAndDrapes }
 
     private var deviceIcon: String {
         guard let cat = devices.first?.category else { return "lightbulb.fill" }
@@ -2448,27 +2424,25 @@ struct GroupedDeviceToggleRow: View {
         }
     }
 
-    private var isShadeGroup: Bool { devices.first?.category == .shadesAndDrapes }
-
     var body: some View {
         if isLightGroup {
             DimPill(devices: devices, displayName: label,
-                    accentColor: .orange, leftIcon: "power", rightIcon: "lightbulb.max.fill")
+                    accentColor: EditorialTheme.accent, leftIcon: "power", rightIcon: "lightbulb.max.fill")
         } else if isShadeGroup {
             DimPill(devices: devices, displayName: label,
-                    accentColor: .blue, leftIcon: "blinds.vertical.closed", rightIcon: "blinds.vertical.open")
+                    accentColor: EditorialTheme.accent, leftIcon: "blinds.vertical.closed", rightIcon: "blinds.vertical.open")
         } else {
             HStack(spacing: 6) {
                 Image(systemName: deviceIcon)
                     .font(.system(size: 9))
-                    .foregroundStyle(isOn ? iconColor : Color(.systemGray3))
+                    .foregroundStyle(isOn ? EditorialTheme.accent : EditorialTheme.secondaryText)
                     .frame(width: 14)
 
                 Text(label)
                     .font(.system(size: 10))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                    .foregroundStyle(isOn ? .primary : .secondary)
+                    .foregroundStyle(isOn ? EditorialTheme.primaryText : EditorialTheme.secondaryText)
 
                 Spacer()
 
@@ -2479,12 +2453,15 @@ struct GroupedDeviceToggleRow: View {
                     }
                 } label: {
                     Circle()
-                        .fill(isOn ? iconColor : Color(.systemGray5))
+                        .fill(isOn ? EditorialTheme.accent : EditorialTheme.cardBackground)
                         .frame(width: 20, height: 20)
                         .overlay(
                             Image(systemName: "power")
                                 .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(isOn ? .white : Color(.systemGray3))
+                                .foregroundStyle(isOn ? .white : EditorialTheme.secondaryText)
+                        )
+                        .overlay(
+                            Circle().stroke(EditorialTheme.cardBorder, lineWidth: 0.5)
                         )
                 }
                 .buttonStyle(.plain)
@@ -2507,23 +2484,24 @@ struct SingleDeviceRoomRow: View {
             HStack(spacing: 6) {
                 Text(roomIcon).font(.system(size: 14))
                 DimPill(devices: [device], displayName: roomName,
-                        accentColor: .orange, leftIcon: "power", rightIcon: "lightbulb.max.fill")
+                        accentColor: EditorialTheme.accent, leftIcon: "power", rightIcon: "lightbulb.max.fill")
             }
         } else if device.category == .shadesAndDrapes {
             HStack(spacing: 6) {
                 Text(roomIcon).font(.system(size: 14))
                 DimPill(devices: [device], displayName: roomName,
-                        accentColor: .blue, leftIcon: "blinds.vertical.closed", rightIcon: "blinds.vertical.open")
+                        accentColor: EditorialTheme.accent, leftIcon: "blinds.vertical.closed", rightIcon: "blinds.vertical.open")
             }
         } else {
             HStack(spacing: 6) {
                 Text(roomIcon)
                     .font(.system(size: 14))
-                Text(roomName)
-                    .font(.system(size: 13, weight: .bold))
+                Text(roomName.uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(0.8)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(EditorialTheme.primaryText)
 
                 Spacer()
 
@@ -2532,12 +2510,15 @@ struct SingleDeviceRoomRow: View {
                     store.setLevel(device.integrationId, level: newLevel, fadeTime: 1)
                 } label: {
                     Circle()
-                        .fill(device.isOn ? accentColor : Color(.systemGray5))
+                        .fill(device.isOn ? EditorialTheme.accent : EditorialTheme.cardBackground)
                         .frame(width: 24, height: 24)
                         .overlay(
                             Image(systemName: "power")
                                 .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(device.isOn ? .white : Color(.systemGray3))
+                                .foregroundStyle(device.isOn ? .white : EditorialTheme.secondaryText)
+                        )
+                        .overlay(
+                            Circle().stroke(EditorialTheme.cardBorder, lineWidth: 0.5)
                         )
                 }
                 .buttonStyle(.plain)
