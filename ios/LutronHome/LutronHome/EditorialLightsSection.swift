@@ -105,6 +105,61 @@ struct DimmablePill: View {
     }
 }
 
+// MARK: - Color Keypad Pill (segmented color selector)
+
+struct ColorKeypadPill: View {
+    @Environment(LutronStore.self) var store
+    let entry: LutronStore.ColorKeypadEntry
+
+    var body: some View {
+        GeometryReader { geo in
+            HStack(spacing: 0) {
+                ForEach(Array(entry.buttons.enumerated()), id: \.element.id) { idx, btn in
+                    let isActive = entry.activeButtonId == btn.id
+                    Button {
+                        store.pressKeypadButton(btn.id)
+                        // Optimistic: set this as active (or nil if off)
+                        if let i = store.colorKeypads.firstIndex(where: { $0.id == entry.id }) {
+                            store.colorKeypads[i].activeButtonId = btn.isOff ? nil : btn.id
+                        }
+                    } label: {
+                        ZStack(alignment: .leading) {
+                            Rectangle()
+                                .fill(isActive ? EditorialTheme.accent.opacity(0.15) : EditorialTheme.cardBackground)
+
+                            if isActive {
+                                Rectangle()
+                                    .fill(EditorialTheme.accent)
+                                    .frame(width: 2)
+                            }
+
+                            Text(btn.engraving.uppercased())
+                                .font(.system(size: 10, weight: .semibold))
+                                .tracking(0.6)
+                                .foregroundStyle(isActive ? EditorialTheme.accent : EditorialTheme.secondaryText)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.6)
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    // Divider between segments (except after last)
+                    if idx < entry.buttons.count - 1 {
+                        Rectangle()
+                            .fill(EditorialTheme.cardBorder)
+                            .frame(width: 0.5)
+                    }
+                }
+            }
+            .overlay(
+                Rectangle().stroke(EditorialTheme.cardBorder, lineWidth: 0.5)
+            )
+        }
+        .frame(height: 40)
+    }
+}
+
 // MARK: - Lights Section (Homepage)
 
 struct EditorialLightsSection: View {

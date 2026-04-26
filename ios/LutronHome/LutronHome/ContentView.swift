@@ -254,6 +254,11 @@ struct CategoryTab: View {
                                 let fade: Double? = device.category == .shadesAndDrapes ? 2 : nil
                                 DimmablePill(device: device, fadeTime: fade)
                             }
+
+                            // Colors keypad for this room (if any)
+                            if let colorEntry = store.colorKeypads.first(where: { $0.room == room.name }) {
+                                ColorKeypadPill(entry: colorEntry)
+                            }
                         }
                     }
                 }
