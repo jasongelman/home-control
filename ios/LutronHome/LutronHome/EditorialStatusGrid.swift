@@ -10,11 +10,12 @@ struct EditorialStatusGrid: View {
     @Environment(SmartHQManager.self) var smartHQ
 
     @State private var showAlarmSheet = false
+    @State private var showSonosSheet = false
     @State private var showDishwasherSheet: String?
     @State private var showLaundrySheet: String?
-    @State private var showSonosSheet: String?
 
     private let columns = [
+        GridItem(.flexible(), spacing: EditorialTheme.gridSpacing),
         GridItem(.flexible(), spacing: EditorialTheme.gridSpacing),
         GridItem(.flexible(), spacing: EditorialTheme.gridSpacing),
     ]
@@ -40,6 +41,11 @@ struct EditorialStatusGrid: View {
                     AlarmDetailView(panel: panel, manager: totalConnect)
                 }
             }
+            .sheet(isPresented: $showSonosSheet) {
+                NavigationStack {
+                    SonosControlView()
+                }
+            }
             .sheet(item: $showDishwasherSheet) { id in
                 NavigationStack {
                     DishwasherDetailView(dishwasherId: id)
@@ -50,63 +56,56 @@ struct EditorialStatusGrid: View {
                     LaundryDetailView(applianceId: id)
                 }
             }
-            .sheet(item: $showSonosSheet) { playerId in
-                if let player = sonos.coordinators.first(where: { $0.id == playerId }) {
-                    NavigationStack {
-                        SonosDetailView(player: player)
-                    }
-                }
-            }
         }
     }
 
-    // MARK: - Status Cell
+    // MARK: - Status Cell (compact 3-column layout)
 
     private func statusCell(_ item: StatusItem) -> some View {
         Button {
             item.onTap?()
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: item.icon)
-                    .font(.system(size: 12))
-                    .foregroundStyle(item.isActive ? EditorialTheme.accent : EditorialTheme.secondaryText)
-                    .frame(width: 16)
+            VStack(spacing: 6) {
+                HStack(spacing: 0) {
+                    Image(systemName: item.icon)
+                        .font(.system(size: 11))
+                        .foregroundStyle(item.isActive ? EditorialTheme.accent : EditorialTheme.secondaryText)
+                    Spacer(minLength: 0)
+                    if let actionText = item.actionLabel {
+                        if let quickAction = item.quickAction {
+                            Button {
+                                quickAction()
+                            } label: {
+                                Text(actionText)
+                                    .font(.system(size: 8, weight: .bold))
+                                    .tracking(0.4)
+                                    .foregroundStyle(EditorialTheme.primaryText)
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            Text(actionText)
+                                .font(EditorialTheme.monoValue(size: 10))
+                                .foregroundStyle(item.isActive ? EditorialTheme.accent : EditorialTheme.secondaryText)
+                        }
+                    }
+                }
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(item.label)
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 9, weight: .semibold))
                         .tracking(0.4)
                         .textCase(.uppercase)
                         .foregroundStyle(EditorialTheme.primaryText)
                         .lineLimit(1)
 
                     Text(item.subtitle)
-                        .font(.system(size: 8, weight: .medium))
+                        .font(.system(size: 7, weight: .medium))
                         .foregroundStyle(EditorialTheme.secondaryText)
                         .lineLimit(1)
                 }
-
-                Spacer(minLength: 0)
-
-                if let actionText = item.actionLabel {
-                    if let quickAction = item.quickAction {
-                        Button {
-                            quickAction()
-                        } label: {
-                            Text(actionText)
-                                .font(.system(size: 10, weight: .bold))
-                                .tracking(0.6)
-                                .foregroundStyle(EditorialTheme.primaryText)
-                        }
-                        .buttonStyle(.plain)
-                    } else {
-                        Text(actionText)
-                            .font(EditorialTheme.monoValue(size: 14))
-                            .foregroundStyle(item.isActive ? EditorialTheme.accent : EditorialTheme.secondaryText)
-                    }
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .editorialCard(padding: 10)
+            .editorialCard(padding: 8)
         }
         .buttonStyle(.plain)
     }
@@ -178,18 +177,26 @@ struct EditorialStatusGrid: View {
             ))
         }
 
-        // Sonos (playing only)
-        for player in sonos.coordinators where player.state == .playing {
-            let track = player.currentTrack?.title ?? "Playing"
+        // Sonos (single card for entire system)
+        if sonos.hasPlayers {
+            let playingCount = sonos.coordinators.filter { $0.state == .playing }.count
+            let subtitle: String
+            let isActive: Bool
+            if playingCount > 0 {
+                let track = sonos.coordinators.first(where: { $0.state == .playing })?.currentTrack?.title ?? "Playing"
+                subtitle = playingCount == 1 ? track : "\(playingCount) playing"
+                isActive = true
+            } else {
+                subtitle = "\(sonos.coordinators.count) speaker\(sonos.coordinators.count == 1 ? "" : "s")"
+                isActive = false
+            }
             items.append(StatusItem(
-                id: "sonos_\(player.id)",
-                icon: "speaker.wave.2",
-                label: player.name,
-                subtitle: "\(track) · VOL \(player.volume)",
-                isActive: true,
-                actionLabel: "II",
-                quickAction: { Task { try? await sonos.pausePlayback(playerId: player.id) } },
-                onTap: { showSonosSheet = player.id }
+                id: "sonos",
+                icon: playingCount > 0 ? "speaker.wave.2.fill" : "speaker.fill",
+                label: "SONOS",
+                subtitle: subtitle,
+                isActive: isActive,
+                onTap: { showSonosSheet = true }
             ))
         }
 
@@ -252,19 +259,6 @@ struct EditorialStatusGrid: View {
 
 // MARK: - Sheet item binding helper
 
-private extension Binding where Value == String? {
-    func item<ID: Hashable>() -> Binding<SheetItem<ID>?> where Value == ID? {
-        Binding<SheetItem<ID>?>(
-            get: { self.wrappedValue.map { SheetItem(id: $0) } },
-            set: { self.wrappedValue = $0?.id }
-        )
-    }
-}
-
-private struct SheetItem<ID: Hashable>: Identifiable {
-    let id: ID
-}
-
 private extension View {
     func sheet<ID: Hashable, Content: View>(item binding: Binding<ID?>, @ViewBuilder content: @escaping (ID) -> Content) -> some View {
         let itemBinding = Binding<SheetItem<ID>?>(
@@ -275,4 +269,8 @@ private extension View {
             content(item.id)
         }
     }
+}
+
+private struct SheetItem<ID: Hashable>: Identifiable {
+    let id: ID
 }
