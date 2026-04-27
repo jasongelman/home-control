@@ -53,6 +53,26 @@ struct SonosFavorite: Identifiable, Codable {
     let type: String  // playlist, station, album, etc.
 }
 
+// MARK: - Music Services & Content Browsing
+
+struct SonosMusicService: Identifiable {
+    let id: Int          // ServiceType number (e.g. 2311 = Spotify)
+    let name: String
+    let containerID: String  // Root ObjectID for ContentDirectory Browse
+}
+
+struct SonosContentItem: Identifiable {
+    let id: String       // ObjectID
+    let parentID: String
+    let title: String
+    let artist: String
+    let album: String
+    let albumArtURI: String
+    let isContainer: Bool
+    let uri: String      // res URI for playable items
+    let metadata: String // DIDL-Lite metadata for SetAVTransportURI
+}
+
 // MARK: - Topology Cache
 
 struct SonosTopologyCache: Codable {

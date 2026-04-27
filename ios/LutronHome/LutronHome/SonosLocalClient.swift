@@ -401,6 +401,76 @@ actor SonosLocalClient {
         )
     }
 
+    // MARK: - Content Browsing
+
+    func browseContent(player: SonosPlayer, objectID: String, start: Int = 0, count: Int = 100) async throws -> [SonosContentItem] {
+        let escapedID = objectID
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+        let data = try await soapRequest(
+            baseURL: player.baseURL, path: contentDirectoryPath,
+            service: contentDirectoryService, action: "Browse",
+            body: """
+                <ObjectID>\(escapedID)</ObjectID>
+                <BrowseFlag>BrowseDirectChildren</BrowseFlag>
+                <Filter>dc:title,res,dc:creator,upnp:artist,upnp:album,upnp:albumArtURI,upnp:class</Filter>
+                <StartingIndex>\(start)</StartingIndex>
+                <RequestedCount>\(count)</RequestedCount>
+                <SortCriteria></SortCriteria>
+                """
+        )
+        return ContentBrowseParser(data: data, playerBaseURL: player.baseURL).parse()
+    }
+
+    func getMusicServices(player: SonosPlayer) async throws -> [SonosMusicService] {
+        let service = "urn:schemas-upnp-org:service:MusicServices:1"
+        let data = try await soapRequest(
+            baseURL: player.baseURL, path: "/MusicServices/Control",
+            service: service, action: "ListAvailableServices",
+            body: ""
+        )
+        return MusicServicesParser(data: data).parse()
+    }
+
+    func setAVTransportURI(player: SonosPlayer, uri: String, metadata: String = "") async throws {
+        let escapedURI = uri
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+        let escapedMeta = metadata
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+        _ = try await soapRequest(
+            baseURL: player.baseURL, path: avTransportPath,
+            service: avTransportService, action: "SetAVTransportURI",
+            body: "<InstanceID>0</InstanceID><CurrentURI>\(escapedURI)</CurrentURI><CurrentURIMetaData>\(escapedMeta)</CurrentURIMetaData>"
+        )
+    }
+
+    func addURIToQueue(player: SonosPlayer, uri: String, metadata: String = "") async throws {
+        let escapedURI = uri
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+        let escapedMeta = metadata
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+        _ = try await soapRequest(
+            baseURL: player.baseURL, path: avTransportPath,
+            service: avTransportService, action: "AddURIToQueue",
+            body: """
+                <InstanceID>0</InstanceID>
+                <EnqueuedURI>\(escapedURI)</EnqueuedURI>
+                <EnqueuedURIMetaData>\(escapedMeta)</EnqueuedURIMetaData>
+                <DesiredFirstTrackNumberEnqueued>0</DesiredFirstTrackNumberEnqueued>
+                <EnqueueAsNext>1</EnqueueAsNext>
+                """
+        )
+    }
+
     // MARK: - Grouping
 
     func groupPlayer(member: SonosPlayer, withCoordinator coordinator: SonosPlayer) async throws {
@@ -846,5 +916,130 @@ private class QueueParser: NSObject, XMLParserDelegate {
         guard parts.count == 3,
               let h = Double(parts[0]), let m = Double(parts[1]), let s = Double(parts[2]) else { return 0 }
         return h * 3600 + m * 60 + s
+    }
+}
+
+// MARK: - Content Browse Parser
+
+private class ContentBrowseParser: NSObject, XMLParserDelegate {
+    private let data: Data
+    private let playerBaseURL: String
+    private var items: [SonosContentItem] = []
+    private var currentElement = ""
+    private var currentText = ""
+    private var currentTitle = ""
+    private var currentArtist = ""
+    private var currentAlbum = ""
+    private var currentArtURI = ""
+    private var currentClass = ""
+    private var currentResURI = ""
+    private var currentItemID = ""
+    private var currentParentID = ""
+    private var inItem = false
+
+    init(data: Data, playerBaseURL: String) {
+        self.data = data
+        self.playerBaseURL = playerBaseURL
+    }
+
+    func parse() -> [SonosContentItem] {
+        guard let resultXML = SimpleXMLParser.extractValue(from: data, tag: "Result") else { return [] }
+        let decoded = resultXML
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+
+        let parser = XMLParser(data: Data(decoded.utf8))
+        parser.delegate = self
+        parser.parse()
+        return items
+    }
+
+    func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
+                qualifiedName: String?, attributes: [String: String] = [:]) {
+        currentElement = elementName
+        currentText = ""
+        if elementName == "container" || elementName == "item" {
+            inItem = true
+            currentTitle = ""
+            currentArtist = ""
+            currentAlbum = ""
+            currentArtURI = ""
+            currentClass = ""
+            currentResURI = ""
+            currentItemID = attributes["id"] ?? ""
+            currentParentID = attributes["parentID"] ?? ""
+        }
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        currentText += string
+    }
+
+    func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?,
+                qualifiedName: String?) {
+        guard inItem else { return }
+        let trimmed = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch elementName {
+        case "dc:title": currentTitle = trimmed
+        case "dc:creator": currentArtist = trimmed
+        case "upnp:album": currentAlbum = trimmed
+        case "upnp:albumArtURI": currentArtURI = trimmed
+        case "upnp:class": currentClass = trimmed
+        case "res": currentResURI = trimmed
+        case "container", "item":
+            inItem = false
+            let isContainer = elementName == "container" || currentClass.contains("container")
+            items.append(SonosContentItem(
+                id: currentItemID,
+                parentID: currentParentID,
+                title: currentTitle,
+                artist: currentArtist,
+                album: currentAlbum,
+                albumArtURI: currentArtURI,
+                isContainer: isContainer,
+                uri: currentResURI,
+                metadata: ""
+            ))
+        default: break
+        }
+    }
+}
+
+// MARK: - Music Services Parser
+
+private class MusicServicesParser: NSObject, XMLParserDelegate {
+    private let data: Data
+    private var services: [SonosMusicService] = []
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    func parse() -> [SonosMusicService] {
+        guard let descriptorList = SimpleXMLParser.extractValue(from: data, tag: "AvailableServiceDescriptorList") else {
+            return []
+        }
+        let decoded = descriptorList
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+
+        let pattern = "<Service[^>]+Type=\"(\\d+)\"[^>]+Name=\"([^\"]+)\""
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let range = NSRange(decoded.startIndex..., in: decoded)
+        let matches = regex.matches(in: decoded, range: range)
+
+        for match in matches {
+            guard let typeRange = Range(match.range(at: 1), in: decoded),
+                  let nameRange = Range(match.range(at: 2), in: decoded) else { continue }
+            let typeId = Int(decoded[typeRange]) ?? 0
+            let name = String(decoded[nameRange])
+            let containerID = "SA_RINCON\(typeId)_"
+            services.append(SonosMusicService(id: typeId, name: name, containerID: containerID))
+        }
+        return services
     }
 }

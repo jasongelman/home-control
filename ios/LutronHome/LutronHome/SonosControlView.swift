@@ -6,6 +6,10 @@ struct SonosControlView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedPlayerId: String?
     @State private var showGroupEditor = false
+    @State private var showMediaBrowser = false
+    @State private var browseStack: [(id: String, title: String)] = []
+    @State private var browseItems: [SonosContentItem] = []
+    @State private var isBrowsing = false
 
     private var selectedPlayer: SonosPlayer? {
         guard let id = selectedPlayerId else { return nil }
@@ -21,6 +25,10 @@ struct SonosControlView: View {
                     transportSection(player)
                 }
                 volumeSection
+                sourcesSection
+                if showMediaBrowser {
+                    mediaBrowserSection
+                }
                 if sonos.isCloudLinked {
                     favoritesSection
                     playlistsSection
@@ -48,6 +56,7 @@ struct SonosControlView: View {
                     try? await sonos.loadPlaylists()
                 }
             }
+            Task { try? await sonos.loadMusicServices() }
         }
     }
 
@@ -330,6 +339,209 @@ struct SonosControlView: View {
             }
         }
         .editorialCard(padding: 10)
+    }
+
+    // MARK: - Sources (TV + Music Services)
+
+    private var sourcesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionLabel("SOURCES")
+
+            // TV input
+            if !sonos.tvCapableSpeakers.isEmpty {
+                Button {
+                    guard let playerId = selectedPlayerId else { return }
+                    Task { try? await sonos.playTVInput(playerId: playerId) }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "tv")
+                            .font(.system(size: 11))
+                            .foregroundStyle(EditorialTheme.accent)
+                            .frame(width: 16)
+                        Text("TV Audio")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(EditorialTheme.primaryText)
+                        Spacer()
+                        Text(sonos.tvCapableSpeakers.first?.name ?? "")
+                            .font(.system(size: 9))
+                            .foregroundStyle(EditorialTheme.secondaryText)
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(EditorialTheme.secondaryText)
+                    }
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Music services
+            ForEach(sonos.musicServices) { service in
+                Button {
+                    browseStack = [(id: service.containerID, title: service.name)]
+                    showMediaBrowser = true
+                    Task { await browseInto(objectID: service.containerID) }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: serviceIcon(service.name))
+                            .font(.system(size: 11))
+                            .foregroundStyle(EditorialTheme.accent)
+                            .frame(width: 16)
+                        Text(service.name)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(EditorialTheme.primaryText)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9))
+                            .foregroundStyle(EditorialTheme.secondaryText)
+                    }
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .editorialCard(padding: 10)
+    }
+
+    private func serviceIcon(_ name: String) -> String {
+        let lower = name.lowercased()
+        if lower.contains("spotify") { return "waveform" }
+        if lower.contains("audible") || lower.contains("audiobook") { return "book.fill" }
+        if lower.contains("amazon") { return "music.note" }
+        if lower.contains("apple") { return "music.note" }
+        if lower.contains("radio") || lower.contains("tunein") { return "radio" }
+        if lower.contains("podcast") { return "mic.fill" }
+        if lower.contains("soundcloud") { return "cloud.fill" }
+        return "music.note.list"
+    }
+
+    // MARK: - Media Browser
+
+    private var mediaBrowserSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Breadcrumb navigation
+            HStack(spacing: 4) {
+                ForEach(Array(browseStack.enumerated()), id: \.offset) { index, crumb in
+                    if index > 0 {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 7))
+                            .foregroundStyle(EditorialTheme.tertiaryText)
+                    }
+                    Button {
+                        // Navigate back to this level
+                        browseStack = Array(browseStack.prefix(index + 1))
+                        Task { await browseInto(objectID: crumb.id) }
+                    } label: {
+                        Text(crumb.title.uppercased())
+                            .font(.system(size: 8, weight: index == browseStack.count - 1 ? .bold : .medium))
+                            .tracking(0.4)
+                            .foregroundStyle(index == browseStack.count - 1 ? EditorialTheme.primaryText : EditorialTheme.secondaryText)
+                            .lineLimit(1)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Spacer()
+
+                Button {
+                    showMediaBrowser = false
+                    browseStack = []
+                    browseItems = []
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(EditorialTheme.secondaryText)
+                }
+                .buttonStyle(.plain)
+            }
+
+            if isBrowsing {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                        .scaleEffect(0.7)
+                    Spacer()
+                }
+                .padding(.vertical, 12)
+            } else if browseItems.isEmpty {
+                Text("No items found")
+                    .font(.system(size: 10))
+                    .foregroundStyle(EditorialTheme.secondaryText)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+            } else {
+                ForEach(browseItems) { item in
+                    if item.isContainer {
+                        Button {
+                            browseStack.append((id: item.id, title: item.title))
+                            Task { await browseInto(objectID: item.id) }
+                        } label: {
+                            contentRow(item: item, isContainer: true)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Button {
+                            guard let playerId = selectedPlayerId else { return }
+                            Task { try? await sonos.playMedia(playerId: playerId, uri: item.uri, metadata: item.metadata) }
+                        } label: {
+                            contentRow(item: item, isContainer: false)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .editorialCard(padding: 10)
+    }
+
+    private func contentRow(item: SonosContentItem, isContainer: Bool) -> some View {
+        HStack(spacing: 8) {
+            if !item.albumArtURI.isEmpty {
+                let artURL = item.albumArtURI.hasPrefix("http")
+                    ? URL(string: item.albumArtURI)
+                    : URL(string: "\(sonos.players.first?.baseURL ?? "")\(item.albumArtURI)")
+                AsyncImage(url: artURL) { image in
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    Rectangle().fill(EditorialTheme.cardBackground)
+                }
+                .frame(width: 32, height: 32)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+            } else {
+                Image(systemName: isContainer ? "folder.fill" : "music.note")
+                    .font(.system(size: 10))
+                    .foregroundStyle(EditorialTheme.secondaryText)
+                    .frame(width: 32, height: 32)
+            }
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.title)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(EditorialTheme.primaryText)
+                    .lineLimit(1)
+                if !item.artist.isEmpty {
+                    Text(item.artist)
+                        .font(.system(size: 8))
+                        .foregroundStyle(EditorialTheme.secondaryText)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            Image(systemName: isContainer ? "chevron.right" : "play.fill")
+                .font(.system(size: 9))
+                .foregroundStyle(isContainer ? EditorialTheme.secondaryText : EditorialTheme.accent)
+        }
+        .padding(.vertical, 3)
+    }
+
+    private func browseInto(objectID: String) async {
+        isBrowsing = true
+        let items = (try? await sonos.browseContent(objectID: objectID)) ?? []
+        await MainActor.run {
+            browseItems = items
+            isBrowsing = false
+        }
     }
 
     // MARK: - Favorites

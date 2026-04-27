@@ -274,6 +274,52 @@ class SonosManager: @unchecked Sendable {
         }
     }
 
+    // MARK: - Content Browsing
+
+    var musicServices: [SonosMusicService] = []
+
+    func loadMusicServices() async throws {
+        guard let player = players.first else { return }
+        let services = try await localClient.getMusicServices(player: player)
+        await MainActor.run { musicServices = services }
+    }
+
+    func browseContent(objectID: String) async throws -> [SonosContentItem] {
+        guard let player = players.first else { return [] }
+        return try await localClient.browseContent(player: player, objectID: objectID)
+    }
+
+    func playMedia(playerId: String, uri: String, metadata: String = "") async throws {
+        guard let player = coordinator(for: playerId) else { throw SonosError.noCoordinator }
+        try await localClient.setAVTransportURI(player: player, uri: uri, metadata: metadata)
+        try await localClient.play(player: player)
+        await MainActor.run {
+            if let idx = players.firstIndex(where: { $0.id == player.id }) {
+                players[idx].state = .playing
+            }
+        }
+    }
+
+    func playTVInput(playerId: String) async throws {
+        guard let player = coordinator(for: playerId) else { throw SonosError.noCoordinator }
+        // HDMI ARC input for Sonos soundbars (Beam, Arc, Playbar, Ray)
+        try await localClient.setAVTransportURI(player: player, uri: "x-sonos-htacontrol:HTSATCh7")
+        try await localClient.play(player: player)
+        await MainActor.run {
+            if let idx = players.firstIndex(where: { $0.id == player.id }) {
+                players[idx].state = .playing
+            }
+        }
+    }
+
+    /// Speakers that have TV/HDMI input capability (soundbars)
+    var tvCapableSpeakers: [SonosPlayer] {
+        let soundbarModels = ["Beam", "Arc", "Playbar", "Playbase", "Ray", "S14", "S13", "S11", "S18"]
+        return players.filter { p in
+            soundbarModels.contains(where: { p.modelName.contains($0) || p.modelNumber.contains($0) })
+        }
+    }
+
     // MARK: - Queue
 
     func getQueue(playerId: String) async throws -> [SonosTrack] {
