@@ -11,11 +11,6 @@ struct EditorialSuggestedAction: View {
                 handleAction(action.id)
             } label: {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("SUGGESTED · TAP TO RUN")
-                        .font(.system(size: 8, weight: .medium))
-                        .tracking(0.8)
-                        .foregroundStyle(.white.opacity(0.7))
-
                     HStack {
                         Text(action.title.uppercased())
                             .font(EditorialTheme.bebasNeue(size: 36))
