@@ -1027,7 +1027,13 @@ private class MusicServicesParser: NSObject, XMLParserDelegate {
             .replacingOccurrences(of: "&amp;", with: "&")
             .replacingOccurrences(of: "&quot;", with: "\"")
 
-        let pattern = "<Service[^>]+Type=\"(\\d+)\"[^>]+Name=\"([^\"]+)\""
+        // Only surface services users commonly browse
+        let wantedServices: Set<Int> = [12, 201, 204, 239, 254, 284, 236, 174, 303, 160, 233, 37]
+        // 12=Spotify, 201=Amazon Music, 204=Apple Music, 239=Audible,
+        // 254=TuneIn, 284=YouTube Music, 236=Pandora, 174=TIDAL,
+        // 303=Sonos Radio, 160=SoundCloud, 233=Pocket Casts, 37=SiriusXM
+
+        let pattern = "<Service[^>]+Id=\"(\\d+)\"[^>]+Name=\"([^\"]+)\""
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
         let range = NSRange(decoded.startIndex..., in: decoded)
         let matches = regex.matches(in: decoded, range: range)
@@ -1036,10 +1042,14 @@ private class MusicServicesParser: NSObject, XMLParserDelegate {
             guard let typeRange = Range(match.range(at: 1), in: decoded),
                   let nameRange = Range(match.range(at: 2), in: decoded) else { continue }
             let typeId = Int(decoded[typeRange]) ?? 0
+            guard wantedServices.contains(typeId) else { continue }
             let name = String(decoded[nameRange])
             let containerID = "SA_RINCON\(typeId)_"
             services.append(SonosMusicService(id: typeId, name: name, containerID: containerID))
         }
+        // Sort: Spotify first, then Audible, then alphabetical
+        let priority: [Int: Int] = [12: 0, 239: 1, 201: 2, 204: 3]
+        services.sort { (priority[$0.id] ?? 99) < (priority[$1.id] ?? 99) }
         return services
     }
 }
