@@ -1,0 +1,46 @@
+# Cloudflare Workers config for Lutron Home cloud API.
+#
+# This is Phase 0: api-router Worker with /api/health only. KV, D1, and
+# Durable Object bindings are commented out — they get enabled in later
+# phases as the integrations land. See docs/cloudflare-setup.md for the
+# one-time dashboard steps that create these resources.
+
+name = "lutron-home-api"
+main = "api-router/index.ts"
+compatibility_date = "2024-12-18"
+compatibility_flags = ["nodejs_compat"]
+
+# ── Vars (non-secret) ────────────────────────────────────────────────────────
+# Fill these in after creating the Cloudflare Access application.
+# CF_ACCESS_TEAM_DOMAIN is the part before ".cloudflareaccess.com"
+# (e.g. "jasongelman" → https://jasongelman.cloudflareaccess.com).
+# CF_ACCESS_AUD is the Application Audience (AUD) tag shown in the
+# Access application settings.
+[vars]
+CF_ACCESS_TEAM_DOMAIN = "jasongelman.cloudflareaccess.com"
+CF_ACCESS_AUD = "00384368d243c91c569569b25503b16d4850e3769d032f9a59c3d1ed74e7fbae"
+
+# ── KV (Phase 2) ─────────────────────────────────────────────────────────────
+# [[kv_namespaces]]
+# binding = "STATE"
+# id = ""
+
+# ── D1 (Phase 4) ─────────────────────────────────────────────────────────────
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "lutron_home"
+# database_id = ""
+
+# ── Durable Objects ──────────────────────────────────────────────────────────
+
+[[durable_objects.bindings]]
+name = "ALARM_DO"
+class_name = "AlarmDO"
+
+[[durable_objects.bindings]]
+name = "BROADCASTER"
+class_name = "Broadcaster"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AlarmDO", "Broadcaster"]

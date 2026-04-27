@@ -1,6 +1,5 @@
 import Foundation
 import AuthenticationServices
-import Network
 
 actor SonosCloudClient {
 
@@ -64,16 +63,20 @@ actor SonosCloudClient {
 
     // MARK: - OAuth Flow
 
-    /// Must be called from the main thread; ASWebAuthenticationSession requires it.
-    /// The method is `nonisolated` so callers on @MainActor can invoke it without
-    /// a redundant hop, but it still awaits actor-isolated helpers for token work.
-    func startOAuth(from context: ASWebAuthenticationPresentationContextProviding) async throws {
-        guard let cid = clientId, !cid.isEmpty else {
+    /// Must be called from @MainActor context; ASWebAuthenticationSession requires it.
+    /// Marked `nonisolated` so the @MainActor sonosWebAuthSession helper can run
+    /// without cross-isolation issues. Actor-isolated methods (token exchange) are
+    /// called with explicit `await` after the auth code is obtained.
+    nonisolated func startOAuth(from context: ASWebAuthenticationPresentationContextProviding) async throws {
+        let cid = await clientId
+        guard let cid, !cid.isEmpty else {
             throw SonosCloudError.missingCredentials
         }
 
-        let oauthPort: UInt16 = 8923
-        let redirectURI = "http://localhost:\(oauthPort)/oauth/sonos"
+        // Sonos requires a publicly routable redirect URI. The Cloudflare Worker
+        // at this URL receives the callback and 302s to lutronhome:// which
+        // ASWebAuthenticationSession intercepts.
+        let redirectURI = "https://lutron-home-api.gelman.workers.dev/oauth/sonos/callback"
         let state = UUID().uuidString
         let scope = "playback-control-all"
 
@@ -86,17 +89,17 @@ actor SonosCloudClient {
             URLQueryItem(name: "state", value: state),
         ]
         let authURL = authComponents.url!
-        print("SonosCloudClient: OAuth URL → \(authURL.absoluteString)")
+        print("Sonos OAuth: starting, URL → \(authURL.absoluteString)")
 
-        // Start local HTTP server to bridge Sonos redirect → custom URL scheme.
-        // Sonos redirects to http://localhost:8923/oauth/sonos?code=xxx
-        // Our server responds with 302 → lutronhome://oauth/sonos?code=xxx
-        // ASWebAuthenticationSession intercepts the custom scheme.
-        let oauthListener = try startOAuthListener(port: oauthPort)
-        defer { oauthListener.cancel() }
-
-        // ASWebAuthenticationSession with custom scheme
-        let callbackURL: URL = try await sonosWebAuthSession(authURL: authURL, context: context)
+        // Present web auth session — Worker handles redirect bridging
+        let callbackURL: URL
+        do {
+            callbackURL = try await sonosWebAuthSession(authURL: authURL, context: context)
+        } catch {
+            print("Sonos OAuth: web auth session failed — \(error.localizedDescription)")
+            throw error
+        }
+        print("Sonos OAuth: got callback URL, extracting code")
 
         // Extract authorization code
         guard let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
@@ -104,46 +107,14 @@ actor SonosCloudClient {
             throw SonosCloudError.noAuthCode
         }
 
-        // Exchange code for tokens
+        // Exchange code for tokens (hops back to actor)
+        print("Sonos OAuth: exchanging code for tokens")
         try await exchangeCodeForTokens(code: code, redirectURI: redirectURI)
 
         // Fetch household ID
+        print("Sonos OAuth: fetching household ID")
         try await fetchHouseholdId()
-    }
-
-    /// Starts a tiny HTTP server on the given port that receives the OAuth redirect
-    /// and responds with a 302 to the app's custom URL scheme so ASWebAuthenticationSession
-    /// can intercept it.
-    private func startOAuthListener(port: UInt16) throws -> NWListener {
-        let params = NWParameters.tcp
-        let listener = try NWListener(using: params, on: NWEndpoint.Port(rawValue: port)!)
-
-        listener.newConnectionHandler = { connection in
-            connection.start(queue: DispatchQueue(label: "sonos-oauth-conn"))
-            connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, _, _ in
-                guard let data, let request = String(data: data, encoding: .utf8),
-                      let firstLine = request.components(separatedBy: "\r\n").first,
-                      let pathQuery = firstLine.split(separator: " ").dropFirst().first else {
-                    connection.cancel()
-                    return
-                }
-
-                // Forward the query string to the custom scheme
-                let pathStr = String(pathQuery)
-                let query = pathStr.contains("?") ? String(pathStr[pathStr.index(after: pathStr.firstIndex(of: "?")!)...]) : ""
-                let redirectURL = "lutronhome://oauth/sonos?\(query)"
-
-                let responseBody = "<html><body>Authorization complete. Returning to app…</body></html>"
-                let response = "HTTP/1.1 302 Found\r\nLocation: \(redirectURL)\r\nContent-Length: \(responseBody.utf8.count)\r\nContent-Type: text/html\r\n\r\n\(responseBody)"
-
-                connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in
-                    connection.cancel()
-                })
-            }
-        }
-
-        listener.start(queue: DispatchQueue(label: "sonos-oauth-listener"))
-        return listener
+        print("Sonos OAuth: complete")
     }
 
     private func exchangeCodeForTokens(code: String, redirectURI: String) async throws {

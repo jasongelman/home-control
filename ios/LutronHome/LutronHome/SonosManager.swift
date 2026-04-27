@@ -320,14 +320,14 @@ class SonosManager: @unchecked Sendable {
     }
 
     func startOAuth(from context: ASWebAuthenticationPresentationContextProviding) {
-        Task {
+        Task { @MainActor in
             do {
                 try await cloudClient.startOAuth(from: context)
-                await MainActor.run { _cloudLinked = true }
+                _cloudLinked = true
                 try await loadFavorites()
                 try await loadPlaylists()
             } catch {
-                await MainActor.run { errorMessage = error.localizedDescription }
+                errorMessage = error.localizedDescription
             }
         }
     }

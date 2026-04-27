@@ -401,6 +401,7 @@ struct DashboardView: View {
                 EditorialStatusGrid()
                 EditorialClimateSection()
                 EditorialCameraSection()
+                EditorialSonosSection()
                 EditorialLightsSection()
             }
             .padding(.horizontal)

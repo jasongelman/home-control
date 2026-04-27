@@ -64,6 +64,7 @@
 		E100000A /* EditorialCameraSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E200000A /* EditorialCameraSection.swift */; };
 		E100000B /* KeypadsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = E200000B /* KeypadsTab.swift */; };
 		E100000C /* WeatherManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E200000C /* WeatherManager.swift */; };
+		E100000D /* EditorialSonosSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E200000D /* EditorialSonosSection.swift */; };
 		E1000010 /* BebasNeue-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E2000010 /* BebasNeue-Regular.ttf */; };
 		B1000004 /* AppGroupManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000004 /* AppGroupManagerTests.swift */; };
 		B1000005 /* RecommendationEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000005 /* RecommendationEngineTests.swift */; };
@@ -187,6 +188,7 @@
 		E200000A /* EditorialCameraSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorialCameraSection.swift; sourceTree = "<group>"; };
 		E200000B /* KeypadsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeypadsTab.swift; sourceTree = "<group>"; };
 		E200000C /* WeatherManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherManager.swift; sourceTree = "<group>"; };
+		E200000D /* EditorialSonosSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorialSonosSection.swift; sourceTree = "<group>"; };
 		E2000010 /* BebasNeue-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "BebasNeue-Regular.ttf"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -276,6 +278,7 @@
 				E200000A /* EditorialCameraSection.swift */,
 				E200000B /* KeypadsTab.swift */,
 				E200000C /* WeatherManager.swift */,
+				E200000D /* EditorialSonosSection.swift */,
 				E5000001 /* Fonts */,
 				A2000012 /* LutronHome.entitlements */,
 				A2000050 /* Info.plist */,
@@ -514,6 +517,7 @@ A1000010 /* Assets.xcassets in Resources */,
 				E100000A /* EditorialCameraSection.swift in Sources */,
 				E100000B /* KeypadsTab.swift in Sources */,
 				E100000C /* WeatherManager.swift in Sources */,
+				E100000D /* EditorialSonosSection.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
