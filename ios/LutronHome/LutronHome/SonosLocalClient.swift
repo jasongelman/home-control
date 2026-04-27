@@ -403,6 +403,22 @@ actor SonosLocalClient {
 
     // MARK: - Content Browsing
 
+    func browseFavorites(player: SonosPlayer) async throws -> [SonosContentItem] {
+        let data = try await soapRequest(
+            baseURL: player.baseURL, path: contentDirectoryPath,
+            service: contentDirectoryService, action: "Browse",
+            body: """
+                <ObjectID>FV:2</ObjectID>
+                <BrowseFlag>BrowseDirectChildren</BrowseFlag>
+                <Filter>*</Filter>
+                <StartingIndex>0</StartingIndex>
+                <RequestedCount>100</RequestedCount>
+                <SortCriteria></SortCriteria>
+                """
+        )
+        return FavoritesBrowseParser(data: data, playerBaseURL: player.baseURL).parse()
+    }
+
     func browseContent(player: SonosPlayer, objectID: String, start: Int = 0, count: Int = 100) async throws -> [SonosContentItem] {
         let escapedID = objectID
             .replacingOccurrences(of: "&", with: "&amp;")
@@ -1001,6 +1017,98 @@ private class ContentBrowseParser: NSObject, XMLParserDelegate {
                 isContainer: isContainer,
                 uri: currentResURI,
                 metadata: ""
+            ))
+        default: break
+        }
+    }
+}
+
+// MARK: - Favorites Browse Parser
+
+private class FavoritesBrowseParser: NSObject, XMLParserDelegate {
+    private let data: Data
+    private let playerBaseURL: String
+    private var items: [SonosContentItem] = []
+    private var currentElement = ""
+    private var currentText = ""
+    private var currentTitle = ""
+    private var currentArtURI = ""
+    private var currentResURI = ""
+    private var currentResMD = ""
+    private var currentItemID = ""
+    private var currentParentID = ""
+    private var currentType = ""
+    private var inItem = false
+
+    init(data: Data, playerBaseURL: String) {
+        self.data = data
+        self.playerBaseURL = playerBaseURL
+    }
+
+    func parse() -> [SonosContentItem] {
+        guard let resultXML = SimpleXMLParser.extractValue(from: data, tag: "Result") else { return [] }
+        let decoded = resultXML
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+
+        let parser = XMLParser(data: Data(decoded.utf8))
+        parser.delegate = self
+        parser.parse()
+        return items
+    }
+
+    func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
+                qualifiedName: String?, attributes: [String: String] = [:]) {
+        currentElement = elementName
+        currentText = ""
+        if elementName == "item" {
+            inItem = true
+            currentTitle = ""
+            currentArtURI = ""
+            currentResURI = ""
+            currentResMD = ""
+            currentType = ""
+            currentItemID = attributes["id"] ?? ""
+            currentParentID = attributes["parentID"] ?? ""
+        }
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        currentText += string
+    }
+
+    func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?,
+                qualifiedName: String?) {
+        guard inItem else { return }
+        let trimmed = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch elementName {
+        case "dc:title": currentTitle = trimmed
+        case "upnp:albumArtURI": currentArtURI = trimmed
+        case "res": currentResURI = trimmed
+        case "r:resMD":
+            // The metadata is double-escaped in the XML
+            currentResMD = trimmed
+                .replacingOccurrences(of: "&lt;", with: "<")
+                .replacingOccurrences(of: "&gt;", with: ">")
+                .replacingOccurrences(of: "&amp;", with: "&")
+                .replacingOccurrences(of: "&quot;", with: "\"")
+        case "r:type": currentType = trimmed
+        case "item":
+            inItem = false
+            // Skip shortcuts without a URI (Sonos Radio shortcuts need SMAPI)
+            guard currentType == "instantPlay" && !currentResURI.isEmpty else { return }
+            items.append(SonosContentItem(
+                id: currentItemID,
+                parentID: currentParentID,
+                title: currentTitle,
+                artist: "",
+                album: "",
+                albumArtURI: currentArtURI,
+                isContainer: false,
+                uri: currentResURI,
+                metadata: currentResMD
             ))
         default: break
         }

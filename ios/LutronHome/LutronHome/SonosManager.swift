@@ -8,6 +8,7 @@ class SonosManager: @unchecked Sendable {
 
     var players: [SonosPlayer] = []
     var favorites: [SonosFavorite] = []
+    var localFavorites: [SonosFavorite] = []
     var playlists: [SonosFavorite] = []
     var isLoading = false
     var errorMessage: String?
@@ -276,17 +277,24 @@ class SonosManager: @unchecked Sendable {
 
     // MARK: - Content Browsing
 
-    var musicServices: [SonosMusicService] = []
-
-    func loadMusicServices() async throws {
+    func loadLocalFavorites() async throws {
         guard let player = players.first else { return }
-        let services = try await localClient.getMusicServices(player: player)
-        await MainActor.run { musicServices = services }
-    }
-
-    func browseContent(objectID: String) async throws -> [SonosContentItem] {
-        guard let player = players.first else { return [] }
-        return try await localClient.browseContent(player: player, objectID: objectID)
+        let items = try await localClient.browseFavorites(player: player)
+        let favs: [SonosFavorite] = items.compactMap { item in
+            guard !item.title.isEmpty else { return nil }
+            let artURL: URL? = {
+                if item.albumArtURI.isEmpty { return nil }
+                if item.albumArtURI.hasPrefix("http") { return URL(string: item.albumArtURI) }
+                return URL(string: "\(player.baseURL)\(item.albumArtURI)")
+            }()
+            return SonosFavorite(
+                id: item.id, name: item.title, imageURL: artURL,
+                type: item.isContainer ? "container" : "track",
+                uri: item.uri.isEmpty ? nil : item.uri,
+                metadata: item.metadata.isEmpty ? nil : item.metadata
+            )
+        }
+        await MainActor.run { localFavorites = favs }
     }
 
     func playMedia(playerId: String, uri: String, metadata: String = "") async throws {

@@ -51,6 +51,8 @@ struct SonosFavorite: Identifiable, Codable {
     let name: String
     let imageURL: URL?
     let type: String  // playlist, station, album, etc.
+    var uri: String?       // local playback URI (from ContentDirectory FV:2)
+    var metadata: String?  // DIDL-Lite metadata for SetAVTransportURI
 }
 
 // MARK: - Music Services & Content Browsing

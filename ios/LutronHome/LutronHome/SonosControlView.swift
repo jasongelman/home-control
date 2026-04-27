@@ -6,10 +6,7 @@ struct SonosControlView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedPlayerId: String?
     @State private var showGroupEditor = false
-    @State private var showMediaBrowser = false
-    @State private var browseStack: [(id: String, title: String)] = []
-    @State private var browseItems: [SonosContentItem] = []
-    @State private var isBrowsing = false
+    @State private var favoriteFilter = ""
 
     private var selectedPlayer: SonosPlayer? {
         guard let id = selectedPlayerId else { return nil }
@@ -26,11 +23,8 @@ struct SonosControlView: View {
                 }
                 volumeSection
                 sourcesSection
-                if showMediaBrowser {
-                    mediaBrowserSection
-                }
+                favoritesSection
                 if sonos.isCloudLinked {
-                    favoritesSection
                     playlistsSection
                 }
             }
@@ -50,13 +44,15 @@ struct SonosControlView: View {
                 selectedPlayerId = sonos.coordinators.first(where: { $0.state == .playing })?.id
                     ?? sonos.coordinators.first?.id
             }
-            if sonos.isCloudLinked {
-                Task {
+            Task {
+                if sonos.isCloudLinked {
                     try? await sonos.loadFavorites()
                     try? await sonos.loadPlaylists()
                 }
+                if sonos.favorites.isEmpty {
+                    try? await sonos.loadLocalFavorites()
+                }
             }
-            Task { try? await sonos.loadMusicServices() }
         }
     }
 
@@ -341,14 +337,14 @@ struct SonosControlView: View {
         .editorialCard(padding: 10)
     }
 
-    // MARK: - Sources (TV + Music Services)
+    // MARK: - Sources (TV Audio)
 
+    @ViewBuilder
     private var sourcesSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionLabel("SOURCES")
+        if !sonos.tvCapableSpeakers.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                sectionLabel("SOURCES")
 
-            // TV input
-            if !sonos.tvCapableSpeakers.isEmpty {
                 Button {
                     guard let playerId = selectedPlayerId else { return }
                     Task { try? await sonos.playTVInput(playerId: playerId) }
@@ -373,221 +369,103 @@ struct SonosControlView: View {
                 }
                 .buttonStyle(.plain)
             }
-
-            // Music services
-            ForEach(sonos.musicServices) { service in
-                Button {
-                    browseStack = [(id: service.containerID, title: service.name)]
-                    showMediaBrowser = true
-                    Task { await browseInto(objectID: service.containerID) }
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: serviceIcon(service.name))
-                            .font(.system(size: 11))
-                            .foregroundStyle(EditorialTheme.accent)
-                            .frame(width: 16)
-                        Text(service.name)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(EditorialTheme.primaryText)
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 9))
-                            .foregroundStyle(EditorialTheme.secondaryText)
-                    }
-                    .padding(.vertical, 4)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .editorialCard(padding: 10)
-    }
-
-    private func serviceIcon(_ name: String) -> String {
-        let lower = name.lowercased()
-        if lower.contains("spotify") { return "waveform" }
-        if lower.contains("audible") || lower.contains("audiobook") { return "book.fill" }
-        if lower.contains("amazon") { return "music.note" }
-        if lower.contains("apple") { return "music.note" }
-        if lower.contains("radio") || lower.contains("tunein") { return "radio" }
-        if lower.contains("podcast") { return "mic.fill" }
-        if lower.contains("soundcloud") { return "cloud.fill" }
-        return "music.note.list"
-    }
-
-    // MARK: - Media Browser
-
-    private var mediaBrowserSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Breadcrumb navigation
-            HStack(spacing: 4) {
-                ForEach(Array(browseStack.enumerated()), id: \.offset) { index, crumb in
-                    if index > 0 {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 7))
-                            .foregroundStyle(EditorialTheme.tertiaryText)
-                    }
-                    Button {
-                        // Navigate back to this level
-                        browseStack = Array(browseStack.prefix(index + 1))
-                        Task { await browseInto(objectID: crumb.id) }
-                    } label: {
-                        Text(crumb.title.uppercased())
-                            .font(.system(size: 8, weight: index == browseStack.count - 1 ? .bold : .medium))
-                            .tracking(0.4)
-                            .foregroundStyle(index == browseStack.count - 1 ? EditorialTheme.primaryText : EditorialTheme.secondaryText)
-                            .lineLimit(1)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                Spacer()
-
-                Button {
-                    showMediaBrowser = false
-                    browseStack = []
-                    browseItems = []
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(EditorialTheme.secondaryText)
-                }
-                .buttonStyle(.plain)
-            }
-
-            if isBrowsing {
-                HStack {
-                    Spacer()
-                    ProgressView()
-                        .scaleEffect(0.7)
-                    Spacer()
-                }
-                .padding(.vertical, 12)
-            } else if browseItems.isEmpty {
-                Text("No items found")
-                    .font(.system(size: 10))
-                    .foregroundStyle(EditorialTheme.secondaryText)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-            } else {
-                ForEach(browseItems) { item in
-                    if item.isContainer {
-                        Button {
-                            browseStack.append((id: item.id, title: item.title))
-                            Task { await browseInto(objectID: item.id) }
-                        } label: {
-                            contentRow(item: item, isContainer: true)
-                        }
-                        .buttonStyle(.plain)
-                    } else {
-                        Button {
-                            guard let playerId = selectedPlayerId else { return }
-                            Task { try? await sonos.playMedia(playerId: playerId, uri: item.uri, metadata: item.metadata) }
-                        } label: {
-                            contentRow(item: item, isContainer: false)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-        }
-        .editorialCard(padding: 10)
-    }
-
-    private func contentRow(item: SonosContentItem, isContainer: Bool) -> some View {
-        HStack(spacing: 8) {
-            if !item.albumArtURI.isEmpty {
-                let artURL = item.albumArtURI.hasPrefix("http")
-                    ? URL(string: item.albumArtURI)
-                    : URL(string: "\(sonos.players.first?.baseURL ?? "")\(item.albumArtURI)")
-                AsyncImage(url: artURL) { image in
-                    image.resizable().aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Rectangle().fill(EditorialTheme.cardBackground)
-                }
-                .frame(width: 32, height: 32)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-            } else {
-                Image(systemName: isContainer ? "folder.fill" : "music.note")
-                    .font(.system(size: 10))
-                    .foregroundStyle(EditorialTheme.secondaryText)
-                    .frame(width: 32, height: 32)
-            }
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(item.title)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(EditorialTheme.primaryText)
-                    .lineLimit(1)
-                if !item.artist.isEmpty {
-                    Text(item.artist)
-                        .font(.system(size: 8))
-                        .foregroundStyle(EditorialTheme.secondaryText)
-                        .lineLimit(1)
-                }
-            }
-
-            Spacer(minLength: 0)
-
-            Image(systemName: isContainer ? "chevron.right" : "play.fill")
-                .font(.system(size: 9))
-                .foregroundStyle(isContainer ? EditorialTheme.secondaryText : EditorialTheme.accent)
-        }
-        .padding(.vertical, 3)
-    }
-
-    private func browseInto(objectID: String) async {
-        isBrowsing = true
-        let items = (try? await sonos.browseContent(objectID: objectID)) ?? []
-        await MainActor.run {
-            browseItems = items
-            isBrowsing = false
+            .editorialCard(padding: 10)
         }
     }
 
     // MARK: - Favorites
 
+    private var filteredFavorites: [SonosFavorite] {
+        let all = sonos.favorites.isEmpty ? sonos.localFavorites : sonos.favorites
+        guard !favoriteFilter.isEmpty else { return all }
+        return all.filter { $0.name.localizedCaseInsensitiveContains(favoriteFilter) }
+    }
+
     @ViewBuilder
     private var favoritesSection: some View {
-        if !sonos.favorites.isEmpty, let player = selectedPlayer {
+        let favs = filteredFavorites
+        if !favs.isEmpty || !favoriteFilter.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 sectionLabel("FAVORITES")
 
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                    ForEach(sonos.favorites) { fav in
+                // Filter bar
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 10))
+                        .foregroundStyle(EditorialTheme.secondaryText)
+                    TextField("Filter favorites…", text: $favoriteFilter)
+                        .font(.system(size: 11))
+                        .foregroundStyle(EditorialTheme.primaryText)
+                    if !favoriteFilter.isEmpty {
                         Button {
-                            Task { try? await sonos.playFavorite(groupId: player.groupId, favoriteId: fav.id) }
+                            favoriteFilter = ""
                         } label: {
-                            VStack(spacing: 4) {
-                                if let imageURL = fav.imageURL {
-                                    AsyncImage(url: imageURL) { image in
-                                        image.resizable().aspectRatio(contentMode: .fill)
-                                    } placeholder: {
-                                        Rectangle().fill(EditorialTheme.cardBackground)
-                                    }
-                                    .frame(height: 80)
-                                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                                } else {
-                                    Rectangle()
-                                        .fill(EditorialTheme.cardBackground)
-                                        .frame(height: 80)
-                                        .overlay(
-                                            Image(systemName: "music.note")
-                                                .font(.system(size: 16))
-                                                .foregroundStyle(EditorialTheme.secondaryText)
-                                        )
-                                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                                }
-                                Text(fav.name)
-                                    .font(.system(size: 8, weight: .medium))
-                                    .foregroundStyle(EditorialTheme.primaryText)
-                                    .lineLimit(2)
-                                    .multilineTextAlignment(.center)
-                                    .frame(height: 20)
-                            }
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(EditorialTheme.secondaryText)
                         }
                         .buttonStyle(.plain)
                     }
                 }
+                .padding(6)
+                .background(EditorialTheme.cardBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                if favs.isEmpty {
+                    Text("No matches")
+                        .font(.system(size: 10))
+                        .foregroundStyle(EditorialTheme.secondaryText)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                } else {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                        ForEach(favs) { fav in
+                            Button {
+                                playFavorite(fav)
+                            } label: {
+                                VStack(spacing: 4) {
+                                    if let imageURL = fav.imageURL {
+                                        AsyncImage(url: imageURL) { image in
+                                            image.resizable().aspectRatio(contentMode: .fill)
+                                        } placeholder: {
+                                            Rectangle().fill(EditorialTheme.cardBackground)
+                                        }
+                                        .frame(height: 80)
+                                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                                    } else {
+                                        Rectangle()
+                                            .fill(EditorialTheme.cardBackground)
+                                            .frame(height: 80)
+                                            .overlay(
+                                                Image(systemName: "music.note")
+                                                    .font(.system(size: 16))
+                                                    .foregroundStyle(EditorialTheme.secondaryText)
+                                            )
+                                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                                    }
+                                    Text(fav.name)
+                                        .font(.system(size: 8, weight: .medium))
+                                        .foregroundStyle(EditorialTheme.primaryText)
+                                        .lineLimit(2)
+                                        .multilineTextAlignment(.center)
+                                        .frame(height: 20)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func playFavorite(_ fav: SonosFavorite) {
+        guard let player = selectedPlayer else { return }
+        Task {
+            if sonos.isCloudLinked {
+                try? await sonos.playFavorite(groupId: player.groupId, favoriteId: fav.id)
+            } else if let uri = fav.uri {
+                try? await sonos.playMedia(playerId: player.id, uri: uri, metadata: fav.metadata ?? "")
             }
         }
     }
