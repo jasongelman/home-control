@@ -5,26 +5,20 @@ struct SonosControlView: View {
     @Environment(SonosManager.self) var sonos
     @Environment(SpotifyManager.self) var spotify
     @Environment(\.dismiss) private var dismiss
-    @State private var selectedPlayerId: String?
-    @State private var showGroupEditor = false
     @State private var favoriteFilter = ""
     @State private var spotifyQuery = ""
     @State private var searchTask: Task<Void, Never>?
 
-    private var selectedPlayer: SonosPlayer? {
-        guard let id = selectedPlayerId else { return nil }
-        return sonos.players.first(where: { $0.id == id })
-    }
+    private let gridColumns = [
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8),
+    ]
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
-                speakersSection
-                if let player = selectedPlayer {
-                    nowPlayingSection(player)
-                    transportSection(player)
-                }
-                volumeSection
+            VStack(spacing: 16) {
+                speakerCardsSection
                 sourcesSection
                 if spotify.isLinked {
                     spotifySearchSection
@@ -48,11 +42,6 @@ struct SonosControlView: View {
             }
         }
         .onAppear {
-            // Auto-select the first playing coordinator, or first coordinator
-            if selectedPlayerId == nil {
-                selectedPlayerId = sonos.coordinators.first(where: { $0.state == .playing })?.id
-                    ?? sonos.coordinators.first?.id
-            }
             Task {
                 if sonos.isCloudLinked {
                     try? await sonos.loadFavorites()
@@ -68,228 +57,140 @@ struct SonosControlView: View {
         }
     }
 
-    // MARK: - Speakers Section
+    // MARK: - Speaker Cards (2-Column)
 
-    private var speakersSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                sectionLabel("SPEAKERS")
-                Spacer()
-                Button {
-                    showGroupEditor.toggle()
-                } label: {
-                    Text(showGroupEditor ? "DONE" : "GROUP")
-                        .font(.system(size: 9, weight: .bold))
-                        .tracking(0.6)
-                        .foregroundStyle(EditorialTheme.accent)
-                }
-                .buttonStyle(.plain)
-            }
-
+    private var speakerCardsSection: some View {
+        let cols = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
+        return LazyVGrid(columns: cols, spacing: 10) {
             ForEach(sonos.coordinators) { coordinator in
-                let isSelected = coordinator.id == selectedPlayerId
-                let members = sonos.players.filter {
-                    coordinator.groupMembers.contains($0.id)
-                }
-
-                Button {
-                    selectedPlayerId = coordinator.id
-                } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 8) {
-                            Image(systemName: coordinator.state == .playing ? "speaker.wave.2.fill" : "speaker.fill")
-                                .font(.system(size: 10))
-                                .foregroundStyle(coordinator.state == .playing ? EditorialTheme.accent : EditorialTheme.secondaryText)
-                                .frame(width: 14)
-
-                            Text(coordinator.name)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(EditorialTheme.primaryText)
-
-                            if !members.isEmpty {
-                                Text("+\(members.count)")
-                                    .font(.system(size: 9, weight: .medium))
-                                    .foregroundStyle(EditorialTheme.secondaryText)
-                            }
-
-                            Spacer(minLength: 0)
-
-                            if coordinator.state == .playing, let track = coordinator.currentTrack {
-                                Text(track.title)
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(EditorialTheme.secondaryText)
-                                    .lineLimit(1)
-                                    .frame(maxWidth: 100, alignment: .trailing)
-                            }
-                        }
-
-                        if showGroupEditor && !members.isEmpty {
-                            ForEach(members) { member in
-                                HStack(spacing: 6) {
-                                    Image(systemName: "link")
-                                        .font(.system(size: 8))
-                                        .foregroundStyle(EditorialTheme.secondaryText)
-                                        .frame(width: 14)
-                                    Text(member.name)
-                                        .font(.system(size: 9))
-                                        .foregroundStyle(EditorialTheme.secondaryText)
-                                    Spacer()
-                                    Button("Remove") {
-                                        Task { try? await sonos.ungroupPlayer(playerId: member.id) }
-                                    }
-                                    .font(.system(size: 8, weight: .medium))
-                                    .foregroundStyle(.red)
-                                    .buttonStyle(.plain)
-                                }
-                                .padding(.leading, 4)
-                            }
-                        }
-                    }
-                    .padding(8)
-                    .background(isSelected ? EditorialTheme.cardBackground : Color.clear)
-                    .clipShape(RoundedRectangle(cornerRadius: EditorialTheme.cardRadius))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: EditorialTheme.cardRadius)
-                            .stroke(isSelected ? EditorialTheme.accent.opacity(0.4) : EditorialTheme.cardBorder, lineWidth: isSelected ? 1 : 0.5)
-                    )
-                }
-                .buttonStyle(.plain)
-
-                if showGroupEditor {
-                    groupAddRow(coordinator: coordinator)
-                }
+                speakerCard(coordinator)
             }
         }
     }
 
-    @ViewBuilder
-    private func groupAddRow(coordinator: SonosPlayer) -> some View {
-        let ungrouped = sonos.players.filter {
-            $0.id != coordinator.id && !coordinator.groupMembers.contains($0.id) && $0.isCoordinator && $0.id != coordinator.groupId
-        }
-        if !ungrouped.isEmpty {
-            HStack(spacing: 6) {
-                Text("Add to group:")
-                    .font(.system(size: 8))
-                    .foregroundStyle(EditorialTheme.secondaryText)
-                ForEach(ungrouped) { p in
-                    Button {
-                        Task { try? await sonos.groupPlayers(coordinatorId: coordinator.id, memberIds: [p.id]) }
-                    } label: {
-                        Text(p.name)
-                            .font(.system(size: 8, weight: .medium))
-                            .foregroundStyle(EditorialTheme.accent)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 4)
-                                    .stroke(EditorialTheme.accent, lineWidth: 0.5)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.leading, 22)
-            .padding(.bottom, 4)
-        }
-    }
+    private func speakerCard(_ coordinator: SonosPlayer) -> some View {
+        let p = sonos.players.first(where: { $0.id == coordinator.id }) ?? coordinator
+        let members = sonos.players.filter { coordinator.groupMembers.contains($0.id) }
+        let allSpeakers = [p] + members
 
-    // MARK: - Now Playing
-
-    private func nowPlayingSection(_ player: SonosPlayer) -> some View {
-        let p = sonos.players.first(where: { $0.id == player.id }) ?? player
         return VStack(spacing: 8) {
+            // Room name header
+            HStack(spacing: 4) {
+                Image(systemName: p.state == .playing ? "speaker.wave.2.fill" : "speaker.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(p.state == .playing ? EditorialTheme.accent : EditorialTheme.secondaryText)
+                Text(p.name.uppercased())
+                    .font(.system(size: 10, weight: .bold))
+                    .tracking(0.6)
+                    .foregroundStyle(EditorialTheme.primaryText)
+                    .lineLimit(1)
+                if !members.isEmpty {
+                    Text("+\(members.count)")
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundStyle(EditorialTheme.secondaryText)
+                }
+                Spacer(minLength: 0)
+            }
+
+            // Now playing
             if let track = p.currentTrack {
-                HStack(spacing: 12) {
+                HStack(spacing: 6) {
                     if let artURL = track.albumArtURL {
                         AsyncImage(url: artURL) { image in
                             image.resizable().aspectRatio(contentMode: .fill)
                         } placeholder: {
                             Rectangle().fill(EditorialTheme.cardBackground)
                         }
-                        .frame(width: 56, height: 56)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .frame(width: 36, height: 36)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
                     }
-
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 1) {
                         Text(track.title)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(EditorialTheme.primaryText)
                             .lineLimit(1)
                         if !track.artist.isEmpty {
                             Text(track.artist)
-                                .font(.system(size: 11))
+                                .font(.system(size: 8))
                                 .foregroundStyle(EditorialTheme.secondaryText)
-                                .lineLimit(1)
-                        }
-                        if !track.album.isEmpty {
-                            Text(track.album)
-                                .font(.system(size: 9))
-                                .foregroundStyle(EditorialTheme.tertiaryText)
                                 .lineLimit(1)
                         }
                     }
                     Spacer(minLength: 0)
                 }
-                .editorialCard(padding: 10)
 
-                // Progress bar
-                if track.duration > 0 {
-                    VStack(spacing: 2) {
-                        GeometryReader { geo in
-                            let progress = min(track.position / track.duration, 1.0)
-                            ZStack(alignment: .leading) {
-                                Rectangle().fill(EditorialTheme.cardBorder).frame(height: 2)
-                                Rectangle().fill(EditorialTheme.accent).frame(width: geo.size.width * progress, height: 2)
-                            }
-                        }
-                        .frame(height: 2)
-
-                        HStack {
-                            Text(formatTime(track.position))
-                            Spacer()
-                            Text(formatTime(track.duration))
-                        }
-                        .font(.system(size: 8, weight: .medium).monospacedDigit())
-                        .foregroundStyle(EditorialTheme.secondaryText)
+                // Transport controls
+                HStack(spacing: 16) {
+                    Spacer()
+                    transportButton("backward.fill", size: 10) {
+                        try? await sonos.previous(playerId: p.id)
                     }
-                }
-            } else {
-                HStack {
-                    Image(systemName: "speaker.fill")
-                        .font(.system(size: 14))
-                        .foregroundStyle(EditorialTheme.secondaryText)
-                    Text("Nothing playing on \(p.name)")
-                        .font(.system(size: 11))
-                        .foregroundStyle(EditorialTheme.secondaryText)
+                    transportButton(p.state == .playing ? "pause.fill" : "play.fill", size: 14) {
+                        if p.state == .playing {
+                            try? await sonos.pausePlayback(playerId: p.id)
+                        } else {
+                            try? await sonos.play(playerId: p.id)
+                        }
+                    }
+                    transportButton("forward.fill", size: 10) {
+                        try? await sonos.next(playerId: p.id)
+                    }
                     Spacer()
                 }
-                .editorialCard(padding: 10)
+            } else {
+                Text("Not playing")
+                    .font(.system(size: 9))
+                    .foregroundStyle(EditorialTheme.tertiaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-        }
-    }
 
-    // MARK: - Transport
+            // Volume for each speaker in this group
+            ForEach(allSpeakers, id: \.id) { speaker in
+                HStack(spacing: 4) {
+                    Button {
+                        Task { try? await sonos.setMute(playerId: speaker.id, muted: !speaker.isMuted) }
+                    } label: {
+                        Image(systemName: speaker.isMuted ? "speaker.slash.fill" : "speaker.wave.1.fill")
+                            .font(.system(size: 8))
+                            .foregroundStyle(speaker.isMuted ? EditorialTheme.secondaryText : EditorialTheme.accent)
+                            .frame(width: 12)
+                    }
+                    .buttonStyle(.plain)
 
-    private func transportSection(_ player: SonosPlayer) -> some View {
-        let p = sonos.players.first(where: { $0.id == player.id }) ?? player
-        return HStack(spacing: 28) {
-            Spacer()
-            transportButton("backward.fill") {
-                try? await sonos.previous(playerId: p.id)
-            }
-            transportButton(p.state == .playing ? "pause.fill" : "play.fill", size: 20) {
-                if p.state == .playing {
-                    try? await sonos.pausePlayback(playerId: p.id)
-                } else {
-                    try? await sonos.play(playerId: p.id)
+                    if allSpeakers.count > 1 {
+                        Text(speaker.name)
+                            .font(.system(size: 7, weight: .medium))
+                            .foregroundStyle(EditorialTheme.tertiaryText)
+                            .lineLimit(1)
+                            .frame(width: 40, alignment: .leading)
+                    }
+
+                    Slider(
+                        value: Binding(
+                            get: { Double(speaker.volume) },
+                            set: { newVal in
+                                Task { try? await sonos.setVolume(playerId: speaker.id, level: Int(newVal)) }
+                            }
+                        ),
+                        in: 0...100
+                    )
+                    .tint(EditorialTheme.accent)
+                    .controlSize(.mini)
+
+                    Text("\(speaker.volume)")
+                        .font(.system(size: 8, weight: .medium).monospacedDigit())
+                        .foregroundStyle(EditorialTheme.secondaryText)
+                        .frame(width: 18, alignment: .trailing)
                 }
             }
-            transportButton("forward.fill") {
-                try? await sonos.next(playerId: p.id)
-            }
-            Spacer()
         }
+        .padding(10)
+        .background(EditorialTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: EditorialTheme.cardRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: EditorialTheme.cardRadius)
+                .stroke(p.state == .playing ? EditorialTheme.accent.opacity(0.3) : EditorialTheme.cardBorder, lineWidth: 0.5)
+        )
     }
 
     private func transportButton(_ icon: String, size: CGFloat = 14, action: @escaping () async throws -> Void) -> some View {
@@ -299,54 +200,9 @@ struct SonosControlView: View {
             Image(systemName: icon)
                 .font(.system(size: size, weight: .medium))
                 .foregroundStyle(EditorialTheme.primaryText)
-                .frame(width: 36, height: 36)
+                .frame(width: 28, height: 28)
         }
         .buttonStyle(.plain)
-    }
-
-    // MARK: - Volume Section
-
-    private var volumeSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionLabel("VOLUME")
-
-            ForEach(sonos.players) { player in
-                HStack(spacing: 8) {
-                    Button {
-                        Task { try? await sonos.setMute(playerId: player.id, muted: !player.isMuted) }
-                    } label: {
-                        Image(systemName: player.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(player.isMuted ? EditorialTheme.secondaryText : EditorialTheme.accent)
-                            .frame(width: 16)
-                    }
-                    .buttonStyle(.plain)
-
-                    Text(player.name)
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(EditorialTheme.primaryText)
-                        .frame(width: 70, alignment: .leading)
-                        .lineLimit(1)
-
-                    Slider(
-                        value: Binding(
-                            get: { Double(player.volume) },
-                            set: { newVal in
-                                Task { try? await sonos.setVolume(playerId: player.id, level: Int(newVal)) }
-                            }
-                        ),
-                        in: 0...100
-                    )
-                    .tint(EditorialTheme.accent)
-
-                    Text("\(player.volume)")
-                        .font(.system(size: 9, weight: .medium).monospacedDigit())
-                        .foregroundStyle(EditorialTheme.secondaryText)
-                        .frame(width: 22, alignment: .trailing)
-                }
-            }
-        }
-        .editorialCard(padding: 10)
     }
 
     // MARK: - Sources (TV Audio)
@@ -356,10 +212,9 @@ struct SonosControlView: View {
         if !sonos.tvCapableSpeakers.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 sectionLabel("SOURCES")
-
                 Button {
-                    guard let playerId = selectedPlayerId else { return }
-                    Task { try? await sonos.playTVInput(playerId: playerId) }
+                    guard let coord = sonos.coordinators.first else { return }
+                    Task { try? await sonos.playTVInput(playerId: coord.id) }
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "tv")
@@ -389,7 +244,7 @@ struct SonosControlView: View {
 
     private var spotifySearchSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            sectionLabel("SPOTIFY SEARCH")
+            sectionLabel("SPOTIFY")
 
             // Search bar
             HStack(spacing: 6) {
@@ -401,7 +256,6 @@ struct SonosControlView: View {
                     .foregroundStyle(EditorialTheme.primaryText)
                     .onSubmit { performSpotifySearch() }
                     .onChange(of: spotifyQuery) {
-                        // Debounced search
                         searchTask?.cancel()
                         searchTask = Task {
                             try? await Task.sleep(for: .milliseconds(500))
@@ -426,141 +280,21 @@ struct SonosControlView: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
 
             if spotify.isSearching {
-                HStack {
-                    Spacer()
-                    ProgressView().scaleEffect(0.7)
-                    Spacer()
-                }
-                .padding(.vertical, 8)
+                HStack { Spacer(); ProgressView().scaleEffect(0.7); Spacer() }
+                    .padding(.vertical, 8)
+            } else if spotifyQuery.isEmpty {
+                // Empty state — nothing to show
             } else {
-                // Tracks
-                if let tracks = spotify.searchResults.tracks, !tracks.items.isEmpty {
-                    Text("TRACKS")
-                        .font(.system(size: 8, weight: .bold))
-                        .tracking(0.6)
-                        .foregroundStyle(EditorialTheme.tertiaryText)
-                        .padding(.top, 4)
-
-                    ForEach(tracks.items) { track in
-                        Button {
-                            playSpotifyItem(uri: track.uri, title: track.name)
-                        } label: {
-                            HStack(spacing: 8) {
-                                if let img = track.album.images.last {
-                                    AsyncImage(url: URL(string: img.url)) { image in
-                                        image.resizable().aspectRatio(contentMode: .fill)
-                                    } placeholder: {
-                                        Rectangle().fill(EditorialTheme.cardBackground)
-                                    }
-                                    .frame(width: 32, height: 32)
-                                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                                }
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(track.name)
-                                        .font(.system(size: 10, weight: .medium))
-                                        .foregroundStyle(EditorialTheme.primaryText)
-                                        .lineLimit(1)
-                                    Text(track.artists.map(\.name).joined(separator: ", "))
-                                        .font(.system(size: 8))
-                                        .foregroundStyle(EditorialTheme.secondaryText)
-                                        .lineLimit(1)
-                                }
-                                Spacer(minLength: 0)
-                                Image(systemName: "play.fill")
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(EditorialTheme.accent)
+                // Merge all results into a single 3-column grid
+                let allItems = spotifyResultItems()
+                if !allItems.isEmpty {
+                    LazyVGrid(columns: gridColumns, spacing: 10) {
+                        ForEach(allItems, id: \.uri) { item in
+                            Button { playSpotifyItem(uri: item.uri, title: item.title) } label: {
+                                artCard(imageURL: item.imageURL, title: item.title, subtitle: item.subtitle)
                             }
-                            .padding(.vertical, 2)
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
-                    }
-                }
-
-                // Albums
-                if let albums = spotify.searchResults.albums, !albums.items.isEmpty {
-                    Text("ALBUMS")
-                        .font(.system(size: 8, weight: .bold))
-                        .tracking(0.6)
-                        .foregroundStyle(EditorialTheme.tertiaryText)
-                        .padding(.top, 4)
-
-                    ForEach(albums.items) { album in
-                        Button {
-                            playSpotifyItem(uri: album.uri, title: album.name)
-                        } label: {
-                            HStack(spacing: 8) {
-                                if let img = album.images.last {
-                                    AsyncImage(url: URL(string: img.url)) { image in
-                                        image.resizable().aspectRatio(contentMode: .fill)
-                                    } placeholder: {
-                                        Rectangle().fill(EditorialTheme.cardBackground)
-                                    }
-                                    .frame(width: 32, height: 32)
-                                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                                }
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(album.name)
-                                        .font(.system(size: 10, weight: .medium))
-                                        .foregroundStyle(EditorialTheme.primaryText)
-                                        .lineLimit(1)
-                                    Text(album.artists.map(\.name).joined(separator: ", "))
-                                        .font(.system(size: 8))
-                                        .foregroundStyle(EditorialTheme.secondaryText)
-                                        .lineLimit(1)
-                                }
-                                Spacer(minLength: 0)
-                                Image(systemName: "play.fill")
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(EditorialTheme.accent)
-                            }
-                            .padding(.vertical, 2)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-
-                // Playlists
-                if let playlists = spotify.searchResults.playlists, !playlists.items.isEmpty {
-                    Text("PLAYLISTS")
-                        .font(.system(size: 8, weight: .bold))
-                        .tracking(0.6)
-                        .foregroundStyle(EditorialTheme.tertiaryText)
-                        .padding(.top, 4)
-
-                    ForEach(playlists.items) { playlist in
-                        Button {
-                            playSpotifyItem(uri: playlist.uri, title: playlist.name)
-                        } label: {
-                            HStack(spacing: 8) {
-                                if let img = playlist.images.first {
-                                    AsyncImage(url: URL(string: img.url)) { image in
-                                        image.resizable().aspectRatio(contentMode: .fill)
-                                    } placeholder: {
-                                        Rectangle().fill(EditorialTheme.cardBackground)
-                                    }
-                                    .frame(width: 32, height: 32)
-                                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                                }
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(playlist.name)
-                                        .font(.system(size: 10, weight: .medium))
-                                        .foregroundStyle(EditorialTheme.primaryText)
-                                        .lineLimit(1)
-                                    if let owner = playlist.owner?.display_name {
-                                        Text(owner)
-                                            .font(.system(size: 8))
-                                            .foregroundStyle(EditorialTheme.secondaryText)
-                                            .lineLimit(1)
-                                    }
-                                }
-                                Spacer(minLength: 0)
-                                Image(systemName: "play.fill")
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(EditorialTheme.accent)
-                            }
-                            .padding(.vertical, 2)
-                        }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -571,66 +305,41 @@ struct SonosControlView: View {
     private func performSpotifySearch() {
         let query = spotifyQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         Task {
-            do {
-                try await spotify.search(query: query)
-            } catch {
-                print("Spotify search error: \(error)")
-            }
+            do { try await spotify.search(query: query) }
+            catch { print("Spotify search error: \(error)") }
         }
     }
 
     private func playSpotifyItem(uri: String, title: String) {
-        guard let playerId = selectedPlayerId else { return }
+        guard let coord = sonos.coordinators.first else { return }
         let desc = sonos.spotifyServiceDesc ?? "SA_RINCON3079_X_#Svc3079-0-Token"
         let sonosURI = SpotifyManager.sonosURI(spotifyURI: uri, sn: sonos.spotifySN)
         let metadata = SpotifyManager.sonosMetadata(spotifyURI: uri, title: title, serviceDesc: desc)
-        Task { try? await sonos.playMedia(playerId: playerId, uri: sonosURI, metadata: metadata) }
+        Task { try? await sonos.playMedia(playerId: coord.id, uri: sonosURI, metadata: metadata) }
     }
 
-    // MARK: - Recently Played
+    // MARK: - Recently Played (3-Column Grid)
 
     private var recentlyPlayedSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             sectionLabel("RECENTLY PLAYED")
-
-            ForEach(spotify.recentTracks.prefix(8)) { track in
-                Button {
-                    playSpotifyItem(uri: track.uri, title: track.name)
-                } label: {
-                    HStack(spacing: 8) {
-                        if let img = track.album.images.last {
-                            AsyncImage(url: URL(string: img.url)) { image in
-                                image.resizable().aspectRatio(contentMode: .fill)
-                            } placeholder: {
-                                Rectangle().fill(EditorialTheme.cardBackground)
-                            }
-                            .frame(width: 32, height: 32)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                        }
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(track.name)
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(EditorialTheme.primaryText)
-                                .lineLimit(1)
-                            Text(track.artists.map(\.name).joined(separator: ", "))
-                                .font(.system(size: 8))
-                                .foregroundStyle(EditorialTheme.secondaryText)
-                                .lineLimit(1)
-                        }
-                        Spacer(minLength: 0)
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 9))
-                            .foregroundStyle(EditorialTheme.accent)
+            LazyVGrid(columns: gridColumns, spacing: 10) {
+                ForEach(spotify.recentTracks.prefix(9)) { track in
+                    Button { playSpotifyItem(uri: track.uri, title: track.name) } label: {
+                        artCard(
+                            imageURL: track.album.images.first.flatMap { URL(string: $0.url) },
+                            title: track.name,
+                            subtitle: track.artists.map(\.name).joined(separator: ", ")
+                        )
                     }
-                    .padding(.vertical, 2)
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
         .editorialCard(padding: 10)
     }
 
-    // MARK: - Favorites
+    // MARK: - Favorites (3-Column Grid)
 
     private var filteredFavorites: [SonosFavorite] {
         let all = sonos.favorites.isEmpty ? sonos.localFavorites : sonos.favorites
@@ -645,7 +354,6 @@ struct SonosControlView: View {
             VStack(alignment: .leading, spacing: 8) {
                 sectionLabel("FAVORITES")
 
-                // Filter bar
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 10))
@@ -654,9 +362,7 @@ struct SonosControlView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(EditorialTheme.primaryText)
                     if !favoriteFilter.isEmpty {
-                        Button {
-                            favoriteFilter = ""
-                        } label: {
+                        Button { favoriteFilter = "" } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.system(size: 10))
                                 .foregroundStyle(EditorialTheme.secondaryText)
@@ -675,38 +381,10 @@ struct SonosControlView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                 } else {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                    LazyVGrid(columns: gridColumns, spacing: 10) {
                         ForEach(favs) { fav in
-                            Button {
-                                playFavorite(fav)
-                            } label: {
-                                VStack(spacing: 4) {
-                                    if let imageURL = fav.imageURL {
-                                        AsyncImage(url: imageURL) { image in
-                                            image.resizable().aspectRatio(contentMode: .fill)
-                                        } placeholder: {
-                                            Rectangle().fill(EditorialTheme.cardBackground)
-                                        }
-                                        .frame(height: 80)
-                                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                                    } else {
-                                        Rectangle()
-                                            .fill(EditorialTheme.cardBackground)
-                                            .frame(height: 80)
-                                            .overlay(
-                                                Image(systemName: "music.note")
-                                                    .font(.system(size: 16))
-                                                    .foregroundStyle(EditorialTheme.secondaryText)
-                                            )
-                                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                                    }
-                                    Text(fav.name)
-                                        .font(.system(size: 8, weight: .medium))
-                                        .foregroundStyle(EditorialTheme.primaryText)
-                                        .lineLimit(2)
-                                        .multilineTextAlignment(.center)
-                                        .frame(height: 20)
-                                }
+                            Button { playFavorite(fav) } label: {
+                                artCard(imageURL: fav.imageURL, title: fav.name, subtitle: nil)
                             }
                             .buttonStyle(.plain)
                         }
@@ -717,12 +395,12 @@ struct SonosControlView: View {
     }
 
     private func playFavorite(_ fav: SonosFavorite) {
-        guard let player = selectedPlayer else { return }
+        guard let coord = sonos.coordinators.first else { return }
         Task {
             if sonos.isCloudLinked {
-                try? await sonos.playFavorite(groupId: player.groupId, favoriteId: fav.id)
+                try? await sonos.playFavorite(groupId: coord.groupId, favoriteId: fav.id)
             } else if let uri = fav.uri {
-                try? await sonos.playMedia(playerId: player.id, uri: uri, metadata: fav.metadata ?? "")
+                try? await sonos.playMedia(playerId: coord.id, uri: uri, metadata: fav.metadata ?? "")
             }
         }
     }
@@ -731,13 +409,13 @@ struct SonosControlView: View {
 
     @ViewBuilder
     private var playlistsSection: some View {
-        if !sonos.playlists.isEmpty, let player = selectedPlayer {
+        if !sonos.playlists.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 sectionLabel("PLAYLISTS")
-
                 ForEach(sonos.playlists) { pl in
                     Button {
-                        Task { try? await sonos.playPlaylist(groupId: player.groupId, playlistId: pl.id) }
+                        guard let coord = sonos.coordinators.first else { return }
+                        Task { try? await sonos.playPlaylist(groupId: coord.groupId, playlistId: pl.id) }
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "music.note.list")
@@ -762,6 +440,45 @@ struct SonosControlView: View {
         }
     }
 
+    // MARK: - Shared Art Card
+
+    private func artCard(imageURL: URL?, title: String, subtitle: String?) -> some View {
+        VStack(spacing: 4) {
+            if let imageURL {
+                AsyncImage(url: imageURL) { image in
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    Rectangle().fill(EditorialTheme.cardBackground)
+                }
+                .aspectRatio(1, contentMode: .fill)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            } else {
+                Rectangle()
+                    .fill(EditorialTheme.cardBackground)
+                    .aspectRatio(1, contentMode: .fill)
+                    .overlay(
+                        Image(systemName: "music.note")
+                            .font(.system(size: 18))
+                            .foregroundStyle(EditorialTheme.secondaryText)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            Text(title)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(EditorialTheme.primaryText)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+            if let subtitle, !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(.system(size: 8))
+                    .foregroundStyle(EditorialTheme.secondaryText)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     private func sectionLabel(_ text: String) -> some View {
@@ -771,9 +488,27 @@ struct SonosControlView: View {
             .foregroundStyle(EditorialTheme.secondaryText)
     }
 
-    private func formatTime(_ seconds: TimeInterval) -> String {
-        let mins = Int(seconds) / 60
-        let secs = Int(seconds) % 60
-        return String(format: "%d:%02d", mins, secs)
+    /// Flattened search results for the grid
+    private func spotifyResultItems() -> [(uri: String, title: String, subtitle: String, imageURL: URL?)] {
+        var items: [(uri: String, title: String, subtitle: String, imageURL: URL?)] = []
+        if let tracks = spotify.searchResults.tracks {
+            for t in tracks.items {
+                items.append((t.uri, t.name, t.artists.map(\.name).joined(separator: ", "),
+                              t.album.images.first.flatMap { URL(string: $0.url) }))
+            }
+        }
+        if let albums = spotify.searchResults.albums {
+            for a in albums.items {
+                items.append((a.uri, a.name, a.artists.map(\.name).joined(separator: ", "),
+                              a.images.first.flatMap { URL(string: $0.url) }))
+            }
+        }
+        if let playlists = spotify.searchResults.playlists {
+            for p in playlists.items {
+                items.append((p.uri, p.name, p.owner?.display_name ?? "",
+                              p.images.first.flatMap { URL(string: $0.url) }))
+            }
+        }
+        return items
     }
 }
