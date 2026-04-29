@@ -8,6 +8,7 @@ struct SonosControlView: View {
     @State private var favoriteFilter = ""
     @State private var spotifyQuery = ""
     @State private var searchTask: Task<Void, Never>?
+    @State private var selectedSpeakerIds: Set<String> = []
 
     private let gridColumns = [
         GridItem(.flexible(), spacing: 8),
@@ -42,6 +43,10 @@ struct SonosControlView: View {
             }
         }
         .onAppear {
+            // Select all speakers by default
+            if selectedSpeakerIds.isEmpty {
+                selectedSpeakerIds = Set(sonos.coordinators.map(\.id))
+            }
             Task {
                 if sonos.isCloudLinked {
                     try? await sonos.loadFavorites()
@@ -61,9 +66,10 @@ struct SonosControlView: View {
 
     private var speakerCardsSection: some View {
         let cols = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
-        return LazyVGrid(columns: cols, spacing: 10) {
+        return HStack(alignment: .top, spacing: 10) {
             ForEach(sonos.coordinators) { coordinator in
                 speakerCard(coordinator)
+                    .frame(maxWidth: .infinity)
             }
         }
     }
@@ -72,51 +78,75 @@ struct SonosControlView: View {
         let p = sonos.players.first(where: { $0.id == coordinator.id }) ?? coordinator
         let members = sonos.players.filter { coordinator.groupMembers.contains($0.id) }
         let allSpeakers = [p] + members
+        let isSelected = selectedSpeakerIds.contains(p.id)
 
         return VStack(spacing: 8) {
-            // Room name header
-            HStack(spacing: 4) {
-                Image(systemName: p.state == .playing ? "speaker.wave.2.fill" : "speaker.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(p.state == .playing ? EditorialTheme.accent : EditorialTheme.secondaryText)
-                Text(p.name.uppercased())
-                    .font(.system(size: 10, weight: .bold))
-                    .tracking(0.6)
-                    .foregroundStyle(EditorialTheme.primaryText)
-                    .lineLimit(1)
-                if !members.isEmpty {
-                    Text("+\(members.count)")
-                        .font(.system(size: 8, weight: .medium))
-                        .foregroundStyle(EditorialTheme.secondaryText)
-                }
-                Spacer(minLength: 0)
-            }
-
-            // Now playing
-            if let track = p.currentTrack {
-                HStack(spacing: 6) {
-                    if let artURL = track.albumArtURL {
-                        AsyncImage(url: artURL) { image in
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        } placeholder: {
-                            Rectangle().fill(EditorialTheme.cardBackground)
-                        }
-                        .frame(width: 36, height: 36)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
+            // Room name header — tap to select/deselect
+            Button {
+                if selectedSpeakerIds.contains(p.id) {
+                    // Don't allow deselecting if it's the only one selected
+                    if selectedSpeakerIds.count > 1 {
+                        selectedSpeakerIds.remove(p.id)
                     }
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(track.title)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(EditorialTheme.primaryText)
-                            .lineLimit(1)
-                        if !track.artist.isEmpty {
-                            Text(track.artist)
-                                .font(.system(size: 8))
-                                .foregroundStyle(EditorialTheme.secondaryText)
-                                .lineLimit(1)
-                        }
+                } else {
+                    selectedSpeakerIds.insert(p.id)
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 10))
+                        .foregroundStyle(isSelected ? EditorialTheme.accent : EditorialTheme.secondaryText)
+                    Text(p.name.uppercased())
+                        .font(.system(size: 10, weight: .bold))
+                        .tracking(0.6)
+                        .foregroundStyle(EditorialTheme.primaryText)
+                        .lineLimit(1)
+                    if !members.isEmpty {
+                        Text("+\(members.count)")
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundStyle(EditorialTheme.secondaryText)
                     }
                     Spacer(minLength: 0)
+                }
+            }
+            .buttonStyle(.plain)
+
+            // Album art — same size as the 3-column grid art cards
+            if let track = p.currentTrack {
+                let artURL = track.albumArtURL
+                if let artURL {
+                    AsyncImage(url: artURL) { image in
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Rectangle().fill(EditorialTheme.cardBackground)
+                    }
+                    .aspectRatio(1, contentMode: .fill)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                } else {
+                    Rectangle()
+                        .fill(EditorialTheme.cardBackground)
+                        .aspectRatio(1, contentMode: .fill)
+                        .overlay(
+                            Image(systemName: "music.note")
+                                .font(.system(size: 18))
+                                .foregroundStyle(EditorialTheme.secondaryText)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+
+                // Track title + artist below art
+                Text(track.title)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(EditorialTheme.primaryText)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                if !track.artist.isEmpty {
+                    Text(track.artist)
+                        .font(.system(size: 8))
+                        .foregroundStyle(EditorialTheme.secondaryText)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity)
                 }
 
                 // Transport controls
@@ -138,10 +168,21 @@ struct SonosControlView: View {
                     Spacer()
                 }
             } else {
-                Text("Not playing")
-                    .font(.system(size: 9))
-                    .foregroundStyle(EditorialTheme.tertiaryText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // Not playing — show placeholder art at same aspect ratio
+                Rectangle()
+                    .fill(EditorialTheme.cardBackground)
+                    .aspectRatio(1, contentMode: .fill)
+                    .overlay(
+                        VStack(spacing: 4) {
+                            Image(systemName: "speaker.fill")
+                                .font(.system(size: 18))
+                                .foregroundStyle(EditorialTheme.tertiaryText)
+                            Text("Not playing")
+                                .font(.system(size: 9))
+                                .foregroundStyle(EditorialTheme.tertiaryText)
+                        }
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
             }
 
             // Volume for each speaker in this group
@@ -189,7 +230,7 @@ struct SonosControlView: View {
         .clipShape(RoundedRectangle(cornerRadius: EditorialTheme.cardRadius))
         .overlay(
             RoundedRectangle(cornerRadius: EditorialTheme.cardRadius)
-                .stroke(p.state == .playing ? EditorialTheme.accent.opacity(0.3) : EditorialTheme.cardBorder, lineWidth: 0.5)
+                .stroke(isSelected ? EditorialTheme.accent.opacity(0.4) : EditorialTheme.cardBorder, lineWidth: isSelected ? 1.5 : 0.5)
         )
     }
 
@@ -213,8 +254,8 @@ struct SonosControlView: View {
             VStack(alignment: .leading, spacing: 8) {
                 sectionLabel("SOURCES")
                 Button {
-                    guard let coord = sonos.coordinators.first else { return }
-                    Task { try? await sonos.playTVInput(playerId: coord.id) }
+                    let targets = selectedCoordinators
+                    Task { for coord in targets { try? await sonos.playTVInput(playerId: coord.id) } }
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "tv")
@@ -310,12 +351,23 @@ struct SonosControlView: View {
         }
     }
 
+    /// Coordinators the user has selected for playback.
+    private var selectedCoordinators: [SonosPlayer] {
+        let sel = sonos.coordinators.filter { selectedSpeakerIds.contains($0.id) }
+        return sel.isEmpty ? Array(sonos.coordinators.prefix(1)) : sel
+    }
+
     private func playSpotifyItem(uri: String, title: String) {
-        guard let coord = sonos.coordinators.first else { return }
+        let targets = selectedCoordinators
+        guard !targets.isEmpty else { return }
         let desc = sonos.spotifyServiceDesc ?? "SA_RINCON3079_X_#Svc3079-0-Token"
         let sonosURI = SpotifyManager.sonosURI(spotifyURI: uri, sn: sonos.spotifySN)
         let metadata = SpotifyManager.sonosMetadata(spotifyURI: uri, title: title, serviceDesc: desc)
-        Task { try? await sonos.playMedia(playerId: coord.id, uri: sonosURI, metadata: metadata) }
+        Task {
+            for coord in targets {
+                try? await sonos.playMedia(playerId: coord.id, uri: sonosURI, metadata: metadata)
+            }
+        }
     }
 
     // MARK: - Recently Played (3-Column Grid)
@@ -395,12 +447,15 @@ struct SonosControlView: View {
     }
 
     private func playFavorite(_ fav: SonosFavorite) {
-        guard let coord = sonos.coordinators.first else { return }
+        let targets = selectedCoordinators
+        guard !targets.isEmpty else { return }
         Task {
-            if sonos.isCloudLinked {
-                try? await sonos.playFavorite(groupId: coord.groupId, favoriteId: fav.id)
-            } else if let uri = fav.uri {
-                try? await sonos.playMedia(playerId: coord.id, uri: uri, metadata: fav.metadata ?? "")
+            for coord in targets {
+                if sonos.isCloudLinked {
+                    try? await sonos.playFavorite(groupId: coord.groupId, favoriteId: fav.id)
+                } else if let uri = fav.uri {
+                    try? await sonos.playMedia(playerId: coord.id, uri: uri, metadata: fav.metadata ?? "")
+                }
             }
         }
     }
@@ -414,8 +469,8 @@ struct SonosControlView: View {
                 sectionLabel("PLAYLISTS")
                 ForEach(sonos.playlists) { pl in
                     Button {
-                        guard let coord = sonos.coordinators.first else { return }
-                        Task { try? await sonos.playPlaylist(groupId: coord.groupId, playlistId: pl.id) }
+                        let targets = selectedCoordinators
+                        Task { for coord in targets { try? await sonos.playPlaylist(groupId: coord.groupId, playlistId: pl.id) } }
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "music.note.list")
