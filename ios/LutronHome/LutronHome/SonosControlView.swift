@@ -3,10 +3,13 @@ import SwiftUI
 /// Full-screen Sonos control hub — speakers, groups, volume, now-playing, favorites.
 struct SonosControlView: View {
     @Environment(SonosManager.self) var sonos
+    @Environment(SpotifyManager.self) var spotify
     @Environment(\.dismiss) private var dismiss
     @State private var selectedPlayerId: String?
     @State private var showGroupEditor = false
     @State private var favoriteFilter = ""
+    @State private var spotifyQuery = ""
+    @State private var searchTask: Task<Void, Never>?
 
     private var selectedPlayer: SonosPlayer? {
         guard let id = selectedPlayerId else { return nil }
@@ -23,6 +26,9 @@ struct SonosControlView: View {
                 }
                 volumeSection
                 sourcesSection
+                if spotify.isLinked {
+                    spotifySearchSection
+                }
                 favoritesSection
                 if sonos.isCloudLinked {
                     playlistsSection
@@ -371,6 +377,202 @@ struct SonosControlView: View {
             }
             .editorialCard(padding: 10)
         }
+    }
+
+    // MARK: - Spotify Search
+
+    private var spotifySearchSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionLabel("SPOTIFY SEARCH")
+
+            // Search bar
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 10))
+                    .foregroundStyle(EditorialTheme.secondaryText)
+                TextField("Search tracks, albums, playlists…", text: $spotifyQuery)
+                    .font(.system(size: 11))
+                    .foregroundStyle(EditorialTheme.primaryText)
+                    .onSubmit { performSpotifySearch() }
+                    .onChange(of: spotifyQuery) {
+                        // Debounced search
+                        searchTask?.cancel()
+                        searchTask = Task {
+                            try? await Task.sleep(for: .milliseconds(500))
+                            guard !Task.isCancelled else { return }
+                            performSpotifySearch()
+                        }
+                    }
+                if !spotifyQuery.isEmpty {
+                    Button {
+                        spotifyQuery = ""
+                        Task { @MainActor in spotify.searchResults = SpotifySearchResults() }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(EditorialTheme.secondaryText)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(6)
+            .background(EditorialTheme.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            if spotify.isSearching {
+                HStack {
+                    Spacer()
+                    ProgressView().scaleEffect(0.7)
+                    Spacer()
+                }
+                .padding(.vertical, 8)
+            } else {
+                // Tracks
+                if let tracks = spotify.searchResults.tracks, !tracks.items.isEmpty {
+                    Text("TRACKS")
+                        .font(.system(size: 8, weight: .bold))
+                        .tracking(0.6)
+                        .foregroundStyle(EditorialTheme.tertiaryText)
+                        .padding(.top, 4)
+
+                    ForEach(tracks.items) { track in
+                        Button {
+                            playSpotifyItem(uri: track.uri, title: track.name)
+                        } label: {
+                            HStack(spacing: 8) {
+                                if let img = track.album.images.last {
+                                    AsyncImage(url: URL(string: img.url)) { image in
+                                        image.resizable().aspectRatio(contentMode: .fill)
+                                    } placeholder: {
+                                        Rectangle().fill(EditorialTheme.cardBackground)
+                                    }
+                                    .frame(width: 32, height: 32)
+                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                                }
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(track.name)
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundStyle(EditorialTheme.primaryText)
+                                        .lineLimit(1)
+                                    Text(track.artists.map(\.name).joined(separator: ", "))
+                                        .font(.system(size: 8))
+                                        .foregroundStyle(EditorialTheme.secondaryText)
+                                        .lineLimit(1)
+                                }
+                                Spacer(minLength: 0)
+                                Image(systemName: "play.fill")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(EditorialTheme.accent)
+                            }
+                            .padding(.vertical, 2)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                // Albums
+                if let albums = spotify.searchResults.albums, !albums.items.isEmpty {
+                    Text("ALBUMS")
+                        .font(.system(size: 8, weight: .bold))
+                        .tracking(0.6)
+                        .foregroundStyle(EditorialTheme.tertiaryText)
+                        .padding(.top, 4)
+
+                    ForEach(albums.items) { album in
+                        Button {
+                            playSpotifyItem(uri: album.uri, title: album.name)
+                        } label: {
+                            HStack(spacing: 8) {
+                                if let img = album.images.last {
+                                    AsyncImage(url: URL(string: img.url)) { image in
+                                        image.resizable().aspectRatio(contentMode: .fill)
+                                    } placeholder: {
+                                        Rectangle().fill(EditorialTheme.cardBackground)
+                                    }
+                                    .frame(width: 32, height: 32)
+                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                                }
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(album.name)
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundStyle(EditorialTheme.primaryText)
+                                        .lineLimit(1)
+                                    Text(album.artists.map(\.name).joined(separator: ", "))
+                                        .font(.system(size: 8))
+                                        .foregroundStyle(EditorialTheme.secondaryText)
+                                        .lineLimit(1)
+                                }
+                                Spacer(minLength: 0)
+                                Image(systemName: "play.fill")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(EditorialTheme.accent)
+                            }
+                            .padding(.vertical, 2)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                // Playlists
+                if let playlists = spotify.searchResults.playlists, !playlists.items.isEmpty {
+                    Text("PLAYLISTS")
+                        .font(.system(size: 8, weight: .bold))
+                        .tracking(0.6)
+                        .foregroundStyle(EditorialTheme.tertiaryText)
+                        .padding(.top, 4)
+
+                    ForEach(playlists.items) { playlist in
+                        Button {
+                            playSpotifyItem(uri: playlist.uri, title: playlist.name)
+                        } label: {
+                            HStack(spacing: 8) {
+                                if let img = playlist.images.first {
+                                    AsyncImage(url: URL(string: img.url)) { image in
+                                        image.resizable().aspectRatio(contentMode: .fill)
+                                    } placeholder: {
+                                        Rectangle().fill(EditorialTheme.cardBackground)
+                                    }
+                                    .frame(width: 32, height: 32)
+                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                                }
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(playlist.name)
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundStyle(EditorialTheme.primaryText)
+                                        .lineLimit(1)
+                                    if let owner = playlist.owner?.display_name {
+                                        Text(owner)
+                                            .font(.system(size: 8))
+                                            .foregroundStyle(EditorialTheme.secondaryText)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                Spacer(minLength: 0)
+                                Image(systemName: "play.fill")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(EditorialTheme.accent)
+                            }
+                            .padding(.vertical, 2)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .editorialCard(padding: 10)
+    }
+
+    private func performSpotifySearch() {
+        let query = spotifyQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task { try? await spotify.search(query: query) }
+    }
+
+    private func playSpotifyItem(uri: String, title: String) {
+        guard let playerId = selectedPlayerId else { return }
+        let desc = sonos.spotifyServiceDesc ?? "SA_RINCON3079_X_#Svc3079-0-Token"
+        let sonosURI = SpotifyManager.sonosURI(spotifyURI: uri, sn: sonos.spotifySN)
+        let metadata = SpotifyManager.sonosMetadata(spotifyURI: uri, title: title, serviceDesc: desc)
+        Task { try? await sonos.playMedia(playerId: playerId, uri: sonosURI, metadata: metadata) }
     }
 
     // MARK: - Favorites

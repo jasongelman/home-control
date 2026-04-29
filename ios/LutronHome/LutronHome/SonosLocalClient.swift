@@ -404,6 +404,11 @@ actor SonosLocalClient {
     // MARK: - Content Browsing
 
     func browseFavorites(player: SonosPlayer) async throws -> [SonosContentItem] {
+        let (items, _) = try await browseFavoritesWithRaw(player: player)
+        return items
+    }
+
+    func browseFavoritesWithRaw(player: SonosPlayer) async throws -> ([SonosContentItem], Data) {
         let data = try await soapRequest(
             baseURL: player.baseURL, path: contentDirectoryPath,
             service: contentDirectoryService, action: "Browse",
@@ -416,7 +421,7 @@ actor SonosLocalClient {
                 <SortCriteria></SortCriteria>
                 """
         )
-        return FavoritesBrowseParser(data: data, playerBaseURL: player.baseURL).parse()
+        return (FavoritesBrowseParser(data: data, playerBaseURL: player.baseURL).parse(), data)
     }
 
     func browseContent(player: SonosPlayer, objectID: String, start: Int = 0, count: Int = 100) async throws -> [SonosContentItem] {

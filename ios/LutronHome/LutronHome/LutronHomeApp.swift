@@ -14,6 +14,7 @@ struct LutronHomeApp: App {
     @State private var totalConnect = TotalConnectManager()
     @State private var ecobee = EcobeeManager()
     @State private var sonos = SonosManager()
+    @State private var spotify = SpotifyManager()
     @State private var weather = WeatherManager()
     @Environment(\.scenePhase) private var scenePhase
     @State private var showVoiceInput = false
@@ -46,6 +47,7 @@ struct LutronHomeApp: App {
                 .environment(totalConnect)
                 .environment(ecobee)
                 .environment(sonos)
+                .environment(spotify)
                 .environment(weather)
                 .preferredColorScheme(.light)
                 .onAppear {

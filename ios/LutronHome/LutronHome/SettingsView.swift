@@ -11,6 +11,7 @@ struct SettingsView: View {
     @Environment(TotalConnectManager.self) var totalConnect
     @Environment(EcobeeManager.self) var ecobee
     @Environment(SonosManager.self) var sonos
+    @Environment(SpotifyManager.self) var spotify
     @State private var host: String = ""
     @State private var chatApiKey: String = ""
     @State private var hcClientId: String = ""
@@ -24,6 +25,7 @@ struct SettingsView: View {
     @State private var tcUserCode: String = ""
     @State private var sonosClientId: String = ""
     @State private var sonosClientSecret: String = ""
+    @State private var spotifyClientId: String = ""
 
     private let oauthContext = OAuthPresentationContext()
 
@@ -585,6 +587,69 @@ struct SettingsView: View {
                 Text("Speakers are discovered automatically on your local network. Cloud linking is optional — enables browsing favorites and playlists. Register at developer.sonos.com for credentials.")
             }
 
+            // MARK: - Spotify
+
+            Section {
+                HStack {
+                    Image(systemName: "waveform")
+                        .foregroundStyle(.green)
+                    Text("Spotify")
+                        .fontWeight(.medium)
+                    Spacer()
+                    if spotify.isLinked {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                }
+
+                if !spotify.isLinked {
+                    TextField("Spotify Client ID", text: $spotifyClientId)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .onChange(of: spotifyClientId) { _, val in
+                            spotify.setClientId(val)
+                        }
+
+                    Button {
+                        Task {
+                            do {
+                                try await spotify.startOAuth(from: oauthContext)
+                            } catch {
+                                print("Spotify OAuth error: \(error)")
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: "link")
+                            Text("Link Spotify")
+                        }
+                    }
+                    .disabled(spotifyClientId.isEmpty)
+                    .tint(.green)
+                } else {
+                    HStack {
+                        Text("Status")
+                        Spacer()
+                        Text("Connected")
+                            .foregroundStyle(.green)
+                    }
+
+                    Button(role: .destructive) {
+                        spotify.unlink()
+                    } label: {
+                        HStack {
+                            Image(systemName: "link.badge.plus")
+                                .symbolRenderingMode(.multicolor)
+                            Text("Unlink Spotify")
+                        }
+                    }
+                }
+            } header: {
+                Text("Spotify")
+            } footer: {
+                Text("Search and play Spotify content on your Sonos speakers. Requires a Spotify Client ID from developer.spotify.com — create an app, add \(Text("lutronhome://oauth/spotify").bold()) as a redirect URI.")
+            }
+
             // MARK: - Resideo / Total Connect 2.0
 
             Section {
@@ -733,6 +798,7 @@ struct SettingsView: View {
             myqPassword = myQ.password
             sonosClientId = KeychainHelper.loadString(for: "sonos-clientId") ?? ""
             sonosClientSecret = KeychainHelper.loadString(for: "sonos-clientSecret") ?? ""
+            spotifyClientId = UserDefaults.standard.string(forKey: "spotify_client_id") ?? ""
         }
     }
 }

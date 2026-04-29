@@ -277,9 +277,14 @@ class SonosManager: @unchecked Sendable {
 
     // MARK: - Content Browsing
 
+    /// Spotify service descriptor extracted from Sonos favorites metadata (e.g. "SA_RINCON3079_X_#Svc3079-517804c8-Token")
+    var spotifyServiceDesc: String?
+    /// Spotify serial number from Sonos system (the `sn=` parameter)
+    var spotifySN: Int = 3
+
     func loadLocalFavorites() async throws {
         guard let player = players.first else { return }
-        let items = try await localClient.browseFavorites(player: player)
+        let (items, rawData) = try await localClient.browseFavoritesWithRaw(player: player)
         let favs: [SonosFavorite] = items.compactMap { item in
             guard !item.title.isEmpty else { return nil }
             let artURL: URL? = {
@@ -295,6 +300,47 @@ class SonosManager: @unchecked Sendable {
             )
         }
         await MainActor.run { localFavorites = favs }
+
+        // Extract Spotify service descriptor from any Spotify favorite
+        extractSpotifyDescriptor(from: rawData)
+    }
+
+    private func extractSpotifyDescriptor(from data: Data) {
+        guard let xml = String(data: data, encoding: .utf8) else { return }
+        let decoded = xml
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+
+        // Find a Spotify favorite by looking for sid=12 in the URI
+        if let snMatch = try? NSRegularExpression(pattern: "sid=12[^>]*sn=(\\d+)")
+            .firstMatch(in: decoded, range: NSRange(decoded.startIndex..., in: decoded)),
+           let snRange = Range(snMatch.range(at: 1), in: decoded) {
+            spotifySN = Int(decoded[snRange]) ?? 3
+        }
+
+        // Extract the SA_RINCON descriptor from metadata
+        if let descMatch = try? NSRegularExpression(pattern: "(SA_RINCON\\d+_X_#Svc\\d+-[^<]+)")
+            .firstMatch(in: decoded, range: NSRange(decoded.startIndex..., in: decoded)),
+           let descRange = Range(descMatch.range(at: 1), in: decoded) {
+            // Only grab it if it's near a Spotify reference
+            let desc = String(decoded[descRange])
+            // Check it's not the Sonos Radio one (77575)
+            if !desc.contains("77575") {
+                spotifyServiceDesc = desc
+            }
+        }
+
+        // More targeted: find desc near spotify URIs
+        if spotifyServiceDesc == nil {
+            let pattern = "spotify.*?<desc[^>]*>(SA_RINCON\\d+_X_#Svc[^<]+)</desc>"
+            if let match = try? NSRegularExpression(pattern: pattern, options: .dotMatchesLineSeparators)
+                .firstMatch(in: decoded, range: NSRange(decoded.startIndex..., in: decoded)),
+               let range = Range(match.range(at: 1), in: decoded) {
+                spotifyServiceDesc = String(decoded[range])
+            }
+        }
     }
 
     func playMedia(playerId: String, uri: String, metadata: String = "") async throws {
