@@ -129,7 +129,7 @@ class SpotifyManager: @unchecked Sendable {
             URLQueryItem(name: "client_id", value: cid),
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "redirect_uri", value: redirectURI),
-            URLQueryItem(name: "scope", value: "user-read-private"),
+            URLQueryItem(name: "scope", value: "user-read-private user-read-recently-played user-top-read user-library-read"),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
             URLQueryItem(name: "code_challenge", value: challenge),
         ]
@@ -235,12 +235,64 @@ class SpotifyManager: @unchecked Sendable {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+        guard let http = response as? HTTPURLResponse else {
+            throw SpotifyError.searchFailed
+        }
+        if http.statusCode != 200 {
+            let body = String(data: data, encoding: .utf8) ?? ""
+            print("Spotify search failed (\(http.statusCode)): \(body)")
+            if http.statusCode == 401 {
+                // Token expired, clear and retry once
+                accessToken = nil
+                let newToken = try await validToken()
+                var retryReq = request
+                retryReq.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
+                let (retryData, retryResp) = try await URLSession.shared.data(for: retryReq)
+                guard let retryHttp = retryResp as? HTTPURLResponse, retryHttp.statusCode == 200 else {
+                    throw SpotifyError.searchFailed
+                }
+                let results = try JSONDecoder().decode(SpotifySearchResults.self, from: retryData)
+                await MainActor.run { searchResults = results }
+                return
+            }
             throw SpotifyError.searchFailed
         }
 
         let results = try JSONDecoder().decode(SpotifySearchResults.self, from: data)
         await MainActor.run { searchResults = results }
+    }
+
+    // MARK: - Recently Played & Top Tracks
+
+    var recentTracks: [SpotifyTrackItem] = []
+
+    func loadRecentlyPlayed() async throws {
+        let token = try await validToken()
+        var request = URLRequest(url: URL(string: "\(apiBase)/me/player/recently-played?limit=20")!)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            print("Spotify recently-played failed: \(String(data: data, encoding: .utf8) ?? "")")
+            return
+        }
+
+        struct RecentlyPlayedResponse: Codable {
+            struct PlayHistoryItem: Codable {
+                let track: SpotifyTrackItem
+            }
+            let items: [PlayHistoryItem]
+        }
+
+        let resp = try JSONDecoder().decode(RecentlyPlayedResponse.self, from: data)
+        // Deduplicate by track ID, keep first occurrence (most recent)
+        var seen = Set<String>()
+        let unique = resp.items.compactMap { item -> SpotifyTrackItem? in
+            guard !seen.contains(item.track.id) else { return nil }
+            seen.insert(item.track.id)
+            return item.track
+        }
+        await MainActor.run { recentTracks = unique }
     }
 
     // MARK: - Token Management

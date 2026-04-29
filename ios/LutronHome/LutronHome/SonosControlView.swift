@@ -28,6 +28,9 @@ struct SonosControlView: View {
                 sourcesSection
                 if spotify.isLinked {
                     spotifySearchSection
+                    if !spotify.recentTracks.isEmpty && spotifyQuery.isEmpty {
+                        recentlyPlayedSection
+                    }
                 }
                 favoritesSection
                 if sonos.isCloudLinked {
@@ -57,6 +60,9 @@ struct SonosControlView: View {
                 }
                 if sonos.favorites.isEmpty {
                     try? await sonos.loadLocalFavorites()
+                }
+                if spotify.isLinked {
+                    try? await spotify.loadRecentlyPlayed()
                 }
             }
         }
@@ -564,7 +570,13 @@ struct SonosControlView: View {
 
     private func performSpotifySearch() {
         let query = spotifyQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        Task { try? await spotify.search(query: query) }
+        Task {
+            do {
+                try await spotify.search(query: query)
+            } catch {
+                print("Spotify search error: \(error)")
+            }
+        }
     }
 
     private func playSpotifyItem(uri: String, title: String) {
@@ -573,6 +585,49 @@ struct SonosControlView: View {
         let sonosURI = SpotifyManager.sonosURI(spotifyURI: uri, sn: sonos.spotifySN)
         let metadata = SpotifyManager.sonosMetadata(spotifyURI: uri, title: title, serviceDesc: desc)
         Task { try? await sonos.playMedia(playerId: playerId, uri: sonosURI, metadata: metadata) }
+    }
+
+    // MARK: - Recently Played
+
+    private var recentlyPlayedSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionLabel("RECENTLY PLAYED")
+
+            ForEach(spotify.recentTracks.prefix(8)) { track in
+                Button {
+                    playSpotifyItem(uri: track.uri, title: track.name)
+                } label: {
+                    HStack(spacing: 8) {
+                        if let img = track.album.images.last {
+                            AsyncImage(url: URL(string: img.url)) { image in
+                                image.resizable().aspectRatio(contentMode: .fill)
+                            } placeholder: {
+                                Rectangle().fill(EditorialTheme.cardBackground)
+                            }
+                            .frame(width: 32, height: 32)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(track.name)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(EditorialTheme.primaryText)
+                                .lineLimit(1)
+                            Text(track.artists.map(\.name).joined(separator: ", "))
+                                .font(.system(size: 8))
+                                .foregroundStyle(EditorialTheme.secondaryText)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(EditorialTheme.accent)
+                    }
+                    .padding(.vertical, 2)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .editorialCard(padding: 10)
     }
 
     // MARK: - Favorites
