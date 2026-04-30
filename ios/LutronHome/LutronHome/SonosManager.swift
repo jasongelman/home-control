@@ -64,7 +64,7 @@ class SonosManager: @unchecked Sendable {
             await discover()
 
             // Start position polling
-            startPositionPolling()
+            await MainActor.run { startPositionPolling() }
         }
     }
 
@@ -82,37 +82,46 @@ class SonosManager: @unchecked Sendable {
         let discovered = await localClient.discoverPlayers()
         guard !discovered.isEmpty else { return }
 
-        // Fetch full state for each player
-        var fullPlayers: [SonosPlayer] = []
-        for var player in discovered {
-            do {
-                player.state = try await localClient.getTransportInfo(player: player)
-                player.currentTrack = try await localClient.getPositionInfo(player: player)
-                player.volume = try await localClient.getVolume(player: player)
-                player.isMuted = try await localClient.getMute(player: player)
-            } catch {
-                print("SonosManager: failed to poll \(player.name) — \(error)")
+        // Fetch full state for all players in parallel
+        let client = localClient
+        let port = listenerPort
+        let fullPlayers: [SonosPlayer] = await withTaskGroup(of: SonosPlayer.self) { group in
+            for player in discovered {
+                group.addTask {
+                    var p = player
+                    async let state = client.getTransportInfo(player: p)
+                    async let track = client.getPositionInfo(player: p)
+                    async let vol = client.getVolume(player: p)
+                    async let mute = client.getMute(player: p)
+                    p.state = (try? await state) ?? .stopped
+                    p.currentTrack = try? await track
+                    p.volume = (try? await vol) ?? 0
+                    p.isMuted = (try? await mute) ?? false
+                    // Subscribe to events
+                    if port > 0 {
+                        await client.subscribeAll(player: p, callbackPort: port)
+                    }
+                    return p
+                }
             }
-            fullPlayers.append(player)
-
-            // Subscribe to events
-            if listenerPort > 0 {
-                await localClient.subscribeAll(player: player, callbackPort: listenerPort)
-            }
+            var results: [SonosPlayer] = []
+            for await player in group { results.append(player) }
+            return results
         }
 
         // Parse zone group topology from any player to get group info
-        if let firstPlayer = fullPlayers.first {
+        var enrichedPlayers = fullPlayers
+        if let firstPlayer = enrichedPlayers.first {
             do {
                 let topoData = try await localClient.getZoneGroupState(player: firstPlayer)
-                updateGroupTopology(data: topoData, players: &fullPlayers)
+                updateGroupTopology(data: topoData, players: &enrichedPlayers)
             } catch {
                 print("SonosManager: failed to get topology — \(error)")
             }
         }
 
         await MainActor.run {
-            self.players = fullPlayers
+            self.players = enrichedPlayers
         }
         saveTopologyCache()
 
@@ -175,6 +184,17 @@ class SonosManager: @unchecked Sendable {
                     self.players[idx].state = state
                     if let track {
                         self.players[idx].currentTrack = track
+                    }
+                    // Fetch full track info (including album art) after transport change
+                    let player = self.players[idx]
+                    Task {
+                        if let fullTrack = try? await self.localClient.getPositionInfo(player: player) {
+                            await MainActor.run {
+                                if let i = self.players.firstIndex(where: { $0.id == player.id }) {
+                                    self.players[i].currentTrack = fullTrack
+                                }
+                            }
+                        }
                     }
                 }
             }

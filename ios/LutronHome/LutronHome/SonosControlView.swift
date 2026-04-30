@@ -9,6 +9,8 @@ struct SonosControlView: View {
     @State private var spotifyQuery = ""
     @State private var searchTask: Task<Void, Never>?
     @State private var selectedSpeakerIds: Set<String> = []
+    @State private var localVolumes: [String: Double] = [:]
+    @State private var volumeDebounce: [String: Task<Void, Never>] = [:]
 
     private let gridColumns = [
         GridItem(.flexible(), spacing: 8),
@@ -47,17 +49,25 @@ struct SonosControlView: View {
             if selectedSpeakerIds.isEmpty {
                 selectedSpeakerIds = Set(sonos.coordinators.map(\.id))
             }
+            // Load all data sources in parallel
             Task {
-                if sonos.isCloudLinked {
-                    try? await sonos.loadFavorites()
-                    try? await sonos.loadPlaylists()
-                }
-                if sonos.favorites.isEmpty {
-                    try? await sonos.loadLocalFavorites()
-                }
-                if spotify.isLinked {
-                    try? await spotify.loadRecentlyPlayed()
-                }
+                async let cloud: Void = {
+                    if sonos.isCloudLinked {
+                        try? await sonos.loadFavorites()
+                        try? await sonos.loadPlaylists()
+                    }
+                }()
+                async let local: Void = {
+                    if sonos.favorites.isEmpty {
+                        try? await sonos.loadLocalFavorites()
+                    }
+                }()
+                async let spot: Void = {
+                    if spotify.isLinked {
+                        try? await spotify.loadRecentlyPlayed()
+                    }
+                }()
+                _ = await (cloud, local, spot)
             }
         }
     }
@@ -111,7 +121,7 @@ struct SonosControlView: View {
             }
             .buttonStyle(.plain)
 
-            // Album art — same size as the 3-column grid art cards
+            // Album art — capped height so both cards fit on screen
             if let track = p.currentTrack {
                 let artURL = track.albumArtURL
                 if let artURL {
@@ -120,12 +130,15 @@ struct SonosControlView: View {
                     } placeholder: {
                         Rectangle().fill(EditorialTheme.cardBackground)
                     }
-                    .aspectRatio(1, contentMode: .fill)
+                    .aspectRatio(1, contentMode: .fit)
+                    .frame(maxHeight: 120)
+                    .clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                 } else {
                     Rectangle()
                         .fill(EditorialTheme.cardBackground)
-                        .aspectRatio(1, contentMode: .fill)
+                        .aspectRatio(1, contentMode: .fit)
+                        .frame(maxHeight: 120)
                         .overlay(
                             Image(systemName: "music.note")
                                 .font(.system(size: 18))
@@ -168,10 +181,11 @@ struct SonosControlView: View {
                     Spacer()
                 }
             } else {
-                // Not playing — show placeholder art at same aspect ratio
+                // Not playing — show placeholder art capped to same height
                 Rectangle()
                     .fill(EditorialTheme.cardBackground)
-                    .aspectRatio(1, contentMode: .fill)
+                    .aspectRatio(1, contentMode: .fit)
+                    .frame(maxHeight: 120)
                     .overlay(
                         VStack(spacing: 4) {
                             Image(systemName: "speaker.fill")
@@ -208,9 +222,15 @@ struct SonosControlView: View {
 
                     Slider(
                         value: Binding(
-                            get: { Double(speaker.volume) },
+                            get: { localVolumes[speaker.id] ?? Double(speaker.volume) },
                             set: { newVal in
-                                Task { try? await sonos.setVolume(playerId: speaker.id, level: Int(newVal)) }
+                                localVolumes[speaker.id] = newVal
+                                volumeDebounce[speaker.id]?.cancel()
+                                volumeDebounce[speaker.id] = Task {
+                                    try? await Task.sleep(for: .milliseconds(150))
+                                    guard !Task.isCancelled else { return }
+                                    try? await sonos.setVolume(playerId: speaker.id, level: Int(newVal))
+                                }
                             }
                         ),
                         in: 0...100
@@ -218,7 +238,7 @@ struct SonosControlView: View {
                     .tint(EditorialTheme.accent)
                     .controlSize(.mini)
 
-                    Text("\(speaker.volume)")
+                    Text("\(Int(localVolumes[speaker.id] ?? Double(speaker.volume)))")
                         .font(.system(size: 8, weight: .medium).monospacedDigit())
                         .foregroundStyle(EditorialTheme.secondaryText)
                         .frame(width: 18, alignment: .trailing)
@@ -359,13 +379,21 @@ struct SonosControlView: View {
 
     private func playSpotifyItem(uri: String, title: String) {
         let targets = selectedCoordinators
-        guard !targets.isEmpty else { return }
+        guard !targets.isEmpty else {
+            print("SonosControlView: no selected coordinators for playback")
+            return
+        }
         let desc = sonos.spotifyServiceDesc ?? "SA_RINCON3079_X_#Svc3079-0-Token"
         let sonosURI = SpotifyManager.sonosURI(spotifyURI: uri, sn: sonos.spotifySN)
         let metadata = SpotifyManager.sonosMetadata(spotifyURI: uri, title: title, serviceDesc: desc)
+        print("SonosControlView: playing '\(title)' on \(targets.map(\.name)) — uri=\(sonosURI)")
         Task {
             for coord in targets {
-                try? await sonos.playMedia(playerId: coord.id, uri: sonosURI, metadata: metadata)
+                do {
+                    try await sonos.playMedia(playerId: coord.id, uri: sonosURI, metadata: metadata)
+                } catch {
+                    print("SonosControlView: playMedia failed for \(coord.name) — \(error)")
+                }
             }
         }
     }

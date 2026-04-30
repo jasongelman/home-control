@@ -31,27 +31,49 @@ actor SonosLocalClient {
 
     func discoverPlayers() async -> [SonosPlayer] {
         let endpoints = await browseBonjourEndpoints()
-        var players: [SonosPlayer] = []
-        var seenIPs = Set<String>()
 
-        for endpoint in endpoints {
-            guard let ip = await resolveEndpointIP(endpoint) else { continue }
-            guard !seenIPs.contains(ip) else { continue }
-            seenIPs.insert(ip)
-
-            let location = "http://\(ip):1400/xml/device_description.xml"
-            if let player = await fetchDeviceDescription(location: location) {
-                players.append(player)
+        // Resolve all endpoints in parallel
+        let resolved: [(String, NWEndpoint)] = await withTaskGroup(of: (String?, NWEndpoint).self) { group in
+            for endpoint in endpoints {
+                group.addTask { (await self.resolveEndpointIP(endpoint), endpoint) }
             }
+            var results: [(String, NWEndpoint)] = []
+            for await (ip, ep) in group {
+                if let ip { results.append((ip, ep)) }
+            }
+            return results
         }
-        return players
+
+        // Deduplicate by IP and fetch device descriptions in parallel
+        var seenIPs = Set<String>()
+        var uniqueIPs: [String] = []
+        for (ip, _) in resolved {
+            if seenIPs.insert(ip).inserted { uniqueIPs.append(ip) }
+        }
+
+        return await withTaskGroup(of: SonosPlayer?.self) { group in
+            for ip in uniqueIPs {
+                group.addTask {
+                    let location = "http://\(ip):1400/xml/device_description.xml"
+                    return await self.fetchDeviceDescription(location: location)
+                }
+            }
+            var players: [SonosPlayer] = []
+            for await player in group {
+                if let player { players.append(player) }
+            }
+            return players
+        }
     }
 
     private func browseBonjourEndpoints() async -> [NWEndpoint] {
-        // Use a thread-safe collector for Bonjour results
+        // Use a thread-safe collector for Bonjour results with early-exit
         final class EndpointCollector: @unchecked Sendable {
             var endpoints: [NWEndpoint] = []
             let lock = NSLock()
+            var quietTimer: DispatchWorkItem?
+            var hardTimer: DispatchWorkItem?
+            var didResume = false
 
             func add(_ endpoint: NWEndpoint) {
                 lock.lock()
@@ -73,19 +95,39 @@ actor SonosLocalClient {
             params.includePeerToPeer = true
             let browser = NWBrowser(for: .bonjour(type: "_sonos._tcp", domain: nil), using: params)
 
+            let finish = { [collector] in
+                collector.lock.lock()
+                guard !collector.didResume else { collector.lock.unlock(); return }
+                collector.didResume = true
+                collector.quietTimer?.cancel()
+                collector.hardTimer?.cancel()
+                let results = collector.endpoints
+                collector.lock.unlock()
+                browser.cancel()
+                continuation.resume(returning: results)
+            }
+
             browser.browseResultsChangedHandler = { results, _ in
                 for result in results {
                     collector.add(result.endpoint)
                 }
+                // Reset quiet timer — finish 0.5s after last result
+                collector.lock.lock()
+                collector.quietTimer?.cancel()
+                let quiet = DispatchWorkItem { finish() }
+                collector.quietTimer = quiet
+                collector.lock.unlock()
+                DispatchQueue.global().asyncAfter(deadline: .now() + 0.5, execute: quiet)
             }
 
             browser.start(queue: DispatchQueue(label: "sonos-bonjour"))
 
-            // Browse for 3 seconds, then return results
-            DispatchQueue.global().asyncAfter(deadline: .now() + 3) {
-                browser.cancel()
-                continuation.resume(returning: collector.getAll())
-            }
+            // Hard cap at 3 seconds
+            let hard = DispatchWorkItem { finish() }
+            collector.lock.lock()
+            collector.hardTimer = hard
+            collector.lock.unlock()
+            DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: hard)
         }
     }
 
@@ -523,26 +565,31 @@ actor SonosLocalClient {
 
     // MARK: - UPnP Event Listener
 
-    func startListener() throws -> UInt16 {
+    func startListener() async throws -> UInt16 {
         let listener = try NWListener(using: .tcp, on: .any)
         listener.newConnectionHandler = { [weak self] connection in
             guard let self else { return }
             Task { await self.handleIncomingConnection(connection) }
         }
-        listener.stateUpdateHandler = { state in
-            if case .failed(let error) = state {
-                print("SonosLocalClient: listener failed — \(error)")
-            }
-        }
-        listener.start(queue: DispatchQueue(label: "sonos-event-listener"))
 
-        // Give the listener a moment to bind and get assigned a port
-        Thread.sleep(forTimeInterval: 0.1)
-        let actualPort = listener.port?.rawValue ?? 0
+        let port: UInt16 = await withCheckedContinuation { continuation in
+            listener.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    continuation.resume(returning: listener.port?.rawValue ?? 0)
+                case .failed(let error):
+                    print("SonosLocalClient: listener failed — \(error)")
+                    continuation.resume(returning: 0)
+                default:
+                    break
+                }
+            }
+            listener.start(queue: DispatchQueue(label: "sonos-event-listener"))
+        }
 
         self.httpListener = listener
-        self.listenerPort = actualPort
-        return actualPort
+        self.listenerPort = port
+        return port
     }
 
     func stopListener() {
@@ -582,12 +629,13 @@ actor SonosLocalClient {
 
     func subscribeAll(player: SonosPlayer, callbackPort: UInt16) async {
         do {
-            try await subscribe(player: player, service: "AVTransport",
+            async let s1: Void = subscribe(player: player, service: "AVTransport",
                               path: "/MediaRenderer/AVTransport/Event", callbackPort: callbackPort)
-            try await subscribe(player: player, service: "RenderingControl",
+            async let s2: Void = subscribe(player: player, service: "RenderingControl",
                               path: "/MediaRenderer/RenderingControl/Event", callbackPort: callbackPort)
-            try await subscribe(player: player, service: "ZoneGroupTopology",
+            async let s3: Void = subscribe(player: player, service: "ZoneGroupTopology",
                               path: "/ZoneGroupTopology/Event", callbackPort: callbackPort)
+            _ = try await (s1, s2, s3)
         } catch {
             print("SonosLocalClient: subscription failed for \(player.name) — \(error)")
         }
