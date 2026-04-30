@@ -2,6 +2,7 @@ import SwiftUI
 
 struct EditorialClimateSection: View {
     @Environment(EcobeeManager.self) var ecobee
+    @State private var selectedThermostat: EcobeeThermostat?
 
     var body: some View {
         if ecobee.hasThermostats {
@@ -13,9 +14,15 @@ struct EditorialClimateSection: View {
 
                 HStack(spacing: EditorialTheme.gridSpacing) {
                     ForEach(ecobee.thermostats, id: \.identifier) { thermo in
-                        compactClimateCard(thermo)
+                        Button { selectedThermostat = thermo } label: {
+                            compactClimateCard(thermo)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
+            }
+            .sheet(item: $selectedThermostat) { thermo in
+                ThermostatDetailView(thermostat: thermo, manager: ecobee)
             }
         }
     }
