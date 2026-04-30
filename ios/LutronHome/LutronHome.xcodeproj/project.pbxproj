@@ -636,7 +636,7 @@ A1000010 /* Assets.xcassets in Resources */,
 				DEVELOPMENT_TEAM = WRS5YQAAC6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LutronHome/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "LH Editorial";
+				INFOPLIST_KEY_CFBundleDisplayName = "My House";
 				INFOPLIST_KEY_NSHomeKitUsageDescription = "Home Control needs HomeKit access to show your camera feeds.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "LutronHome needs local network access to communicate with your Lutron processor.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -665,7 +665,7 @@ A1000010 /* Assets.xcassets in Resources */,
 				DEVELOPMENT_TEAM = WRS5YQAAC6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LutronHome/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "LH Editorial";
+				INFOPLIST_KEY_CFBundleDisplayName = "My House";
 				INFOPLIST_KEY_NSHomeKitUsageDescription = "Home Control needs HomeKit access to show your camera feeds.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "LutronHome needs local network access to communicate with your Lutron processor.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
