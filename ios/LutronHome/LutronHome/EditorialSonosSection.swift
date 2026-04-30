@@ -27,53 +27,66 @@ private struct SonosCard: View {
 
     var body: some View {
         Button { showDetail = true } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                // Room name
-                Text(player.name.uppercased())
-                    .font(.system(size: 9, weight: .medium))
-                    .tracking(0.8)
-                    .foregroundStyle(EditorialTheme.secondaryText)
+            HStack(spacing: 10) {
+                // Album art (left-aligned, matching row height)
+                if let track = player.currentTrack, let artURL = track.albumArtURL {
+                    AsyncImage(url: artURL) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image.resizable().scaledToFill()
+                        default:
+                            Rectangle().fill(EditorialTheme.cardBackground)
+                        }
+                    }
+                    .frame(width: 48, height: 48)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
 
-                HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    // Room name
+                    Text(player.name.uppercased())
+                        .font(.system(size: 9, weight: .medium))
+                        .tracking(0.8)
+                        .foregroundStyle(EditorialTheme.secondaryText)
+
                     // Track info
                     if let track = player.currentTrack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(track.title)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(EditorialTheme.primaryText)
+                        Text(track.title.replacingOccurrences(of: "&apos;", with: "'"))
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(EditorialTheme.primaryText)
+                            .lineLimit(1)
+                        if !track.artist.isEmpty {
+                            Text(track.artist.replacingOccurrences(of: "&apos;", with: "'"))
+                                .font(.system(size: 10))
+                                .foregroundStyle(EditorialTheme.secondaryText)
                                 .lineLimit(1)
-                            if !track.artist.isEmpty {
-                                Text(track.artist)
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(EditorialTheme.secondaryText)
-                                    .lineLimit(1)
-                            }
                         }
                     } else {
                         Text("Not Playing")
                             .font(.system(size: 12))
                             .foregroundStyle(EditorialTheme.secondaryText)
                     }
+                }
 
-                    Spacer(minLength: 4)
+                Spacer(minLength: 4)
 
-                    // Transport controls
-                    HStack(spacing: 12) {
-                        transportButton("backward.fill") {
-                            try? await sonos.previous(playerId: player.id)
+                // Transport controls
+                HStack(spacing: 12) {
+                    transportButton("backward.fill") {
+                        try? await sonos.previous(playerId: player.id)
+                    }
+
+                    transportButton(player.state == .playing ? "pause.fill" : "play.fill") {
+                        if player.state == .playing {
+                            try? await sonos.pausePlayback(playerId: player.id)
+                        } else {
+                            try? await sonos.play(playerId: player.id)
                         }
+                    }
 
-                        transportButton(player.state == .playing ? "pause.fill" : "play.fill") {
-                            if player.state == .playing {
-                                try? await sonos.pausePlayback(playerId: player.id)
-                            } else {
-                                try? await sonos.play(playerId: player.id)
-                            }
-                        }
-
-                        transportButton("forward.fill") {
-                            try? await sonos.next(playerId: player.id)
-                        }
+                    transportButton("forward.fill") {
+                        try? await sonos.next(playerId: player.id)
                     }
                 }
             }
