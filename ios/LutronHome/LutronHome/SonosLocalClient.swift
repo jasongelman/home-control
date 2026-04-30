@@ -377,8 +377,9 @@ actor SonosLocalClient {
         let decoded = metaXML
             .replacingOccurrences(of: "&lt;", with: "<")
             .replacingOccurrences(of: "&gt;", with: ">")
-            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&apos;", with: "'")
             .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&amp;", with: "&")
 
         let title = SimpleXMLParser.extractValue(fromString: decoded, tag: "dc:title") ?? ""
         let artist = SimpleXMLParser.extractValue(fromString: decoded, tag: "dc:creator") ?? ""
@@ -698,6 +699,8 @@ actor SonosLocalClient {
             let decoded = bodyStr
                 .replacingOccurrences(of: "&lt;", with: "<")
                 .replacingOccurrences(of: "&gt;", with: ">")
+                .replacingOccurrences(of: "&apos;", with: "'")
+                .replacingOccurrences(of: "&quot;", with: "\"")
                 .replacingOccurrences(of: "&amp;", with: "&")
 
             let stateStr = SimpleXMLParser.extractValue(fromString: decoded, tag: "TransportState") ?? ""
@@ -712,15 +715,25 @@ actor SonosLocalClient {
             let title = SimpleXMLParser.extractValue(fromString: decoded, tag: "dc:title")
             let artist = SimpleXMLParser.extractValue(fromString: decoded, tag: "dc:creator")
             let album = SimpleXMLParser.extractValue(fromString: decoded, tag: "upnp:album")
+            let artPath = SimpleXMLParser.extractValue(fromString: decoded, tag: "upnp:albumArtURI")
+
+            let sid = extractHeaderValue(from: text, header: "SID") ?? ""
+            let playerId = playerIdForSID(sid)
+
+            // Resolve album art URL using the player's base URL from the subscription
+            let playerBase = subscriptions.first(where: { $0.sid == sid })?.playerBaseURL
+            let albumArtURL: URL? = {
+                guard let artPath, !artPath.isEmpty else { return nil }
+                if artPath.hasPrefix("http") { return URL(string: artPath) }
+                if let base = playerBase { return URL(string: "\(base)\(artPath)") }
+                return nil
+            }()
 
             var track: SonosTrack?
             if let title, !title.isEmpty {
                 track = SonosTrack(title: title, artist: artist ?? "", album: album ?? "",
-                                  albumArtURL: nil, duration: 0, position: 0)
+                                  albumArtURL: albumArtURL, duration: 0, position: 0)
             }
-
-            let sid = extractHeaderValue(from: text, header: "SID") ?? ""
-            let playerId = playerIdForSID(sid)
             if let playerId {
                 onTransportEvent?(playerId, state, track)
             }

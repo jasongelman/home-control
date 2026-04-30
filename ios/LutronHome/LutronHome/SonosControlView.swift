@@ -125,20 +125,26 @@ struct SonosControlView: View {
             if let track = p.currentTrack {
                 let artURL = track.albumArtURL
                 if let artURL {
-                    AsyncImage(url: artURL) { image in
-                        image.resizable().aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Rectangle().fill(EditorialTheme.cardBackground)
+                    AsyncImage(url: artURL) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image.resizable().scaledToFill()
+                        case .failure:
+                            Rectangle().fill(EditorialTheme.cardBackground)
+                                .overlay(Image(systemName: "photo").foregroundStyle(EditorialTheme.tertiaryText))
+                        default:
+                            Rectangle().fill(EditorialTheme.cardBackground)
+                        }
                     }
-                    .aspectRatio(1, contentMode: .fit)
-                    .frame(maxHeight: 120)
+                    .frame(height: 120)
+                    .frame(maxWidth: .infinity)
                     .clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                 } else {
                     Rectangle()
                         .fill(EditorialTheme.cardBackground)
-                        .aspectRatio(1, contentMode: .fit)
-                        .frame(maxHeight: 120)
+                        .frame(height: 120)
+                        .frame(maxWidth: .infinity)
                         .overlay(
                             Image(systemName: "music.note")
                                 .font(.system(size: 18))
@@ -184,8 +190,8 @@ struct SonosControlView: View {
                 // Not playing — show placeholder art capped to same height
                 Rectangle()
                     .fill(EditorialTheme.cardBackground)
-                    .aspectRatio(1, contentMode: .fit)
-                    .frame(maxHeight: 120)
+                    .frame(height: 120)
+                    .frame(maxWidth: .infinity)
                     .overlay(
                         VStack(spacing: 4) {
                             Image(systemName: "speaker.fill")
