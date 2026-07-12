@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-11T09:30:00-04:00",
+  "title": "Design System: Lutron Home",
+  "extensions": {
+    "colorMeta": {
+      "ink-orange": { "role": "primary", "displayName": "Ink Orange", "canonical": "#ED5B21", "tonalRamp": ["oklch(20% 0.08 40)", "oklch(30% 0.12 40)", "oklch(42% 0.16 40)", "oklch(52% 0.19 40)", "oklch(62% 0.21 40)", "oklch(72% 0.16 40)", "oklch(84% 0.09 40)", "oklch(94% 0.04 40)"] },
+      "panel-amber": { "role": "primary", "displayName": "Panel Amber", "canonical": "#F5A623", "tonalRamp": ["oklch(22% 0.06 75)", "oklch(34% 0.09 75)", "oklch(46% 0.12 75)", "oklch(58% 0.14 75)", "oklch(70% 0.15 75)", "oklch(80% 0.14 75)", "oklch(89% 0.09 75)", "oklch(95% 0.04 75)"] },
+      "cooling-blue": { "role": "secondary", "displayName": "Cooling Blue", "canonical": "#3399F2", "tonalRamp": ["oklch(22% 0.07 250)", "oklch(34% 0.10 250)", "oklch(46% 0.13 250)", "oklch(58% 0.15 250)", "oklch(66% 0.15 250)", "oklch(76% 0.11 250)", "oklch(86% 0.07 250)", "oklch(94% 0.03 250)"] },
+      "paper-white": { "role": "neutral", "displayName": "Paper White", "canonical": "#FFFFFF", "tonalRamp": ["oklch(15% 0 0)", "oklch(30% 0 0)", "oklch(45% 0 0)", "oklch(60% 0 0)", "oklch(75% 0 0)", "oklch(87% 0 0)", "oklch(95% 0 0)", "oklch(100% 0 0)"] },
+      "ink-black": { "role": "neutral", "displayName": "Ink Black", "canonical": "#000000", "tonalRamp": ["oklch(0% 0 0)", "oklch(14% 0 0)", "oklch(28% 0 0)", "oklch(42% 0 0)", "oklch(56% 0 0)", "oklch(70% 0 0)", "oklch(84% 0 0)", "oklch(96% 0 0)"] },
+      "paper-gray": { "role": "neutral", "displayName": "Paper Gray", "canonical": "#F2F2F7", "tonalRamp": ["oklch(20% 0.005 285)", "oklch(32% 0.005 285)", "oklch(45% 0.006 285)", "oklch(58% 0.006 285)", "oklch(70% 0.007 285)", "oklch(82% 0.007 285)", "oklch(91% 0.006 285)", "oklch(96% 0.004 285)"] },
+      "panel-bg": { "role": "neutral", "displayName": "Panel Black", "canonical": "#121212", "tonalRamp": ["oklch(12% 0 0)", "oklch(18% 0 0)", "oklch(26% 0 0)", "oklch(38% 0 0)", "oklch(52% 0 0)", "oklch(66% 0 0)", "oklch(80% 0 0)", "oklch(93% 0 0)"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Masthead", "purpose": "Hero greeting only; two words, second word in the time-aware accent." },
+      "section-label": { "displayName": "Section Label", "purpose": "Section openers, paired with a right-aligned trailing count." },
+      "micro-label": { "displayName": "Micro Label", "purpose": "Room/device names, datelines, captions. The workhorse." },
+      "mono-value": { "displayName": "Stock-Table Figure", "purpose": "Every numeral: percentages, temps, amps, counts." }
+    },
+    "shadows": [
+      { "name": "slider-thumb-glow", "value": "0 0 12px rgba(245,166,35,0.4)", "purpose": "Web slider thumb hover/focus. The single sanctioned shadow in the system." }
+    ],
+    "motion": [
+      { "name": "ease-interaction", "value": "0.15s ease-out", "purpose": "Direct-manipulation feedback (fills, markers); suppressed while dragging." },
+      { "name": "ease-structural", "value": "0.25s cubic-bezier(0.4, 0, 0.2, 1)", "purpose": "Structural changes: section compaction, expand/collapse." },
+      { "name": "settle-delay", "value": "2500ms", "purpose": "Idle time before deferred removals compact the lights section." }
+    ],
+    "breakpoints": [
+      { "name": "web-max-content", "value": "1200px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Dimmable Pill",
+      "kind": "custom",
+      "refersTo": "dimmable-pill",
+      "description": "Signature light control: sharp rectangle whose Ink Orange fill IS the brightness, capped by a 2px marker needle.",
+      "html": "<div class=\"ds-pill\"><div class=\"ds-pill-fill\"></div><div class=\"ds-pill-marker\"></div><span class=\"ds-pill-name\">PENDANT</span><span class=\"ds-pill-value\">100%</span></div>",
+      "css": ".ds-pill { position: relative; display: flex; align-items: center; justify-content: space-between; height: 40px; padding: 0 10px; background: #F2F2F7; border: 0.5px solid rgba(198,198,200,0.3); cursor: pointer; overflow: hidden; } .ds-pill-fill { position: absolute; inset: 0; width: 100%; background: rgba(237,91,33,0.15); transition: width 0.15s ease-out; pointer-events: none; } .ds-pill-marker { position: absolute; top: 0; bottom: 0; left: calc(100% - 2px); width: 2px; background: #ED5B21; transition: left 0.15s ease-out; pointer-events: none; } .ds-pill-name { position: relative; font-family: -apple-system, sans-serif; font-size: 10px; font-weight: 600; letter-spacing: 0.6px; color: #000; } .ds-pill-value { position: relative; font-family: ui-monospace, monospace; font-size: 12px; font-weight: 700; color: #ED5B21; } .ds-pill:hover .ds-pill-fill { background: rgba(237,91,33,0.22); }",
+      "state": null
+    },
+    {
+      "name": "Dimmable Pill (off, lingering)",
+      "kind": "custom",
+      "refersTo": "dimmable-pill",
+      "description": "A turned-off pill drains in place and dims to tertiary ink; tap to undo. Compacts after the 2.5s settle.",
+      "html": "<div class=\"ds-pill-off\"><span class=\"ds-pill-off-name\">PENDANT</span><span class=\"ds-pill-off-value\">0%</span></div>",
+      "css": ".ds-pill-off { display: flex; align-items: center; justify-content: space-between; height: 40px; padding: 0 10px; background: #F2F2F7; border: 0.5px solid rgba(198,198,200,0.3); cursor: pointer; } .ds-pill-off-name { font-family: -apple-system, sans-serif; font-size: 10px; font-weight: 600; letter-spacing: 0.6px; color: rgba(60,60,67,0.3); } .ds-pill-off-value { font-family: ui-monospace, monospace; font-size: 12px; font-weight: 700; color: rgba(60,60,67,0.6); }"
+    },
+    {
+      "name": "Section Header",
+      "kind": "nav",
+      "refersTo": "section-header",
+      "description": "Section opener: tracked caps, optional Ink Orange text action, right-aligned live count.",
+      "html": "<div class=\"ds-secthead\"><span class=\"ds-secthead-title\">LIGHTS ON</span><span class=\"ds-secthead-spacer\"></span><button class=\"ds-secthead-action\">ALL OFF</button><span class=\"ds-secthead-count\">8 ACTIVE</span></div>",
+      "css": ".ds-secthead { display: flex; align-items: baseline; gap: 12px; background: #FFFFFF; padding: 4px 0; } .ds-secthead-title { font-family: -apple-system, sans-serif; font-size: 11px; font-weight: 600; letter-spacing: 1.2px; color: #000; } .ds-secthead-spacer { flex: 1; } .ds-secthead-action { font-family: -apple-system, sans-serif; font-size: 10px; font-weight: 600; letter-spacing: 0.8px; color: #ED5B21; background: none; border: none; padding: 0; cursor: pointer; } .ds-secthead-action:hover { color: #C24518; } .ds-secthead-action:focus-visible { outline: 1px solid #ED5B21; outline-offset: 2px; } .ds-secthead-count { font-family: -apple-system, sans-serif; font-size: 10px; font-weight: 600; letter-spacing: 0.8px; color: rgba(60,60,67,0.6); }"
+    },
+    {
+      "name": "Masthead",
+      "kind": "custom",
+      "refersTo": "display",
+      "description": "Time-aware hero greeting: two words, second in the period accent. Bebas Neue appears here and nowhere else.",
+      "html": "<div class=\"ds-masthead\"><div class=\"ds-masthead-dateline\"><span class=\"ds-masthead-dot\"></span>HOME &middot; N&deg;40.93</div><div class=\"ds-masthead-hero\">MORNING <span class=\"ds-masthead-accent\">LIGHT.</span></div></div>",
+      "css": ".ds-masthead { background: #FFFFFF; padding: 8px 0; } .ds-masthead-dateline { display: flex; align-items: center; gap: 6px; font-family: -apple-system, sans-serif; font-size: 10px; font-weight: 500; letter-spacing: 1px; color: rgba(60,60,67,0.6); margin-bottom: 6px; } .ds-masthead-dot { width: 6px; height: 6px; border-radius: 50%; background: #4CAF50; } .ds-masthead-hero { font-family: 'Bebas Neue', system-ui, sans-serif; font-size: 48px; line-height: 1; color: #000; } .ds-masthead-accent { color: #F2A626; }"
+    },
+    {
+      "name": "Status Cell",
+      "kind": "card",
+      "refersTo": "editorial-card",
+      "description": "One cell of the 3-column status grid: icon + caption + mono value, active state carried by color alone.",
+      "html": "<div class=\"ds-statcell\"><div class=\"ds-statcell-top\"><svg class=\"ds-statcell-icon\" viewBox=\"0 0 24 24\" width=\"12\" height=\"12\" fill=\"currentColor\"><path d=\"M12 2a7 7 0 0 0-4 12.7V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.3A7 7 0 0 0 12 2zM9 20a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1H9v1z\"/></svg><span class=\"ds-statcell-value\">3 ON</span></div><div class=\"ds-statcell-label\">PLAYROOM</div></div>",
+      "css": ".ds-statcell { display: flex; flex-direction: column; gap: 6px; width: 110px; padding: 10px; background: #F2F2F7; border: 0.5px solid rgba(198,198,200,0.3); } .ds-statcell-top { display: flex; align-items: center; justify-content: space-between; color: #ED5B21; } .ds-statcell-value { font-family: ui-monospace, monospace; font-size: 10px; font-weight: 700; color: #ED5B21; } .ds-statcell-label { font-family: -apple-system, sans-serif; font-size: 9px; font-weight: 600; letter-spacing: 0.4px; color: #000; }"
+    },
+    {
+      "name": "Panel Light Pill (web)",
+      "kind": "custom",
+      "refersTo": "panel-light-pill",
+      "description": "The Night Desk expression of the dimmable pill: amber fill on dark surface, radius 8.",
+      "html": "<div class=\"ds-panelpill\"><div class=\"ds-panelpill-fill\"></div><span class=\"ds-panelpill-name\">Pendant</span><span class=\"ds-panelpill-value\">75%</span></div>",
+      "css": ".ds-panelpill { position: relative; display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 8px; border-radius: 8px; overflow: hidden; border: 1px solid rgba(245,166,35,0.25); background: #1E1E1E; cursor: pointer; } .ds-panelpill-fill { position: absolute; inset: 0; width: 75%; background: rgba(245,166,35,0.32); transition: width 0.15s ease-out; pointer-events: none; } .ds-panelpill-name { position: relative; flex: 1; font-family: -apple-system, sans-serif; font-size: 11px; font-weight: 500; color: #F5A623; } .ds-panelpill-value { position: relative; font-family: -apple-system, sans-serif; font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; color: rgba(245,166,35,0.7); } .ds-panelpill:hover { border-color: #F5A623; }"
+    },
+    {
+      "name": "Panel Button (web)",
+      "kind": "button",
+      "refersTo": "panel-card",
+      "description": "MUI outlined action on the Night Desk: the one place buttons get chrome.",
+      "html": "<button class=\"ds-panelbtn\">Main Floor All Off</button>",
+      "css": ".ds-panelbtn { font-family: -apple-system, sans-serif; font-size: 13px; font-weight: 600; color: #E0E0E0; background: #1E1E1E; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 16px; text-align: left; cursor: pointer; transition: all 0.2s ease; } .ds-panelbtn:hover { background: rgba(255,255,255,0.06); border-color: #F5A623; transform: translateY(-1px); } .ds-panelbtn:focus-visible { outline: 2px solid #F5A623; outline-offset: 2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Morning Broadsheet",
+    "overview": "The home is rendered as a beautifully typeset newspaper front page. The masthead greets by time of day, the dateline reads like a paper's coordinates, sections open with small tracked capitals and a right-aligned count, and every figure is set in bold monospace like a stock table. Data is the news; typography is the entire decoration budget. Components are typeset, not drawn: hairline rules, sharp rectangles, and fills that behave like ink coverage stand in for borders, shadows, and chrome. The system has two deliberate platform expressions: iOS is the Morning Edition (black ink on white paper, Ink Orange as the second color on the press); web is the Night Desk (the same dense instrument read against #121212 with amber as its working light). Same capabilities, same density, different paper stock.",
+    "keyCharacteristics": [
+      "Information density over whitespace: show the whole house at a glance",
+      "Typography-first: hierarchy from tracked caps, condensed display, and mono figures, not boxes",
+      "Flat as the page: zero shadows on iOS; depth is ink, not light",
+      "Color is semantic, never mood (the one exception: the time-aware hero accent)",
+      "Direct manipulation: the control IS the readout (drag the pill, the fill is the value)"
+    ],
+    "rules": [
+      { "name": "The Two-Ink Rule", "body": "The iOS page prints in black and Ink Orange. Any third color on screen must be carrying a semantic payload (cooling, safe, alarm, appliance state) or the time-aware masthead. A color with no meaning is forbidden.", "section": "colors" },
+      { "name": "The Live-Ink Rule", "body": "Ink Orange marks what is active or actionable right now. Never use it on idle, historical, or purely informational elements; those are black, secondary, or gray.", "section": "colors" },
+      { "name": "The Masthead Rule", "body": "Bebas Neue appears exactly once per screen, in the hero. Everywhere else is tracked capitals at 9-11pt. A second display-size element would make two front pages.", "section": "typography" },
+      { "name": "The Stock-Table Rule", "body": "Every numeral renders in bold mono (or tabular-nums on web). If a number is proportionally spaced, it's a bug.", "section": "typography" },
+      { "name": "The No-Shadow Rule", "body": "If a surface needs to feel separate on iOS, give it a hairline or a paper-gray fill. box-shadow/.shadow() is prohibited. On web, any shadow other than the slider-thumb glow is prohibited.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do set every number in bold mono / tabular-nums, uppercase every label, and keep tracking between 0.4 and 1.2.",
+      "Do make the control the readout: fills and markers that ARE the value (pill fill = brightness, bar = climate state).",
+      "Do hold layout still during rapid interaction: defer removals (~2.5s settle), keep sticky column assignments, animate compaction once at .easeInOut 0.25s.",
+      "Do add the data point when in doubt; density is the brand (\"show more, not less\" per PRODUCT.md).",
+      "Do express state through color with fixed meanings: Ink Orange/amber = active/actionable, blue = cooling, green = safe, red = alarm, gray = idle."
+    ],
+    "donts": [
+      "Don't use skeuomorphism, playful/rounded UI (Notion, Linear), or light-and-airy sparse dashboards; those are PRODUCT.md's named anti-references.",
+      "Don't draw shadows on iOS or any web shadow beyond the slider-thumb glow. No .ultraThinMaterial, no glassmorphism, no gradients: the old dark glass theme is retired.",
+      "Don't use entrance animations, staggers, springs, or bounce. Motion communicates state change, not personality.",
+      "Don't round the Dimmable Pill or status cells on iOS; sharp corners are the print signature. Cards cap at 8pt.",
+      "Don't put Ink Orange on idle or informational elements, and never introduce a meaningless accent color (The Two-Ink Rule).",
+      "Don't set Bebas Neue anywhere but the hero (The Masthead Rule).",
+      "Don't wrap sections in cards by default; the page IS the container. If it looks like a grid of identical SaaS cards, it has failed.",
+      "Don't waste space on empty states; collapse empty sections entirely (the lights section removes itself when nothing is on)."
+    ]
+  }
+}
