@@ -4,36 +4,57 @@ struct SonosDetailView: View {
     let player: SonosPlayer
     @Environment(SonosManager.self) var sonos
     @Environment(\.dismiss) private var dismiss
-    @State private var localVolume: Double
-    @State private var queueTracks: [SonosTrack] = []
-    @State private var showQueue = false
-    @State private var showGrouping = false
     @State private var scrubPosition: Double?
+    @State private var localVolumes: [String: Double] = [:]
+    @State private var volumeDebounce: [String: Task<Void, Never>] = [:]
+    @State private var showSpeakerPicker = false
+    /// The coordinator whose group is currently targeted for playback.
+    /// Defaults to the player this view was opened with.
+    @State private var targetCoordinatorId: String?
 
     init(player: SonosPlayer) {
         self.player = player
-        _localVolume = State(initialValue: Double(player.volume))
     }
 
     private var currentPlayer: SonosPlayer {
         sonos.players.first(where: { $0.id == player.id }) ?? player
     }
 
+    /// The coordinator we're targeting — either the one the user picked, or the original player.
+    private var targetCoordinator: SonosPlayer {
+        if let id = targetCoordinatorId,
+           let coord = sonos.coordinators.first(where: { $0.id == id }) {
+            return coord
+        }
+        // Fall back to the player this view was opened with (if it's a coordinator)
+        if currentPlayer.isCoordinator { return currentPlayer }
+        // Otherwise find its coordinator
+        return sonos.coordinators.first(where: { $0.id == currentPlayer.groupId }) ?? currentPlayer
+    }
+
+    /// All speakers in the target coordinator's group
+    private var targetGroupPlayers: [SonosPlayer] {
+        sonos.groupMembers(for: targetCoordinator)
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 24) {
-                    nowPlayingCard
-                    progressBar
-                    transportRow
-                    volumeSection
-                    if showQueue { queueSection }
-                    if showGrouping { groupSection }
-                    if sonos.isCloudLinked && !sonos.favorites.isEmpty { favoritesSection }
+                VStack(spacing: 0) {
+                    heroAlbumArt
+                    VStack(spacing: 20) {
+                        trackInfo
+                        progressBar
+                        transportRow
+                        speakerButton
+                        volumeSection
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 20)
+                    .padding(.bottom, 40)
                 }
-                .padding()
             }
-            .navigationTitle(currentPlayer.name)
+            .ignoresSafeArea(.container, edges: .top)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -41,70 +62,83 @@ struct SonosDetailView: View {
                         .foregroundStyle(.orange)
                 }
             }
-        }
-        .onAppear {
-            Task {
-                queueTracks = (try? await sonos.getQueue(playerId: player.id)) ?? []
+            .sheet(isPresented: $showSpeakerPicker) {
+                SpeakerPickerSheet(
+                    selectedCoordinatorId: Binding(
+                        get: { targetCoordinator.id },
+                        set: { targetCoordinatorId = $0 }
+                    )
+                )
+                .presentationDetents([.medium])
             }
-        }
-        .onChange(of: currentPlayer.volume) { _, newValue in
-            localVolume = Double(newValue)
         }
     }
 
-    // MARK: - Now Playing Card
+    // MARK: - Hero Album Art
 
-    private var nowPlayingCard: some View {
-        VStack(spacing: 12) {
-            if let track = currentPlayer.currentTrack {
-                if let artURL = track.albumArtURL {
-                    AsyncImage(url: artURL) { image in
-                        image.resizable().aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color(.tertiarySystemBackground))
+    private var heroAlbumArt: some View {
+        Group {
+            if let track = targetCoordinator.currentTrack, let artURL = track.albumArtURL {
+                AsyncImage(url: artURL) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFill()
+                    default:
+                        Rectangle().fill(Color(.tertiarySystemBackground))
                             .overlay(
                                 Image(systemName: "music.note")
-                                    .font(.system(size: 40))
+                                    .font(.system(size: 48))
                                     .foregroundStyle(.secondary)
                             )
                     }
-                    .frame(width: 240, height: 240)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
+                .frame(maxWidth: .infinity)
+                .aspectRatio(1, contentMode: .fit)
+                .clipped()
+            } else {
+                Rectangle()
+                    .fill(Color(.tertiarySystemBackground))
+                    .aspectRatio(1, contentMode: .fit)
+                    .overlay(
+                        Image(systemName: "speaker.wave.2")
+                            .font(.system(size: 48))
+                            .foregroundStyle(.secondary)
+                    )
+            }
+        }
+    }
 
+    // MARK: - Track Info
+
+    private var trackInfo: some View {
+        VStack(spacing: 4) {
+            if let track = targetCoordinator.currentTrack {
                 Text(track.title)
-                    .font(.title3.weight(.semibold))
+                    .font(.title2.weight(.bold))
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
-                Text(track.artist)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                if !track.album.isEmpty {
-                    Text(track.album)
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+
+                let subtitle = [track.artist, track.album].filter { !$0.isEmpty }.joined(separator: " · ")
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
             } else {
-                Image(systemName: "speaker.wave.2")
-                    .font(.system(size: 44))
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 40)
                 Text("Not Playing")
-                    .font(.subheadline)
+                    .font(.title2.weight(.bold))
                     .foregroundStyle(.secondary)
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
     }
 
     // MARK: - Progress Bar
 
     @ViewBuilder
     private var progressBar: some View {
-        if let track = currentPlayer.currentTrack, track.duration > 0 {
+        if let track = targetCoordinator.currentTrack, track.duration > 0 {
             VStack(spacing: 4) {
                 Slider(
                     value: Binding(
@@ -114,7 +148,7 @@ struct SonosDetailView: View {
                     in: 0...max(track.duration, 1)
                 ) { editing in
                     if !editing, let pos = scrubPosition {
-                        Task { try? await sonos.seek(playerId: player.id, position: pos) }
+                        Task { try? await sonos.seek(playerId: targetCoordinator.id, position: pos) }
                         scrubPosition = nil
                     }
                 }
@@ -138,7 +172,7 @@ struct SonosDetailView: View {
     private var transportRow: some View {
         HStack(spacing: 32) {
             Button {
-                Task { try? await sonos.previous(playerId: player.id) }
+                Task { try? await sonos.previous(playerId: targetCoordinator.id) }
             } label: {
                 Image(systemName: "backward.fill")
                     .font(.title2)
@@ -148,21 +182,21 @@ struct SonosDetailView: View {
 
             Button {
                 Task {
-                    if currentPlayer.state == .playing {
-                        try? await sonos.pausePlayback(playerId: player.id)
+                    if targetCoordinator.state == .playing {
+                        try? await sonos.pausePlayback(playerId: targetCoordinator.id)
                     } else {
-                        try? await sonos.play(playerId: player.id)
+                        try? await sonos.play(playerId: targetCoordinator.id)
                     }
                 }
             } label: {
-                Image(systemName: currentPlayer.state == .playing ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.system(size: 52))
+                Image(systemName: targetCoordinator.state == .playing ? "pause.circle.fill" : "play.circle.fill")
+                    .font(.system(size: 56))
                     .foregroundStyle(.orange)
             }
             .buttonStyle(.plain)
 
             Button {
-                Task { try? await sonos.next(playerId: player.id) }
+                Task { try? await sonos.next(playerId: targetCoordinator.id) }
             } label: {
                 Image(systemName: "forward.fill")
                     .font(.title2)
@@ -172,15 +206,38 @@ struct SonosDetailView: View {
         }
     }
 
+    // MARK: - Speaker Button
+
+    private var speakerButton: some View {
+        let memberCount = targetGroupPlayers.count
+
+        return Button { showSpeakerPicker = true } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "speaker.wave.2.fill")
+                    .font(.system(size: 12))
+                if memberCount > 1 {
+                    Text("\(targetCoordinator.name) + \(memberCount - 1)")
+                        .font(.system(size: 13, weight: .medium))
+                } else {
+                    Text(targetCoordinator.name)
+                        .font(.system(size: 13, weight: .medium))
+                }
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(.ultraThinMaterial, in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - Volume Section
 
     private var volumeSection: some View {
-        VStack(spacing: 8) {
-            let groupPlayers = sonos.players.filter {
-                $0.id == currentPlayer.id || currentPlayer.groupMembers.contains($0.id)
-            }
-
-            ForEach(groupPlayers) { gPlayer in
+        VStack(spacing: 10) {
+            ForEach(targetGroupPlayers) { gPlayer in
                 HStack(spacing: 12) {
                     Button {
                         Task { try? await sonos.setMute(playerId: gPlayer.id, muted: !gPlayer.isMuted) }
@@ -192,7 +249,7 @@ struct SonosDetailView: View {
                     }
                     .buttonStyle(.plain)
 
-                    if groupPlayers.count > 1 {
+                    if targetGroupPlayers.count > 1 {
                         Text(gPlayer.name)
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -201,169 +258,25 @@ struct SonosDetailView: View {
 
                     Slider(
                         value: Binding(
-                            get: { Double(gPlayer.volume) },
+                            get: { localVolumes[gPlayer.id] ?? Double(gPlayer.volume) },
                             set: { newVal in
-                                Task { try? await sonos.setVolume(playerId: gPlayer.id, level: Int(newVal)) }
+                                localVolumes[gPlayer.id] = newVal
+                                volumeDebounce[gPlayer.id]?.cancel()
+                                volumeDebounce[gPlayer.id] = Task {
+                                    try? await Task.sleep(for: .milliseconds(150))
+                                    guard !Task.isCancelled else { return }
+                                    try? await sonos.setVolume(playerId: gPlayer.id, level: Int(newVal))
+                                }
                             }
                         ),
                         in: 0...100
                     )
                     .tint(.orange)
 
-                    Text("\(gPlayer.volume)")
+                    Text("\(Int(localVolumes[gPlayer.id] ?? Double(gPlayer.volume)))")
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                         .frame(width: 28, alignment: .trailing)
-                }
-            }
-        }
-        .padding()
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-    }
-
-    // MARK: - Queue Section
-
-    private var queueSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Queue")
-                    .font(.caption.weight(.semibold))
-                    .textCase(.uppercase)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                if !queueTracks.isEmpty {
-                    Button("Clear") {
-                        Task {
-                            try? await sonos.clearQueue(playerId: player.id)
-                            queueTracks = []
-                        }
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                }
-            }
-
-            if queueTracks.isEmpty {
-                Text("Queue is empty")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 12)
-            } else {
-                ForEach(Array(queueTracks.enumerated()), id: \.offset) { index, track in
-                    HStack(spacing: 10) {
-                        Text("\(index + 1)")
-                            .font(.caption2.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .frame(width: 20)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(track.title)
-                                .font(.caption)
-                                .lineLimit(1)
-                            Text(track.artist)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                        Spacer()
-                        Button {
-                            Task {
-                                try? await sonos.removeFromQueue(playerId: player.id, index: index)
-                                queueTracks.remove(at: index)
-                            }
-                        } label: {
-                            Image(systemName: "minus.circle")
-                                .font(.caption)
-                                .foregroundStyle(.red)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.vertical, 4)
-                }
-            }
-        }
-        .padding()
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-    }
-
-    // MARK: - Group Section
-
-    private var groupSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Speakers")
-                .font(.caption.weight(.semibold))
-                .textCase(.uppercase)
-                .foregroundStyle(.secondary)
-
-            ForEach(sonos.players) { p in
-                let isInGroup = p.id == currentPlayer.id || currentPlayer.groupMembers.contains(p.id)
-                HStack(spacing: 10) {
-                    Image(systemName: isInGroup ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(isInGroup ? .orange : .secondary)
-                    Text(p.name)
-                        .font(.subheadline)
-                    Spacer()
-                    if p.id != currentPlayer.id {
-                        Button(isInGroup ? "Remove" : "Add") {
-                            Task {
-                                if isInGroup {
-                                    try? await sonos.ungroupPlayer(playerId: p.id)
-                                } else {
-                                    try? await sonos.groupPlayers(coordinatorId: currentPlayer.id, memberIds: [p.id])
-                                }
-                            }
-                        }
-                        .font(.caption)
-                        .foregroundStyle(isInGroup ? .red : .orange)
-                    }
-                }
-                .padding(.vertical, 4)
-            }
-        }
-        .padding()
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-    }
-
-    // MARK: - Favorites Section
-
-    private var favoritesSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Favorites")
-                .font(.caption.weight(.semibold))
-                .textCase(.uppercase)
-                .foregroundStyle(.secondary)
-
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                ForEach(sonos.favorites) { fav in
-                    Button {
-                        Task { try? await sonos.playFavorite(groupId: currentPlayer.groupId, favoriteId: fav.id) }
-                    } label: {
-                        VStack(spacing: 6) {
-                            if let imageURL = fav.imageURL {
-                                AsyncImage(url: imageURL) { image in
-                                    image.resizable().aspectRatio(contentMode: .fill)
-                                } placeholder: {
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(Color(.tertiarySystemBackground))
-                                }
-                                .frame(width: 80, height: 80)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                            } else {
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(Color(.tertiarySystemBackground))
-                                    .frame(width: 80, height: 80)
-                                    .overlay(
-                                        Image(systemName: "music.note")
-                                            .foregroundStyle(.secondary)
-                                    )
-                            }
-                            Text(fav.name)
-                                .font(.caption2)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.center)
-                        }
-                    }
-                    .buttonStyle(.plain)
                 }
             }
         }
@@ -377,5 +290,77 @@ struct SonosDetailView: View {
         let mins = Int(seconds) / 60
         let secs = Int(seconds) % 60
         return String(format: "%d:%02d", mins, secs)
+    }
+}
+
+// MARK: - Speaker Picker Sheet
+
+private struct SpeakerPickerSheet: View {
+    @Binding var selectedCoordinatorId: String
+    @Environment(SonosManager.self) var sonos
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(sonos.coordinators) { coordinator in
+                    let members = sonos.groupMembers(for: coordinator)
+                    let isSelected = coordinator.id == selectedCoordinatorId
+
+                    Button {
+                        selectedCoordinatorId = coordinator.id
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(coordinator.name)
+                                    .font(.body.weight(.medium))
+                                    .foregroundStyle(.primary)
+
+                                if members.count > 1 {
+                                    Text(members.map(\.name).joined(separator: ", "))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+
+                                if let track = coordinator.currentTrack {
+                                    Text("\(track.title) — \(track.artist)")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+                                        .lineLimit(1)
+                                } else {
+                                    Text("Not playing")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+                                }
+                            }
+
+                            Spacer()
+
+                            if isSelected {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 20))
+                                    .foregroundStyle(.orange)
+                            } else {
+                                Image(systemName: "circle")
+                                    .font(.system(size: 20))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .navigationTitle("Speakers")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
     }
 }

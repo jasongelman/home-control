@@ -44,20 +44,20 @@ private struct SonosCard: View {
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    // Room name
-                    Text(player.name.uppercased())
+                    // Group name
+                    Text(sonos.groupDisplayName(for: player).uppercased())
                         .font(.system(size: 9, weight: .medium))
                         .tracking(0.8)
                         .foregroundStyle(EditorialTheme.secondaryText)
 
                     // Track info
                     if let track = player.currentTrack {
-                        Text(track.title.replacingOccurrences(of: "&apos;", with: "'"))
+                        Text(track.title)
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(EditorialTheme.primaryText)
                             .lineLimit(1)
                         if !track.artist.isEmpty {
-                            Text(track.artist.replacingOccurrences(of: "&apos;", with: "'"))
+                            Text(track.artist)
                                 .font(.system(size: 10))
                                 .foregroundStyle(EditorialTheme.secondaryText)
                                 .lineLimit(1)

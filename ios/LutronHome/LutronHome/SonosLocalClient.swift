@@ -26,6 +26,7 @@ actor SonosLocalClient {
     var onTransportEvent: ((String, PlaybackState, SonosTrack?) -> Void)?  // playerId, state, track
     var onVolumeEvent: ((String, Int, Bool) -> Void)?  // playerId, volume, isMuted
     var onTopologyEvent: (([SonosPlayer]) -> Void)?
+    var onTopologyChange: ((Data) -> Void)?  // raw ZoneGroupState data for re-parsing
 
     // MARK: - Bonjour Discovery
 
@@ -134,7 +135,7 @@ actor SonosLocalClient {
     private func resolveEndpointIP(_ endpoint: NWEndpoint) async -> String? {
         return await withCheckedContinuation { continuation in
             let connection = NWConnection(to: endpoint, using: .tcp)
-            var resumed = false
+            nonisolated(unsafe) var resumed = false
 
             connection.stateUpdateHandler = { state in
                 guard !resumed else { return }
@@ -238,7 +239,7 @@ actor SonosLocalClient {
         request.setValue("text/xml; charset=utf-8", forHTTPHeaderField: "Content-Type")
         request.setValue("\"\(service)#\(action)\"", forHTTPHeaderField: "SOAPACTION")
         request.httpBody = Data(soapEnvelope.utf8)
-        request.timeoutInterval = 10
+        request.timeoutInterval = 5
 
         let (data, _) = try await URLSession.shared.data(for: request)
         return data
@@ -381,10 +382,10 @@ actor SonosLocalClient {
             .replacingOccurrences(of: "&quot;", with: "\"")
             .replacingOccurrences(of: "&amp;", with: "&")
 
-        let title = SimpleXMLParser.extractValue(fromString: decoded, tag: "dc:title") ?? ""
-        let artist = SimpleXMLParser.extractValue(fromString: decoded, tag: "dc:creator") ?? ""
-        let album = SimpleXMLParser.extractValue(fromString: decoded, tag: "upnp:album") ?? ""
-        let artPath = SimpleXMLParser.extractValue(fromString: decoded, tag: "upnp:albumArtURI") ?? ""
+        let title = (SimpleXMLParser.extractValue(fromString: decoded, tag: "dc:title") ?? "").xmlDecoded
+        let artist = (SimpleXMLParser.extractValue(fromString: decoded, tag: "dc:creator") ?? "").xmlDecoded
+        let album = (SimpleXMLParser.extractValue(fromString: decoded, tag: "upnp:album") ?? "").xmlDecoded
+        let artPath = (SimpleXMLParser.extractValue(fromString: decoded, tag: "upnp:albumArtURI") ?? "").xmlDecoded
 
         guard !title.isEmpty else { return nil }
 
@@ -538,19 +539,27 @@ actor SonosLocalClient {
     // MARK: - Grouping
 
     func groupPlayer(member: SonosPlayer, withCoordinator coordinator: SonosPlayer) async throws {
-        _ = try await soapRequest(
+        print("SonosLocalClient: groupPlayer — \(member.name) (\(member.id)) → x-rincon:\(coordinator.id) via \(member.baseURL)")
+        let data = try await soapRequest(
             baseURL: member.baseURL, path: avTransportPath,
             service: avTransportService, action: "SetAVTransportURI",
             body: "<InstanceID>0</InstanceID><CurrentURI>x-rincon:\(coordinator.id)</CurrentURI><CurrentURIMetaData></CurrentURIMetaData>"
         )
+        if let resp = String(data: data, encoding: .utf8) {
+            print("SonosLocalClient: groupPlayer response — \(resp.prefix(500))")
+        }
     }
 
     func ungroupPlayer(player: SonosPlayer) async throws {
-        _ = try await soapRequest(
+        print("SonosLocalClient: ungroupPlayer — \(player.name) (\(player.id)) via \(player.baseURL)")
+        let data = try await soapRequest(
             baseURL: player.baseURL, path: avTransportPath,
             service: avTransportService, action: "BecomeCoordinatorOfStandaloneGroup",
             body: "<InstanceID>0</InstanceID>"
         )
+        if let resp = String(data: data, encoding: .utf8) {
+            print("SonosLocalClient: ungroupPlayer response — \(resp.prefix(500))")
+        }
     }
 
     // MARK: - Zone Group Topology
@@ -703,7 +712,8 @@ actor SonosLocalClient {
                 .replacingOccurrences(of: "&quot;", with: "\"")
                 .replacingOccurrences(of: "&amp;", with: "&")
 
-            let stateStr = SimpleXMLParser.extractValue(fromString: decoded, tag: "TransportState") ?? ""
+            let stateStr = SimpleXMLParser.extractAttribute(fromString: decoded, tag: "TransportState", attribute: "val")
+                ?? SimpleXMLParser.extractValue(fromString: decoded, tag: "TransportState") ?? ""
             let state: PlaybackState
             switch stateStr {
             case "PLAYING": state = .playing
@@ -712,10 +722,20 @@ actor SonosLocalClient {
             default: state = .stopped
             }
 
-            let title = SimpleXMLParser.extractValue(fromString: decoded, tag: "dc:title")
-            let artist = SimpleXMLParser.extractValue(fromString: decoded, tag: "dc:creator")
-            let album = SimpleXMLParser.extractValue(fromString: decoded, tag: "upnp:album")
-            let artPath = SimpleXMLParser.extractValue(fromString: decoded, tag: "upnp:albumArtURI")
+            // Track metadata is double-encoded: the val attribute of CurrentTrackMetaData
+            // contains entity-encoded DIDL-Lite XML that needs a second decode pass
+            let rawMeta = SimpleXMLParser.extractAttribute(fromString: decoded, tag: "CurrentTrackMetaData", attribute: "val") ?? ""
+            let metaDecoded = rawMeta
+                .replacingOccurrences(of: "&lt;", with: "<")
+                .replacingOccurrences(of: "&gt;", with: ">")
+                .replacingOccurrences(of: "&apos;", with: "'")
+                .replacingOccurrences(of: "&quot;", with: "\"")
+                .replacingOccurrences(of: "&amp;", with: "&")
+
+            let title = SimpleXMLParser.extractValue(fromString: metaDecoded, tag: "dc:title")?.xmlDecoded
+            let artist = SimpleXMLParser.extractValue(fromString: metaDecoded, tag: "dc:creator")?.xmlDecoded
+            let album = SimpleXMLParser.extractValue(fromString: metaDecoded, tag: "upnp:album")?.xmlDecoded
+            let artPath = SimpleXMLParser.extractValue(fromString: metaDecoded, tag: "upnp:albumArtURI")?.xmlDecoded
 
             let sid = extractHeaderValue(from: text, header: "SID") ?? ""
             let playerId = playerIdForSID(sid)
@@ -736,6 +756,20 @@ actor SonosLocalClient {
             }
             if let playerId {
                 onTransportEvent?(playerId, state, track)
+            }
+
+        } else if bodyStr.contains("ZoneGroupState") {
+            // Topology change — groups were added/removed/changed
+            let decoded = bodyStr
+                .replacingOccurrences(of: "&lt;", with: "<")
+                .replacingOccurrences(of: "&gt;", with: ">")
+                .replacingOccurrences(of: "&quot;", with: "\"")
+                .replacingOccurrences(of: "&apos;", with: "'")
+                .replacingOccurrences(of: "&amp;", with: "&")
+
+            // The ZoneGroupState is embedded in the event body; pass raw data for parsing
+            if let data = decoded.data(using: .utf8) {
+                onTopologyChange?(data)
             }
 
         } else if bodyStr.contains("Volume") && !bodyStr.contains("ZoneGroup") {
@@ -905,7 +939,10 @@ private class DeviceDescriptionParser: NSObject, XMLParserDelegate {
         case "modelName": info.modelName = trimmed
         case "modelNumber": info.modelNumber = trimmed
         case "UDN":
-            info.uuid = trimmed.replacingOccurrences(of: "uuid:", with: "")
+            // Only take the first (root device) UDN — sub-devices have _MS/_MR suffixes
+            if info.uuid.isEmpty {
+                info.uuid = trimmed.replacingOccurrences(of: "uuid:", with: "")
+            }
         default: break
         }
     }

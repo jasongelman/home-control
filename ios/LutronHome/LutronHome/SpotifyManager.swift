@@ -14,6 +14,18 @@ struct SpotifySearchResults: Codable {
 struct SpotifyPagingObject<T: Codable>: Codable {
     let items: [T]
     let total: Int
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        total = try container.decode(Int.self, forKey: .total)
+        // Spotify can return null entries in items arrays (e.g. deleted playlists)
+        let rawItems = try container.decode([T?].self, forKey: .items)
+        items = rawItems.compactMap { $0 }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case items, total
+    }
 }
 
 struct SpotifyTrackItem: Codable, Identifiable {
@@ -38,7 +50,7 @@ struct SpotifyPlaylistItem: Codable, Identifiable {
     let id: String
     let name: String
     let uri: String
-    let images: [SpotifyImage]
+    let images: [SpotifyImage]?
     let owner: SpotifyOwner?
     let tracks: SpotifyPlaylistTrackRef?
 }
@@ -77,6 +89,17 @@ class SpotifyManager: @unchecked Sendable {
     var searchResults = SpotifySearchResults()
     var isSearching = false
     var errorMessage: String?
+    var userPlaylists: [SpotifyPlaylistItem] = []
+
+    private static let playlistsCacheKey = "spotify_playlists_cache"
+
+    init() {
+        // Load cached playlists
+        if let data = UserDefaults.standard.data(forKey: Self.playlistsCacheKey),
+           let cached = try? JSONDecoder().decode([SpotifyPlaylistItem].self, from: data) {
+            userPlaylists = cached
+        }
+    }
 
     // MARK: - Private
 
@@ -129,15 +152,16 @@ class SpotifyManager: @unchecked Sendable {
             URLQueryItem(name: "client_id", value: cid),
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "redirect_uri", value: redirectURI),
-            URLQueryItem(name: "scope", value: "user-read-private user-read-recently-played user-top-read user-library-read"),
+            URLQueryItem(name: "scope", value: "user-read-private user-read-recently-played user-top-read user-library-read playlist-read-private playlist-read-collaborative"),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
             URLQueryItem(name: "code_challenge", value: challenge),
+            URLQueryItem(name: "show_dialog", value: "true"),
         ]
 
         guard let authURL = components.url else { throw SpotifyError.badURL }
 
         let callbackURL = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<URL, Error>) in
-            let session = ASWebAuthenticationSession(url: authURL, callbackURLScheme: "lutronhome") { url, error in
+            nonisolated(unsafe) let session = ASWebAuthenticationSession(url: authURL, callbackURLScheme: "lutronhome") { url, error in
                 if let error { cont.resume(throwing: error); return }
                 guard let url else { cont.resume(throwing: SpotifyError.noCallback); return }
                 cont.resume(returning: url)
@@ -293,6 +317,30 @@ class SpotifyManager: @unchecked Sendable {
             return item.track
         }
         await MainActor.run { recentTracks = unique }
+    }
+
+    func loadUserPlaylists() async throws {
+        let token = try await validToken()
+        var request = URLRequest(url: URL(string: "\(apiBase)/me/playlists?limit=50")!)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            print("Spotify playlists failed: \(String(data: data, encoding: .utf8) ?? "")")
+            return
+        }
+
+        do {
+            let paging = try JSONDecoder().decode(SpotifyPagingObject<SpotifyPlaylistItem>.self, from: data)
+            await MainActor.run { userPlaylists = paging.items }
+            // Cache to disk
+            if let cacheData = try? JSONEncoder().encode(paging.items) {
+                UserDefaults.standard.set(cacheData, forKey: Self.playlistsCacheKey)
+            }
+        } catch {
+            print("Spotify playlists decode error: \(error)")
+            throw error
+        }
     }
 
     // MARK: - Token Management

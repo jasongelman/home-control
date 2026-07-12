@@ -10,6 +10,7 @@ class SonosManager: @unchecked Sendable {
     var favorites: [SonosFavorite] = []
     var localFavorites: [SonosFavorite] = []
     var playlists: [SonosFavorite] = []
+    var groupPresets: [SonosGroupPreset] = []
     var isLoading = false
     var errorMessage: String?
 
@@ -43,6 +44,7 @@ class SonosManager: @unchecked Sendable {
 
     init() {
         loadTopologyCache()
+        loadGroupPresets()
         Task { _cloudLinked = await cloudClient.isLinked }
     }
 
@@ -88,11 +90,11 @@ class SonosManager: @unchecked Sendable {
         let fullPlayers: [SonosPlayer] = await withTaskGroup(of: SonosPlayer.self) { group in
             for player in discovered {
                 group.addTask {
+                    async let state = client.getTransportInfo(player: player)
+                    async let track = client.getPositionInfo(player: player)
+                    async let vol = client.getVolume(player: player)
+                    async let mute = client.getMute(player: player)
                     var p = player
-                    async let state = client.getTransportInfo(player: p)
-                    async let track = client.getPositionInfo(player: p)
-                    async let vol = client.getVolume(player: p)
-                    async let mute = client.getMute(player: p)
                     p.state = (try? await state) ?? .stopped
                     p.currentTrack = try? await track
                     p.volume = (try? await vol) ?? 0
@@ -120,8 +122,9 @@ class SonosManager: @unchecked Sendable {
             }
         }
 
+        let finalPlayers = enrichedPlayers
         await MainActor.run {
-            self.players = enrichedPlayers
+            self.players = finalPlayers
         }
         saveTopologyCache()
 
@@ -135,6 +138,8 @@ class SonosManager: @unchecked Sendable {
         let decoded = xmlStr
             .replacingOccurrences(of: "&lt;", with: "<")
             .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&apos;", with: "'")
             .replacingOccurrences(of: "&amp;", with: "&")
 
         let groupPattern = "<ZoneGroup\\s+Coordinator=\"([^\"]+)\"[^>]*>(.*?)</ZoneGroup>"
@@ -209,6 +214,15 @@ class SonosManager: @unchecked Sendable {
                 }
             }
         }
+
+        await localClient.setOnTopologyChange { [weak self] data in
+            Task { @MainActor in
+                guard let self else { return }
+                var updated = self.players
+                self.updateGroupTopology(data: data, players: &updated)
+                self.players = updated
+            }
+        }
     }
 
     // MARK: - Position Polling
@@ -240,36 +254,54 @@ class SonosManager: @unchecked Sendable {
 
     func play(playerId: String) async throws {
         guard let player = coordinator(for: playerId) else { throw SonosError.noCoordinator }
-        try await localClient.play(player: player)
+        // Optimistic UI update — reflect state immediately, network call in background
         await MainActor.run {
             if let idx = players.firstIndex(where: { $0.id == player.id }) {
                 players[idx].state = .playing
             }
         }
+        try await localClient.play(player: player)
     }
 
     func pausePlayback(playerId: String) async throws {
         guard let player = coordinator(for: playerId) else { throw SonosError.noCoordinator }
-        try await localClient.pause(player: player)
         await MainActor.run {
             if let idx = players.firstIndex(where: { $0.id == player.id }) {
                 players[idx].state = .paused
             }
         }
+        try await localClient.pause(player: player)
     }
 
     func next(playerId: String) async throws {
         guard let player = coordinator(for: playerId) else { throw SonosError.noCoordinator }
+        // Optimistic: clear current track so UI shows loading state
+        await MainActor.run {
+            if let idx = players.firstIndex(where: { $0.id == player.id }) {
+                players[idx].currentTrack = nil
+            }
+        }
         try await localClient.next(player: player)
     }
 
     func previous(playerId: String) async throws {
         guard let player = coordinator(for: playerId) else { throw SonosError.noCoordinator }
+        await MainActor.run {
+            if let idx = players.firstIndex(where: { $0.id == player.id }) {
+                players[idx].currentTrack = nil
+            }
+        }
         try await localClient.previous(player: player)
     }
 
     func seek(playerId: String, position: TimeInterval) async throws {
         guard let player = coordinator(for: playerId) else { throw SonosError.noCoordinator }
+        // Optimistic: update position immediately
+        await MainActor.run {
+            if let idx = players.firstIndex(where: { $0.id == player.id }) {
+                players[idx].currentTrack?.position = position
+            }
+        }
         try await localClient.seek(player: player, position: position)
     }
 
@@ -277,22 +309,23 @@ class SonosManager: @unchecked Sendable {
 
     func setVolume(playerId: String, level: Int) async throws {
         guard let player = players.first(where: { $0.id == playerId }) else { return }
-        try await localClient.setVolume(player: player, level: level)
+        // Optimistic UI update
         await MainActor.run {
             if let idx = players.firstIndex(where: { $0.id == playerId }) {
                 players[idx].volume = level
             }
         }
+        try await localClient.setVolume(player: player, level: level)
     }
 
     func setMute(playerId: String, muted: Bool) async throws {
         guard let player = players.first(where: { $0.id == playerId }) else { return }
-        try await localClient.setMute(player: player, muted: muted)
         await MainActor.run {
             if let idx = players.firstIndex(where: { $0.id == playerId }) {
                 players[idx].isMuted = muted
             }
         }
+        try await localClient.setMute(player: player, muted: muted)
     }
 
     // MARK: - Content Browsing
@@ -424,6 +457,55 @@ class SonosManager: @unchecked Sendable {
         await discover()
     }
 
+    /// Groups members under coordinator, plays content, then refreshes topology.
+    func groupAndPlay(coordinatorId: String, memberIds: [String], play: (String) async throws -> Void) async throws {
+        guard let coordinator = players.first(where: { $0.id == coordinatorId }) else {
+            print("SonosManager: groupAndPlay — coordinator \(coordinatorId) not found")
+            return
+        }
+
+        // First, ungroup any members that are coordinators of their own groups
+        // (they need to leave their current group before joining the new one)
+        for memberId in memberIds {
+            guard let member = players.first(where: { $0.id == memberId }) else {
+                print("SonosManager: groupAndPlay — member \(memberId) not found, skipping")
+                continue
+            }
+            if member.isCoordinator && member.groupId != coordinator.id {
+                print("SonosManager: ungrouping coordinator \(member.name) before re-grouping")
+                try? await localClient.ungroupPlayer(player: member)
+            }
+        }
+
+        // Brief pause after ungrouping
+        if memberIds.contains(where: { id in
+            players.first(where: { $0.id == id })?.isCoordinator == true
+        }) {
+            try? await Task.sleep(for: .milliseconds(300))
+        }
+
+        // Now group all members under the target coordinator
+        for memberId in memberIds {
+            guard let member = players.first(where: { $0.id == memberId }) else { continue }
+            do {
+                print("SonosManager: grouping \(member.name) under \(coordinator.name)")
+                try await localClient.groupPlayer(member: member, withCoordinator: coordinator)
+            } catch {
+                print("SonosManager: failed to group \(member.name) — \(error)")
+            }
+        }
+
+        // Brief pause for Sonos to process group changes
+        try? await Task.sleep(for: .milliseconds(500))
+        // Play on the coordinator
+        try await play(coordinatorId)
+        // Refresh topology in background
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            await self?.discover()
+        }
+    }
+
     func ungroupPlayer(playerId: String) async throws {
         guard let player = players.first(where: { $0.id == playerId }) else { return }
         try await localClient.ungroupPlayer(player: player)
@@ -481,6 +563,57 @@ class SonosManager: @unchecked Sendable {
         }
     }
 
+    // MARK: - Group Display
+
+    /// Combined display name for a group, e.g. "Family Room + Kitchen"
+    func groupDisplayName(for coordinator: SonosPlayer) -> String {
+        let memberNames = players
+            .filter { $0.groupId == coordinator.id && $0.id != coordinator.id }
+            .map(\.name)
+        let allNames = [coordinator.name] + memberNames
+        return allNames.joined(separator: " + ")
+    }
+
+    /// All players in a coordinator's group (including the coordinator)
+    func groupMembers(for coordinator: SonosPlayer) -> [SonosPlayer] {
+        let members = players.filter { $0.groupId == coordinator.id && $0.id != coordinator.id }
+        return [coordinator] + members
+    }
+
+    // MARK: - Group Presets
+
+    private static let presetsKey = "sonos-group-presets"
+
+    func loadGroupPresets() {
+        guard let data = UserDefaults.standard.data(forKey: Self.presetsKey),
+              let presets = try? JSONDecoder().decode([SonosGroupPreset].self, from: data) else { return }
+        groupPresets = presets
+    }
+
+    private func saveGroupPresets() {
+        if let data = try? JSONEncoder().encode(groupPresets) {
+            UserDefaults.standard.set(data, forKey: Self.presetsKey)
+        }
+    }
+
+    func addGroupPreset(name: String, playerIds: [String]) {
+        let preset = SonosGroupPreset(id: UUID().uuidString, name: name, playerIds: playerIds)
+        groupPresets.append(preset)
+        saveGroupPresets()
+    }
+
+    func deleteGroupPreset(id: String) {
+        groupPresets.removeAll { $0.id == id }
+        saveGroupPresets()
+    }
+
+    /// Resolve a preset's player IDs to names for display, filtering to currently-known players.
+    func presetDisplayNames(for preset: SonosGroupPreset) -> [String] {
+        preset.playerIds.compactMap { pid in
+            players.first(where: { $0.id == pid })?.name
+        }
+    }
+
     // MARK: - Helpers
 
     private func coordinator(for playerId: String) -> SonosPlayer? {
@@ -526,5 +659,8 @@ extension SonosLocalClient {
     }
     func setOnVolumeEvent(_ handler: @escaping (String, Int, Bool) -> Void) {
         onVolumeEvent = handler
+    }
+    func setOnTopologyChange(_ handler: @escaping (Data) -> Void) {
+        onTopologyChange = handler
     }
 }

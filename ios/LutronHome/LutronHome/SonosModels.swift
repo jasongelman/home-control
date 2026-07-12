@@ -1,5 +1,19 @@
 import Foundation
 
+extension String {
+    /// Decode common XML/HTML entities that leak through UPnP DIDL-Lite parsing.
+    var xmlDecoded: String {
+        self.replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&apos;", with: "'")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&#x27;", with: "'")
+            .replacingOccurrences(of: "&#x26;", with: "&")
+    }
+}
+
 // MARK: - Enums
 
 enum PlaybackState: String, Codable {
@@ -73,6 +87,14 @@ struct SonosContentItem: Identifiable {
     let isContainer: Bool
     let uri: String      // res URI for playable items
     let metadata: String // DIDL-Lite metadata for SetAVTransportURI
+}
+
+// MARK: - Group Presets
+
+struct SonosGroupPreset: Identifiable, Codable, Equatable {
+    let id: String           // UUID string
+    var name: String         // e.g. "Main Floor"
+    var playerIds: [String]  // UUIDs of the speakers in this preset
 }
 
 // MARK: - Topology Cache
