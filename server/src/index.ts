@@ -12,13 +12,16 @@ import { HomeConnectManager } from './homeconnect/HomeConnectManager.js';
 import { SmartHQManager } from './smarthq/SmartHQManager.js';
 import { MyUplinkManager } from './myuplink/MyUplinkManager.js';
 import { SunShadeAutomation } from './automation/SunShadeAutomation.js';
-import type { LEAPZone } from './lutron/LEAPConnection.js';
+import type { LEAPZone, LEAPKeypad } from './lutron/LEAPConnection.js';
 import type { MyQDoor } from './myq/types.js';
 import type { DishwasherStatus } from './homeconnect/types.js';
 import type { LaundryAppliance } from './smarthq/types.js';
 import type { HeatPumpStatus } from './myuplink/types.js';
 import { TotalConnectPoller } from './totalconnect/TotalConnectPoller.js';
 import type { AlarmPanel } from './totalconnect/types.js';
+import { ChargePointPoller } from './chargepoint/ChargePointPoller.js';
+import type { ChargePointCharger } from './chargepoint/types.js';
+import { SubZeroManager } from './subzero/SubZeroManager.js';
 
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -48,6 +51,12 @@ const smartHQ = new SmartHQManager(config0.smartHQ ?? { email: '', password: '',
 const myUplink = new MyUplinkManager(config0.myUplink ?? { clientId: '', clientSecret: '', enabled: false });
 const alarmPoller = new TotalConnectPoller(
   config0.totalconnect ?? { username: '', password: '', userCode: '', enabled: false },
+);
+const chargePointPoller = new ChargePointPoller(
+  config0.chargepoint ?? { accounts: [], enabled: false },
+);
+const subZero = new SubZeroManager(
+  config0.subZero ?? { enabled: false },
 );
 // ── Sun-shade automations ──────────────────────────────────────────────────
 const sunAutomations = (config0.automations ?? []).map(
@@ -94,7 +103,21 @@ connection.on('zonesLoaded', (zones: LEAPZone[]) => {
     myUplinkLinked: myUplink.isLinked,
     panels: alarmPoller.getPanels(),
     alarmConnected: alarmPoller.isConnected,
+    chargers: chargePointPoller.getChargers(),
+    chargePointConnected: chargePointPoller.isConnected,
+    refrigerators: subZero.getRefrigerators(),
+    ovens: subZero.getOvens(),
+    subZeroLinked: subZero.isLinked,
+    keypads: connection.getKeypads(),
   });
+});
+
+connection.on('keypadsLoaded', (keypads: LEAPKeypad[]) => {
+  stateSync.broadcast({ type: 'keypadsState', keypads });
+});
+
+connection.on('ledStateChange', (keypadId: number, ledId: number, state: 'On' | 'Off') => {
+  stateSync.broadcast({ type: 'ledState', keypadId, ledId, state });
 });
 
 connection.on('connected', (ip: string) => {
@@ -180,6 +203,39 @@ alarmPoller.on('disconnected', (reason: string) => {
   stateSync.broadcast({ type: 'alarmState', panels: [], alarmConnected: false });
 });
 
+// ── Wire up ChargePoint events ───────────────────────────────────────────────
+
+chargePointPoller.on('stateChange', (chargers: ChargePointCharger[]) => {
+  stateSync.broadcast({ type: 'chargerState', chargers, chargePointConnected: true });
+});
+
+chargePointPoller.on('connected', () => {
+  console.log('ChargePoint connected');
+  stateSync.broadcast({ type: 'chargerState', chargers: chargePointPoller.getChargers(), chargePointConnected: true });
+});
+
+chargePointPoller.on('disconnected', (reason: string) => {
+  console.log(`ChargePoint disconnected: ${reason}`);
+  stateSync.broadcast({ type: 'chargerState', chargers: [], chargePointConnected: false });
+});
+
+// ── Wire up Sub-Zero / Wolf events ──────────────────────────────────────────
+
+subZero.on('stateChange', () => {
+  stateSync.broadcast({
+    type: 'subZeroState',
+    refrigerators: subZero.getRefrigerators(),
+    ovens: subZero.getOvens(),
+    subZeroLinked: subZero.isLinked,
+  });
+});
+
+subZero.on('configChanged', (cfg) => {
+  const config = loadConfig();
+  config.subZero = cfg;
+  saveConfig(config);
+});
+
 // ── Auto-reconnect logic ──────────────────────────────────────────────────────
 
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -214,7 +270,7 @@ function scheduleReconnect() {
 
 // ── REST API ──────────────────────────────────────────────────────────────────
 
-app.use('/api', createRoutes(deviceStore, connection, myqPoller, alarmPoller, sunAutomations, homeConnect, smartHQ, myUplink));
+app.use('/api', createRoutes(deviceStore, connection, myqPoller, alarmPoller, sunAutomations, homeConnect, smartHQ, myUplink, chargePointPoller, subZero));
 
 // ── HTTP + WebSocket ──────────────────────────────────────────────────────────
 
@@ -223,7 +279,7 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 
 wss.on('connection', (ws) => {
   console.log(`WebSocket client connected (${stateSync.clientCount + 1} total)`);
-  handleWebSocket(ws, deviceStore, stateSync, connection, myqPoller, alarmPoller, homeConnect, smartHQ, myUplink);
+  handleWebSocket(ws, deviceStore, stateSync, connection, myqPoller, alarmPoller, homeConnect, smartHQ, myUplink, chargePointPoller, subZero);
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
@@ -264,6 +320,22 @@ server.listen(PORT, () => {
     alarmPoller.start();
   } else {
     console.log('Total Connect 2.0 not configured. Add credentials via Settings → Alarm.');
+  }
+
+  const cpCfg = config.chargepoint;
+  if (cpCfg?.enabled && cpCfg.accounts.some((a) => a.email && a.password)) {
+    console.log(`Starting ChargePoint poller for ${cpCfg.accounts.length} account(s)...`);
+    chargePointPoller.start();
+  } else {
+    console.log('ChargePoint not configured. Add credentials via Settings → EV Charging.');
+  }
+
+  const szCfg = config.subZero;
+  if (szCfg?.enabled && szCfg.accessToken) {
+    console.log('Starting Sub-Zero / Wolf polling...');
+    subZero.start();
+  } else {
+    console.log('Sub-Zero / Wolf not configured. Link your account via Settings → Appliances.');
   }
 
   if (config.processor.ip) {

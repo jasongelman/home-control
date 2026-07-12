@@ -16,6 +16,8 @@
  *  'error'         (err: Error)
  *  'stateChange'   (zoneId: number, level: number)
  *  'zonesLoaded'   (zones: LEAPZone[])
+ *  'keypadsLoaded' (keypads: LEAPKeypad[])
+ *  'ledStateChange'(keypadId: number, ledId: number, state: 'On' | 'Off')
  */
 import { EventEmitter } from 'events';
 import { LEAPClient } from './LEAPClient.js';
@@ -50,6 +52,24 @@ export interface LEAPVirtualButton {
   areaName: string;
 }
 
+export interface LEAPKeypadButton {
+  id: number;
+  buttonNumber: number;
+  name: string;
+  engraving: string;
+  ledId: number | null;
+  ledState: 'On' | 'Off' | 'Unknown';
+}
+
+export interface LEAPKeypad {
+  deviceId: number;
+  name: string;
+  deviceType: string;
+  modelNumber: string;
+  areaName: string;
+  buttons: LEAPKeypadButton[];
+}
+
 // ── Connection class ────────────────────────────────────────────────────────
 
 const RECONNECT_DELAYS = [5_000, 10_000, 20_000, 40_000, 60_000];
@@ -65,6 +85,9 @@ export class LEAPConnection extends EventEmitter {
   private areas = new Map<number, LEAPArea>();
   private zones = new Map<number, LEAPZone>();
   private virtualButtons = new Map<number, LEAPVirtualButton>();
+  private keypads = new Map<number, LEAPKeypad>();
+  // Maps an LED id → the keypad+button it belongs to, for routing live LED updates.
+  private ledIndex = new Map<number, { keypadId: number; buttonId: number }>();
   private zoneStatusSubscribed = false;
 
   // ── Public API ────────────────────────────────────────────────────────────
@@ -231,6 +254,10 @@ export class LEAPConnection extends EventEmitter {
     // Subscribe to real-time zone updates
     await this.subscribeZoneStatus();
 
+    // Discover physical keypads + subscribe to their LEDs (non-fatal if it fails)
+    await this.loadKeypads();
+    this.emit('keypadsLoaded', this.getKeypads());
+
     this._isConnected = true;
     this.reconnectAttempts = 0;
     // Save the working port back to config
@@ -386,6 +413,123 @@ export class LEAPConnection extends EventEmitter {
     }
   }
 
+  /**
+   * Discover physical keypads (Keypad / Sunnata devices) via the
+   * area → control-station → device → buttongroup → button → led path, and
+   * subscribe to each LED's status for live on/off state.
+   */
+  private async loadKeypads(): Promise<void> {
+    this.keypads.clear();
+    this.ledIndex.clear();
+    try {
+      const leafAreas = [...this.areas.values()].filter((a) => a.id > 0 && a.isLeaf);
+      for (const area of leafAreas) {
+        const csResp = await this.client!.send({
+          CommuniqueType: 'ReadRequest',
+          Header: { Url: `/area/${area.id}/associatedcontrolstation` },
+        }).catch(() => null);
+        const stations = (csResp?.Body?.ControlStations ?? []) as Array<Record<string, unknown>>;
+        for (const cs of stations) {
+          const csName = (cs.Name as string) ?? '';
+          const ganged = (cs.AssociatedGangedDevices ?? []) as Array<Record<string, unknown>>;
+          for (const g of ganged) {
+            const dev = g.Device as { href?: string; DeviceType?: string } | undefined;
+            const deviceType = dev?.DeviceType ?? '';
+            if (!/Keypad|Sunnata/.test(deviceType)) continue;
+            const deviceHref = dev?.href ?? '';
+            const deviceId = hrefToId(deviceHref);
+            if (deviceId <= 0) continue;
+
+            const buttons = await this.loadKeypadButtons(deviceHref, deviceId);
+
+            // Model number (best-effort)
+            let modelNumber = '';
+            const devResp = await this.client!.send({
+              CommuniqueType: 'ReadRequest',
+              Header: { Url: deviceHref },
+            }).catch(() => null);
+            const devBody = devResp?.Body?.Device as { ModelNumber?: string } | undefined;
+            modelNumber = devBody?.ModelNumber ?? '';
+
+            this.keypads.set(deviceId, {
+              deviceId,
+              name: csName || `Keypad ${deviceId}`,
+              deviceType,
+              modelNumber,
+              areaName: area.name,
+              buttons,
+            });
+          }
+        }
+      }
+      console.log(`LEAP: loaded ${this.keypads.size} keypads`);
+    } catch (err) {
+      console.error('LEAP: keypad discovery failed', err);
+    }
+  }
+
+  /** Read a keypad device's buttons (across its button groups) and subscribe to their LEDs. */
+  private async loadKeypadButtons(deviceHref: string, keypadId: number): Promise<LEAPKeypadButton[]> {
+    const out: LEAPKeypadButton[] = [];
+    const bgResp = await this.client!.send({
+      CommuniqueType: 'ReadRequest',
+      Header: { Url: `${deviceHref}/buttongroup` },
+    }).catch(() => null);
+    const groups = (bgResp?.Body?.ButtonGroups ?? []) as Array<Record<string, unknown>>;
+
+    for (const grp of groups) {
+      const groupHref = grp.href as string;
+      if (!groupHref) continue;
+      const btnResp = await this.client!.send({
+        CommuniqueType: 'ReadRequest',
+        Header: { Url: `${groupHref}/button` },
+      }).catch(() => null);
+      const btns = (btnResp?.Body?.Buttons ?? []) as Array<Record<string, unknown>>;
+
+      for (const b of btns) {
+        const btnId = hrefToId(b.href as string);
+        const engraving = ((b.Engraving as { Text?: string } | undefined)?.Text) ?? '';
+        const ledHref = (b.AssociatedLED as { href?: string } | undefined)?.href;
+        const ledId = ledHref ? hrefToId(ledHref) : null;
+
+        let ledState: 'On' | 'Off' | 'Unknown' = 'Unknown';
+        if (ledId != null && ledId > 0) {
+          // SubscribeRequest returns the current status now AND pushes future changes.
+          const ledResp = await this.client!.send({
+            CommuniqueType: 'SubscribeRequest',
+            Header: { Url: `/led/${ledId}/status` },
+          }).catch(() => null);
+          const st = (ledResp?.Body?.LEDStatus as { State?: string } | undefined)?.State;
+          ledState = st === 'On' ? 'On' : st === 'Off' ? 'Off' : 'Unknown';
+          this.ledIndex.set(ledId, { keypadId, buttonId: btnId });
+        }
+
+        out.push({
+          id: btnId,
+          buttonNumber: (b.ButtonNumber as number) ?? 0,
+          name: (b.Name as string) ?? '',
+          engraving,
+          ledId,
+          ledState,
+        });
+      }
+    }
+    return out;
+  }
+
+  /** Turn a keypad button's LED on or off. */
+  async setLEDState(ledId: number, state: 'On' | 'Off'): Promise<void> {
+    await this.client!.send({
+      CommuniqueType: 'UpdateRequest',
+      Header: { Url: `/led/${ledId}/status` },
+      Body: { LEDStatus: { State: state } },
+    });
+  }
+
+  getKeypads(): LEAPKeypad[] {
+    return [...this.keypads.values()];
+  }
+
   private async subscribeZoneStatus(): Promise<void> {
     if (this.zoneStatusSubscribed) return; // Already subscribed during loadZones (QSX path)
 
@@ -408,7 +552,7 @@ export class LEAPConnection extends EventEmitter {
 
   private handleUnsolicited(msg: unknown): void {
     const m = msg as {
-      Header?: { MessageBodyType?: string };
+      Header?: { MessageBodyType?: string; Url?: string };
       Body?: Record<string, unknown>;
     };
     const bodyType = m.Header?.MessageBodyType ?? '';
@@ -421,7 +565,29 @@ export class LEAPConnection extends EventEmitter {
       for (const zs of statuses) {
         this.emitZoneStatus(zs);
       }
+    } else if (bodyType === 'OneLEDStatus' || bodyType === 'MultipleLEDStatus') {
+      const statuses = (
+        m.Body?.LEDStatuses ??
+        (m.Body?.LEDStatus ? [m.Body.LEDStatus] : [])
+      ) as Array<Record<string, unknown>>;
+      for (const ls of statuses) {
+        // Prefer the LED href in the body; fall back to the subscription Url.
+        const ledHref = (ls.LED as { href?: string } | undefined)?.href ?? m.Header?.Url ?? '';
+        const ledId = hrefToId(ledHref);
+        const state = (ls.State as string) === 'On' ? 'On' : 'Off';
+        this.emitLEDStatus(ledId, state);
+      }
     }
+  }
+
+  private emitLEDStatus(ledId: number, state: 'On' | 'Off'): void {
+    const ref = this.ledIndex.get(ledId);
+    if (!ref) return;
+    const keypad = this.keypads.get(ref.keypadId);
+    const button = keypad?.buttons.find((b) => b.id === ref.buttonId);
+    if (!button || button.ledState === state) return;
+    button.ledState = state;
+    this.emit('ledStateChange', ref.keypadId, ledId, state);
   }
 
   private emitZoneStatus(zs: Record<string, unknown>): void {

@@ -93,6 +93,8 @@ export interface AppConfig {
   homeConnect?: import('../homeconnect/types.js').HomeConnectConfig;
   smartHQ?: import('../smarthq/types.js').SmartHQConfig;
   myUplink?: import('../myuplink/types.js').MyUplinkConfig;
+  chargepoint?: import('../chargepoint/types.js').ChargePointConfig;
+  subZero?: import('../subzero/types.js').SubZeroConfig;
   anthropicApiKey?: string;
 }
 
@@ -161,13 +163,23 @@ export type ServerMessage =
       myUplinkLinked: boolean;
       panels: AlarmPanel[];
       alarmConnected: boolean;
+      chargers: import('../chargepoint/types.js').ChargePointCharger[];
+      chargePointConnected: boolean;
+      refrigerators: import('../subzero/types.js').SubZeroRefrigerator[];
+      ovens: import('../subzero/types.js').WolfOven[];
+      subZeroLinked: boolean;
+      keypads: import('./LEAPConnection.js').LEAPKeypad[];
     }
+  | { type: 'keypadsState'; keypads: import('./LEAPConnection.js').LEAPKeypad[] }
+  | { type: 'ledState'; keypadId: number; ledId: number; state: 'On' | 'Off' }
   | { type: 'state'; deviceId: number; level: number; timestamp: number }
   | { type: 'connected'; processorIp: string }
   | { type: 'disconnected'; reason: string }
   | { type: 'garageState'; doors: MyQDoor[]; myqConnected: boolean }
   | { type: 'applianceState'; dishwashers: import('../homeconnect/types.js').DishwasherStatus[]; laundry: import('../smarthq/types.js').LaundryAppliance[]; heatPumps: import('../myuplink/types.js').HeatPumpStatus[] }
   | { type: 'alarmState'; panels: AlarmPanel[]; alarmConnected: boolean }
+  | { type: 'chargerState'; chargers: import('../chargepoint/types.js').ChargePointCharger[]; chargePointConnected: boolean }
+  | { type: 'subZeroState'; refrigerators: import('../subzero/types.js').SubZeroRefrigerator[]; ovens: import('../subzero/types.js').WolfOven[]; subZeroLinked: boolean }
   | { type: 'error'; message: string }
   | { type: 'pong' };
 
@@ -178,4 +190,7 @@ export type ClientMessage =
   | { type: 'queryDevice'; deviceId: number }
   | { type: 'garageAction'; serial: string; action: 'open' | 'close' }
   | { type: 'alarmAction'; locationId: string; action: 'armAway' | 'armHome' | 'armNight' | 'disarm' }
+  | { type: 'chargerAction'; chargerId: string; action: 'setAmperage'; value: number }
+  | { type: 'subZeroAction'; applianceId: string; action: 'setFridgeTemp' | 'setFreezerTemp' | 'setCrisperTemp' | 'setIceMaker' | 'setMaxIce' | 'setNightMode' | 'setHumidityControl' | 'toggleLight' | 'toggleOvenLight' | 'setProperty' | 'refresh'; property?: string; value?: unknown }
+  | { type: 'setLEDState'; ledId: number; state: 'On' | 'Off' }
   | { type: 'ping' };

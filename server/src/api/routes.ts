@@ -18,6 +18,8 @@ import type { HomeConnectManager } from '../homeconnect/HomeConnectManager.js';
 import type { SmartHQManager } from '../smarthq/SmartHQManager.js';
 import type { MyUplinkManager } from '../myuplink/MyUplinkManager.js';
 import type { TotalConnectPoller } from '../totalconnect/TotalConnectPoller.js';
+import type { ChargePointPoller } from '../chargepoint/ChargePointPoller.js';
+import type { SubZeroManager } from '../subzero/SubZeroManager.js';
 import type { SunShadeAutomation } from '../automation/SunShadeAutomation.js';
 import { getSunPosition } from '../utils/SunPosition.js';
 import { handleChat, type ChatRequest } from './chat.js';
@@ -31,6 +33,8 @@ export function createRoutes(
   homeConnect?: HomeConnectManager,
   smartHQ?: SmartHQManager,
   myUplink?: MyUplinkManager,
+  chargePointPoller?: ChargePointPoller,
+  subZero?: SubZeroManager,
 ): Router {
   const router = Router();
 
@@ -715,6 +719,208 @@ export function createRoutes(
     config.anthropicApiKey = apiKey || '';
     saveConfig(config);
     res.json({ ok: true });
+  });
+
+  // ── ChargePoint / EV Charging ──────────────────────────────────────────────
+
+  /** GET /api/chargepoint/status — charger connection status + chargers */
+  router.get('/chargepoint/status', (_req, res) => {
+    res.json({
+      connected: chargePointPoller?.isConnected ?? false,
+      chargers: chargePointPoller?.getChargers() ?? [],
+    });
+  });
+
+  /** GET /api/chargepoint/config — ChargePoint config (passwords omitted) */
+  router.get('/chargepoint/config', (_req, res) => {
+    const config = loadConfig();
+    const cp = config.chargepoint ?? { accounts: [], enabled: false };
+    res.json({
+      accounts: cp.accounts.map((a) => ({ email: a.email, nickname: a.nickname })),
+      enabled: cp.enabled,
+    });
+  });
+
+  /** PUT /api/chargepoint/config — save ChargePoint accounts and restart poller */
+  router.put('/chargepoint/config', (req, res) => {
+    const { accounts, enabled } = req.body as {
+      accounts?: Array<{ email?: string; password?: string; nickname?: string }>;
+      enabled?: boolean;
+    };
+
+    const config = loadConfig();
+    const existing = config.chargepoint ?? { accounts: [], enabled: false };
+
+    if (accounts !== undefined) {
+      existing.accounts = accounts.map((a, i) => ({
+        email: a.email ?? existing.accounts[i]?.email ?? '',
+        password: a.password || existing.accounts[i]?.password || '',
+        nickname: a.nickname ?? existing.accounts[i]?.nickname ?? `Charger ${i + 1}`,
+      }));
+    }
+    if (enabled !== undefined) {
+      existing.enabled = enabled;
+    }
+
+    config.chargepoint = existing;
+    saveConfig(config);
+    chargePointPoller?.updateConfig(config.chargepoint);
+    res.json({ ok: true });
+  });
+
+  /** POST /api/chargepoint/unlink — clear credentials and stop poller */
+  router.post('/chargepoint/unlink', (_req, res) => {
+    const config = loadConfig();
+    config.chargepoint = { accounts: [], enabled: false };
+    saveConfig(config);
+    chargePointPoller?.updateConfig(config.chargepoint);
+    res.json({ ok: true });
+  });
+
+  /** PUT /api/chargepoint/amperage/:chargerId — set amperage limit */
+  router.put('/chargepoint/amperage/:chargerId', async (req, res) => {
+    const { amps } = req.body as { amps?: number };
+    if (typeof amps !== 'number' || amps < 1) {
+      res.status(400).json({ error: 'amps must be a positive number' });
+      return;
+    }
+    if (!chargePointPoller?.isConnected) {
+      res.status(503).json({ error: 'ChargePoint not connected' });
+      return;
+    }
+    try {
+      await chargePointPoller.triggerSetAmperage(req.params.chargerId, amps);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  /** GET /api/chargepoint/sessions/:chargerId — charging session history */
+  router.get('/chargepoint/sessions/:chargerId', async (req, res) => {
+    if (!chargePointPoller?.isConnected) {
+      res.status(503).json({ error: 'ChargePoint not connected' });
+      return;
+    }
+    try {
+      const sessions = await chargePointPoller.getHistory(req.params.chargerId);
+      res.json(sessions);
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // ── Sub-Zero / Wolf ──────────────────────────────────────────────────────
+
+  /** GET /api/subzero/status — Sub-Zero connection status + appliances */
+  router.get('/subzero/status', (_req, res) => {
+    res.json({
+      linked: subZero?.isLinked ?? false,
+      refrigerators: subZero?.getRefrigerators() ?? [],
+      ovens: subZero?.getOvens() ?? [],
+    });
+  });
+
+  /** GET /api/subzero/config — Sub-Zero config (tokens omitted) */
+  router.get('/subzero/config', (_req, res) => {
+    const config = loadConfig();
+    const sz = config.subZero ?? { enabled: false };
+    res.json({ enabled: sz.enabled, linked: !!(sz.accessToken && sz.enabled) });
+  });
+
+  /** GET /api/subzero/oauth/start — redirect to B2C login */
+  router.get('/subzero/oauth/start', (req, res) => {
+    if (!subZero) { res.status(503).json({ error: 'SubZero not available' }); return; }
+    const redirectBase = `${req.protocol}://${req.get('host')}`;
+    res.redirect(subZero.getAuthUrl(redirectBase));
+  });
+
+  /** GET /api/subzero/oauth/callback — handle B2C callback */
+  router.get('/subzero/oauth/callback', async (req, res) => {
+    const { code } = req.query as { code?: string };
+    if (!code || !subZero) { res.status(400).send('Missing code or SubZero not configured'); return; }
+    try {
+      const redirectBase = `${req.protocol}://${req.get('host')}`;
+      await subZero.handleCallback(code, redirectBase);
+      res.send('<script>window.close()</script><p>Sub-Zero / Wolf linked! You can close this tab.</p>');
+    } catch (err) {
+      res.status(500).send(`OAuth error: ${String(err)}`);
+    }
+  });
+
+  /** POST /api/subzero/unlink — clear tokens and stop polling */
+  router.post('/subzero/unlink', (_req, res) => {
+    subZero?.unlink();
+    res.json({ ok: true });
+  });
+
+  /** POST /api/subzero/probe — run endpoint discovery probe */
+  router.post('/subzero/probe', async (_req, res) => {
+    if (!subZero?.isLinked) {
+      res.status(503).json({ error: 'Sub-Zero not linked' });
+      return;
+    }
+    try {
+      const log = await subZero.probeEndpoints();
+      res.json({ log });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  /** POST /api/subzero/command — send a command to an appliance */
+  router.post('/subzero/command', async (req, res) => {
+    if (!subZero?.isLinked) {
+      res.status(503).json({ error: 'Sub-Zero not linked' });
+      return;
+    }
+    const { applianceId, action, value, property } = req.body as {
+      applianceId: string; action: string; value?: unknown; property?: string;
+    };
+    try {
+      switch (action) {
+        case 'setFridgeTemp':
+          await subZero.setFridgeTemp(applianceId, value as number);
+          break;
+        case 'setFreezerTemp':
+          await subZero.setFreezerTemp(applianceId, value as number);
+          break;
+        case 'setCrisperTemp':
+          await subZero.setCrisperTemp(applianceId, value as number);
+          break;
+        case 'setIceMaker':
+          await subZero.setIceMaker(applianceId, value as boolean);
+          break;
+        case 'setMaxIce':
+          await subZero.setMaxIce(applianceId, value as boolean);
+          break;
+        case 'setNightMode':
+          await subZero.setNightMode(applianceId, value as boolean);
+          break;
+        case 'setHumidityControl':
+          await subZero.setHumidityControl(applianceId, value as number);
+          break;
+        case 'toggleLight':
+          await subZero.toggleLight(applianceId, value as boolean);
+          break;
+        case 'toggleOvenLight':
+          await subZero.toggleOvenLight(applianceId, value as boolean);
+          break;
+        case 'setProperty':
+          if (!property) { res.status(400).json({ error: 'setProperty requires a property name' }); return; }
+          await subZero.setProperty(applianceId, property, value);
+          break;
+        case 'refresh':
+          await subZero.refreshSnapshot(applianceId);
+          break;
+        default:
+          res.status(400).json({ error: `Unknown action: ${action}` });
+          return;
+      }
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
   });
 
   return router;

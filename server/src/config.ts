@@ -40,6 +40,13 @@ const DEFAULT_CONFIG: AppConfig = {
     userCode: '',
     enabled: false,
   },
+  chargepoint: {
+    accounts: [],
+    enabled: false,
+  },
+  subZero: {
+    enabled: false,
+  },
 };
 
 export function loadConfig(): AppConfig {
