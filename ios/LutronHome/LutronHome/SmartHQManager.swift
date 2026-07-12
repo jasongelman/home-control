@@ -119,6 +119,13 @@ struct LaundryApplianceStatus: Identifiable {
     }
 }
 
+/// Lightweight cached appliance identity (ID, name, type) for instant startup.
+private struct CachedAppliance: Codable {
+    let applianceId: String
+    let applianceName: String
+    let applianceType: String
+}
+
 struct SmartHQTokens: Codable {
     let accessToken: String
     let refreshToken: String
@@ -153,6 +160,8 @@ class SmartHQManager: @unchecked Sendable {
     var errorMessage: String?
 
     private var previousStates: [String: LaundryMachineState] = [:]
+    private static let appliancesCacheKey = "smarthq_appliances_cache"
+
 
     /// Convenience: first washer
     var washer: LaundryApplianceStatus? { appliances.first(where: { $0.isWasher }) }
@@ -176,6 +185,17 @@ class SmartHQManager: @unchecked Sendable {
 
     init() {
         loadTokens()
+        // Load cached appliance list for instant startup
+        if let data = UserDefaults.standard.data(forKey: Self.appliancesCacheKey),
+           let cached = try? JSONDecoder().decode([CachedAppliance].self, from: data) {
+            appliances = cached.map { c in
+                var s = LaundryApplianceStatus()
+                s.applianceId = c.applianceId
+                s.applianceName = c.applianceName
+                s.applianceType = c.applianceType
+                return s
+            }
+        }
     }
 
     // MARK: - Authentication (OAuth2 authorization_code via ASWebAuthenticationSession)
@@ -327,7 +347,13 @@ class SmartHQManager: @unchecked Sendable {
             throw URLError(.userAuthenticationRequired)
         }
 
-        var request = URLRequest(url: URL(string: "\(apiBase)\(path)")!)
+        // URL-encode path components (e.g. appliance JIDs containing @)
+        let encodedPath = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
+        guard let url = URL(string: "\(apiBase)\(encodedPath)") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("Bearer \(tok.accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -335,6 +361,8 @@ class SmartHQManager: @unchecked Sendable {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let body = String(data: data, encoding: .utf8) ?? ""
+            print("SmartHQ: API \(method) \(path) failed (\(code)): \(body.prefix(300))")
             throw URLError(.badServerResponse, userInfo: ["statusCode": code])
         }
 
@@ -396,6 +424,12 @@ class SmartHQManager: @unchecked Sendable {
         appliances = found
         print("SmartHQ: found \(found.count) laundry appliance(s) among \(items.count) total appliances")
 
+        // Cache appliance identities for instant startup
+        let cached = found.map { CachedAppliance(applianceId: $0.applianceId, applianceName: $0.applianceName, applianceType: $0.applianceType) }
+        if let data = try? JSONEncoder().encode(cached) {
+            UserDefaults.standard.set(data, forKey: Self.appliancesCacheKey)
+        }
+
         Task {
             for i in 0..<appliances.count {
                 await fetchERD(for: i)
@@ -409,6 +443,7 @@ class SmartHQManager: @unchecked Sendable {
         guard index < appliances.count else { return }
         let applianceId = appliances[index].applianceId
         guard !applianceId.isEmpty else { return }
+        guard appliances[index].online else { return }
 
         do {
             let json = try await apiRequest("/v1/appliance/\(applianceId)/erd")

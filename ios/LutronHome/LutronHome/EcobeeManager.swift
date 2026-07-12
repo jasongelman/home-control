@@ -305,10 +305,12 @@ class EcobeeManager: NSObject, @unchecked Sendable {
         }
 
         let hasData = !newThermostats.isEmpty
+        let thermostatsResult = newThermostats
+        let sensorsResult = newSensors
         await MainActor.run {
             if hasData {
-                thermostats = newThermostats
-                sensors = newSensors
+                thermostats = thermostatsResult
+                sensors = sensorsResult
                 errorMessage = nil
             }
         }

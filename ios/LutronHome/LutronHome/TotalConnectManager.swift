@@ -369,9 +369,11 @@ class TotalConnectManager: @unchecked Sendable {
 
         guard !newPanels.isEmpty else { return }
 
+        let panelsResult = newPanels
+        let zonesResult = newZones
         await MainActor.run {
-            panels = newPanels
-            zones  = newZones
+            panels = panelsResult
+            zones  = zonesResult
             errorMessage = nil
         }
         saveCachedTopology()
