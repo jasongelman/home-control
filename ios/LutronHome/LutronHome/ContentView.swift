@@ -458,6 +458,7 @@ struct DashboardView: View {
     @Environment(EcobeeManager.self) var ecobee
     @Environment(SonosManager.self) var sonos
     @Environment(ChatService.self) var chatService
+    @Environment(ChargePointManager.self) var chargePoint
 
     @State private var showDishwasherStartSheet = false
     @State private var selectedDishwasherId: String?
@@ -475,6 +476,7 @@ struct DashboardView: View {
                 EditorialCameraSection()
                 EditorialSonosSection()
                 EditorialLightsSection()
+                EditorialEVChargingSection()
             }
             .padding(.horizontal)
             .padding(.top, 12)
@@ -665,6 +667,22 @@ struct DashboardView: View {
                 value = hp.operatingMode ?? "—"
             }
             cells.append(StatusCell("hvac", label: "HVAC", value: value, suffix: suffix, isActive: true))
+        }
+
+        // EV Chargers
+        if chargePoint.isLinked {
+            for charger in chargePoint.chargers {
+                let value: String
+                let active: Bool
+                if charger.status == .charging {
+                    value = charger.powerKw.map { "\(String(format: "%.1f", $0)) kW" } ?? "Charging"
+                    active = true
+                } else {
+                    value = charger.status.label
+                    active = charger.isPluggedIn
+                }
+                cells.append(StatusCell("ev_\(charger.chargerId)", label: charger.nickname, value: value, isActive: active))
+            }
         }
 
         // Sonos speakers

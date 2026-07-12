@@ -12,6 +12,8 @@ struct SettingsView: View {
     @Environment(EcobeeManager.self) var ecobee
     @Environment(SonosManager.self) var sonos
     @Environment(SpotifyManager.self) var spotify
+    @Environment(ChargePointManager.self) var chargePoint
+    @Environment(SubZeroManager.self) var subZero
     @State private var host: String = ""
     @State private var chatApiKey: String = ""
     @State private var hcClientId: String = ""
@@ -26,6 +28,12 @@ struct SettingsView: View {
     @State private var sonosClientId: String = ""
     @State private var sonosClientSecret: String = ""
     @State private var spotifyClientId: String = ""
+    @State private var cpEmail0: String = ""
+    @State private var cpPassword0: String = ""
+    @State private var cpNickname0: String = ""
+    @State private var cpEmail1: String = ""
+    @State private var cpPassword1: String = ""
+    @State private var cpNickname1: String = ""
 
     private let oauthContext = OAuthPresentationContext()
 
@@ -749,6 +757,97 @@ struct SettingsView: View {
                 Text("Sign in with your Total Connect 2.0 account credentials (same as the T.C. 2.0 app). Your user code is the PIN used to arm/disarm your panel.")
             }
 
+            // MARK: - ChargePoint EV Charging
+
+            Section {
+                HStack {
+                    Image(systemName: "ev.charger")
+                        .foregroundStyle(.green)
+                    Text("EV Chargers")
+                        .fontWeight(.medium)
+                    Spacer()
+                    if chargePoint.isLinked {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                }
+
+                chargePointAccountRow(index: 0, email: $cpEmail0, password: $cpPassword0, nickname: $cpNickname0)
+                chargePointAccountRow(index: 1, email: $cpEmail1, password: $cpPassword1, nickname: $cpNickname1)
+
+                if chargePoint.isLinked {
+                    ForEach(chargePoint.chargers) { charger in
+                        HStack {
+                            Image(systemName: charger.status.icon)
+                                .foregroundStyle(charger.status == .charging ? .green : charger.isPluggedIn ? .blue : .secondary)
+                                .frame(width: 20)
+                            Text(charger.nickname)
+                            Spacer()
+                            Text(charger.status.label)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                if let error = chargePoint.errorMessage {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            } header: {
+                Text("ChargePoint")
+            } footer: {
+                Text("Sign in with your ChargePoint account credentials. Each charger requires its own account. Nicknames are used on the dashboard.")
+            }
+
+            // MARK: - Sub-Zero / Wolf
+
+            Section {
+                HStack {
+                    Image(systemName: "refrigerator.fill")
+                        .foregroundStyle(.blue)
+                    Text("Sub-Zero / Wolf")
+                        .fontWeight(.medium)
+                    Spacer()
+                    if subZero.isLinked {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                }
+
+                if subZero.isLinked {
+                    HStack {
+                        Text("Refrigerators")
+                        Spacer()
+                        Text("\(subZero.refrigerators.count)")
+                            .foregroundStyle(.secondary)
+                    }
+                    HStack {
+                        Text("Ovens")
+                        Spacer()
+                        Text("\(subZero.ovens.count)")
+                            .foregroundStyle(.secondary)
+                    }
+                    Button("Unlink Sub-Zero / Wolf", role: .destructive) {
+                        subZero.unlink()
+                    }
+                } else {
+                    Button("Link Sub-Zero / Wolf Account") {
+                        subZero.startOAuth(from: oauthContext)
+                    }
+                }
+
+                if let error = subZero.errorMessage {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            } header: {
+                Text("Sub-Zero / Wolf")
+            } footer: {
+                Text("Link your Sub-Zero Group Owner's App account to view refrigerator and oven status.")
+            }
+
             // MARK: - For You Insights
 
             Section {
@@ -799,6 +898,72 @@ struct SettingsView: View {
             sonosClientId = KeychainHelper.loadString(for: "sonos-clientId") ?? ""
             sonosClientSecret = KeychainHelper.loadString(for: "sonos-clientSecret") ?? ""
             spotifyClientId = UserDefaults.standard.string(forKey: "spotify_client_id") ?? ""
+            cpNickname0 = chargePoint.getNickname(for: 0)
+            cpEmail0 = chargePoint.getEmail(for: 0)
+            cpNickname1 = chargePoint.getNickname(for: 1)
+            cpEmail1 = chargePoint.getEmail(for: 1)
+        }
+    }
+
+    @ViewBuilder
+    private func chargePointAccountRow(index: Int, email: Binding<String>, password: Binding<String>, nickname: Binding<String>) -> some View {
+        let hasAccount = chargePoint.hasCredentials(for: index)
+
+        if hasAccount {
+            HStack {
+                Image(systemName: "ev.charger")
+                    .foregroundStyle(.green)
+                    .frame(width: 20)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(chargePoint.getNickname(for: index))
+                    Text(chargePoint.getEmail(for: index))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button(role: .destructive) {
+                    chargePoint.signOut(accountIndex: index)
+                    email.wrappedValue = ""
+                    password.wrappedValue = ""
+                    nickname.wrappedValue = ""
+                } label: {
+                    Text("Remove")
+                        .font(.caption)
+                }
+            }
+        } else {
+            DisclosureGroup("Charger \(index + 1)") {
+                TextField("Nickname", text: nickname)
+                    .autocorrectionDisabled()
+
+                TextField("Email", text: email)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.emailAddress)
+
+                SecureField("Password", text: password)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+
+                Button {
+                    let e = email.wrappedValue
+                    let p = password.wrappedValue
+                    let n = nickname.wrappedValue
+                    chargePoint.signIn(accountIndex: index, email: e, password: p, nickname: n)
+                    email.wrappedValue = ""
+                    password.wrappedValue = ""
+                } label: {
+                    HStack {
+                        if chargePoint.isLoading {
+                            ProgressView().scaleEffect(0.8)
+                        }
+                        Image(systemName: "link")
+                        Text("Sign In")
+                    }
+                }
+                .disabled(email.wrappedValue.isEmpty || password.wrappedValue.isEmpty || nickname.wrappedValue.isEmpty || chargePoint.isLoading)
+                .tint(.green)
+            }
         }
     }
 }

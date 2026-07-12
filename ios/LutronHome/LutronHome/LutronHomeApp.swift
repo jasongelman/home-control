@@ -15,6 +15,8 @@ struct LutronHomeApp: App {
     @State private var ecobee = EcobeeManager()
     @State private var sonos = SonosManager()
     @State private var spotify = SpotifyManager()
+    @State private var chargePoint = ChargePointManager()
+    @State private var subZero = SubZeroManager()
     @State private var weather = WeatherManager()
     @Environment(\.scenePhase) private var scenePhase
     @State private var showVoiceInput = false
@@ -48,6 +50,8 @@ struct LutronHomeApp: App {
                 .environment(ecobee)
                 .environment(sonos)
                 .environment(spotify)
+                .environment(chargePoint)
+                .environment(subZero)
                 .environment(weather)
                 .preferredColorScheme(.light)
                 .onAppear {
@@ -74,10 +78,14 @@ struct LutronHomeApp: App {
                         totalConnect.resume()
                         ecobee.resume()
                         sonos.resume()
+                        chargePoint.resume()
+                        subZero.resume()
                         weather.resume()
                         // Sync widget state on foreground
                         syncWidgetState()
                     } else if newPhase == .background {
+                        subZero.pause()
+                        chargePoint.suspend()
                         sonos.suspendLocal()
                         // Sync once more with the freshest data we have,
                         // then schedule a background refresh so the widget
