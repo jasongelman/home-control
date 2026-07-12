@@ -1,9 +1,10 @@
 import Foundation
 import Network
+@preconcurrency import Dispatch
 
 /// Low-level LEAP protocol client using NWConnection with TLS + mTLS.
 /// LEAP sends newline-delimited JSON over TLS on port 8081.
-class LEAPClient {
+class LEAPClient: @unchecked Sendable {
     private var connection: NWConnection?
     private var dataBuffer = Data()
     private var tagCounter = 0

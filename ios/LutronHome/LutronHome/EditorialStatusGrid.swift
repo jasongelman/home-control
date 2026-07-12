@@ -234,7 +234,7 @@ struct EditorialStatusGrid: View {
     // MARK: - Actions
 
     private func toggleGarageDoor(_ door: HMAccessory) {
-        Task { await homeKit.toggleGarageDoor(door) }
+        homeKit.toggleGarageDoor(door)
     }
 
     private func toggleMyQDoor(_ door: MyQDoor) {

@@ -30,7 +30,7 @@
 	</array>
 	<key>UIAppFonts</key>
 	<array>
-		<string>Fonts/BebasNeue-Regular.ttf</string>
+		<string>BebasNeue-Regular.ttf</string>
 	</array>
 	<key>UIBackgroundModes</key>
 	<array>

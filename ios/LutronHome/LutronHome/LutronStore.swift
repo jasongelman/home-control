@@ -223,8 +223,9 @@ class LutronStore: @unchecked Sendable {
                     }
                 } catch {}
             }
+            let capturedActiveId = activeId
             await MainActor.run {
-                self.colorKeypads[i].activeButtonId = activeId
+                self.colorKeypads[i].activeButtonId = capturedActiveId
             }
         }
     }
@@ -411,12 +412,13 @@ class LutronStore: @unchecked Sendable {
                     }
                 }
                 print("LEAP: discovered \(zoneIds.count) zones from status")
-                await MainActor.run { statusMessage = "Fetching zone details (0/\(zoneIds.count))..." }
+                let capturedZoneIds = zoneIds
+                await MainActor.run { statusMessage = "Fetching zone details (0/\(capturedZoneIds.count))..." }
 
                 // Fetch individual zone details — populate UI progressively
-                for (i, zid) in zoneIds.enumerated() {
+                for (i, zid) in capturedZoneIds.enumerated() {
                     if i % 10 == 0 {
-                        await MainActor.run { statusMessage = "Loading devices (\(i)/\(zoneIds.count))..." }
+                        await MainActor.run { statusMessage = "Loading devices (\(i)/\(capturedZoneIds.count))..." }
                     }
                     do {
                         let zResp = try await client.send(LEAPMessagePayload(
@@ -467,8 +469,9 @@ class LutronStore: @unchecked Sendable {
                         lastUpdated: Date().timeIntervalSince1970
                     )
                 }
+                let devicesResult = newDevices
                 await MainActor.run {
-                    self.devices = newDevices
+                    self.devices = devicesResult
                 }
             }
 

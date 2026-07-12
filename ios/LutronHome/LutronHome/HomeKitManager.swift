@@ -15,8 +15,24 @@ class HomeKitManager: NSObject, @unchecked Sendable {
     var autoRotateEnabled = true
     var isStreaming = false
 
+    // Camera health — names of cameras that have failed stream/snapshot enough
+    // to be considered offline. The dashboard shows these as a dimmed last-frame
+    // tile with an OFFLINE badge. Cleared on foreground and on reachability recovery.
+    var unavailableCameras: Set<String> = []
+    private var snapshotFailureCounts: [String: Int] = [:]
+    private let snapshotFailureThreshold = 2
+
+    // Soft-failure retry (camera sleeping/busy): one pending retry per camera,
+    // capped consecutively so the 30s tile refresh stays the long-term probe.
+    private var snapshotRetryPending: Set<String> = []
+    private var snapshotSoftFailCounts: [String: Int] = [:]
+    private let snapshotSoftFailLimit = 3
+
     // Cached camera images (keyed by camera name)
     var cachedImages: [String: UIImage] = [:]
+    // When each cached image was captured — shown on the dashboard's
+    // last-frame fallback tile ("OFFLINE · 8:12 AM").
+    var cachedImageDates: [String: Date] = [:]
 
     // Incremented when a snapshot arrives — used to trigger SwiftUI updates
     // for the live HMCameraView tiles on the dashboard.
@@ -40,7 +56,7 @@ class HomeKitManager: NSObject, @unchecked Sendable {
     private var homeManager: HMHomeManager?
     private var rotationTimer: Timer?
     private var retryCount = 0
-    private let maxRetries = 3
+    private let maxRetries = 1
     private var intentionalStop = false
 
     // Camera cache directory
@@ -111,6 +127,9 @@ class HomeKitManager: NSObject, @unchecked Sendable {
             }
             // Subscribe to motion sensors on camera accessories
             subscribeToMotionSensors()
+            // Warm the last-frame cache so dashboard tiles can fall back to
+            // the most recent image instead of rendering black.
+            loadAllCachedImages()
         }
     }
 
@@ -291,6 +310,9 @@ class HomeKitManager: NSObject, @unchecked Sendable {
         if active {
             if !cameras.isEmpty {
                 retryCount = 0
+                // Re-check previously-failed cameras on foreground — they may be back.
+                unavailableCameras.removeAll()
+                snapshotFailureCounts.removeAll()
                 startStream()
                 if cameras.count > 1 && autoRotateEnabled {
                     startAutoRotation()
@@ -302,18 +324,56 @@ class HomeKitManager: NSObject, @unchecked Sendable {
         }
     }
 
+    // MARK: - Camera Health
+
+    /// Mark a camera offline so the dashboard hides it and stops requesting from it.
+    private func markCameraUnavailable(_ name: String) {
+        if unavailableCameras.insert(name).inserted {
+            print("HomeKit: camera '\(name)' marked unavailable — hiding tile")
+        }
+    }
+
+    /// Mark a camera reachable again after a successful stream/snapshot.
+    private func markCameraAvailable(_ name: String) {
+        snapshotFailureCounts[name] = 0
+        snapshotSoftFailCounts[name] = 0
+        if unavailableCameras.remove(name) != nil {
+            print("HomeKit: camera '\(name)' available again")
+        }
+    }
+
+    /// Retry a soft-failed snapshot (camera sleeping/busy) after a short delay
+    /// instead of leaving the tile stale until the next 30s refresh cycle.
+    private func scheduleSnapshotRetry(for name: String) {
+        guard !snapshotRetryPending.contains(name),
+              snapshotSoftFailCounts[name, default: 0] < snapshotSoftFailLimit else { return }
+        snapshotSoftFailCounts[name, default: 0] += 1
+        snapshotRetryPending.insert(name)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self else { return }
+            self.snapshotRetryPending.remove(name)
+            guard let entry = self.cameras.first(where: { $0.accessory.name == name }),
+                  let control = entry.profile.snapshotControl else { return }
+            control.delegate = self
+            control.takeSnapshot()
+        }
+    }
+
     // MARK: - Auto-Retry with Backoff
 
     private func retryStream() {
         guard retryCount < maxRetries else {
-            statusMessage = "\(currentCameraName): stream failed"
-            print("HomeKit: max retries reached for \(currentCameraName)")
+            statusMessage = "\(currentCameraName): unavailable"
+            print("HomeKit: retries exhausted for \(currentCameraName) — marking unavailable")
+            markCameraUnavailable(currentCameraName)
             retryCount = 0
             return
         }
         retryCount += 1
         let delay = pow(2.0, Double(retryCount)) // 2s, 4s, 8s
-        print("HomeKit: retrying stream in \(delay)s (attempt \(retryCount)/\(maxRetries))")
+        if retryCount == 1 {
+            print("HomeKit: retrying stream in \(delay)s (attempt \(retryCount)/\(maxRetries))")
+        }
         statusMessage = "\(currentCameraName): retrying..."
 
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
@@ -372,6 +432,7 @@ class HomeKitManager: NSObject, @unchecked Sendable {
             try? data.write(to: url)
         }
         cachedImages[cameraName] = image
+        cachedImageDates[cameraName] = Date()
     }
 
     /// Load cached image for a camera name
@@ -381,6 +442,10 @@ class HomeKitManager: NSObject, @unchecked Sendable {
         let url = cacheDir.appendingPathComponent("\(safeName).jpg")
         guard let data = try? Data(contentsOf: url), let image = UIImage(data: data) else { return nil }
         cachedImages[cameraName] = image
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let modified = attrs[.modificationDate] as? Date {
+            cachedImageDates[cameraName] = modified
+        }
         return image
     }
 
@@ -569,6 +634,7 @@ extension HomeKitManager: HMCameraStreamControlDelegate {
     func cameraStreamControlDidStartStream(_ cameraStreamControl: HMCameraStreamControl) {
         isStreaming = true
         retryCount = 0
+        markCameraAvailable(currentCameraName)
         statusMessage = currentCameraName
         print("HomeKit: stream started for \(currentCameraName)")
         // Capture a snapshot for cache after stream stabilizes
@@ -581,18 +647,17 @@ extension HomeKitManager: HMCameraStreamControlDelegate {
         isStreaming = false
         if let error {
             let nsError = error as NSError
-            print("HomeKit: stream error — code \(nsError.code): \(error)")
 
             if intentionalStop {
                 statusMessage = "Stream stopped"
                 return
             }
 
-            // Error 52 = operationTimedOut — auto-retry
-            if nsError.domain == "HMErrorDomain" && nsError.code == 52 {
-                statusMessage = "\(currentCameraName): timed out"
+            // Codes 23 (stream busy) and 52 (timed out) are transient — retry silently
+            if nsError.domain == "HMErrorDomain" && (nsError.code == 23 || nsError.code == 52) {
                 retryStream()
             } else {
+                print("HomeKit: stream error — code \(nsError.code): \(error)")
                 statusMessage = "\(currentCameraName): error \(nsError.code)"
                 retryStream()
             }
@@ -612,12 +677,27 @@ extension HomeKitManager: HMCameraStreamControlDelegate {
 extension HomeKitManager: HMCameraSnapshotControlDelegate {
     func cameraSnapshotControl(_ cameraSnapshotControl: HMCameraSnapshotControl, didTake snapshot: HMCameraSnapshot?, error: (any Error)?) {
         if let error {
-            print("HomeKit: snapshot error — \(error)")
+            let nsError = error as NSError
+            let name = cameraNameForControl(cameraSnapshotControl)
+            // Code 4 = HMErrorCodeNotFound, Code 100 = snapshot unavailable — camera
+            // sleeping/busy. Retry shortly rather than waiting out the 30s cycle.
+            if nsError.domain == "HMErrorDomain" && (nsError.code == 4 || nsError.code == 100) {
+                scheduleSnapshotRetry(for: name)
+                return
+            }
+            // Hard failures (e.g. code 54 timeout): count toward marking the camera
+            // offline so the dashboard shows its last-frame fallback.
+            snapshotFailureCounts[name, default: 0] += 1
+            if snapshotFailureCounts[name, default: 0] >= snapshotFailureThreshold {
+                markCameraUnavailable(name)
+            }
+            print("HomeKit: snapshot error for \(name) — \(error)")
             statusMessage = "Snapshot failed"
             return
         }
         if snapshot != nil {
             let name = cameraNameForControl(cameraSnapshotControl)
+            markCameraAvailable(name)
             print("HomeKit: snapshot taken for \(name)")
             statusMessage = "Snapshot captured"
             snapshotGeneration += 1
@@ -695,6 +775,23 @@ extension HomeKitManager: HMCameraSnapshotControlDelegate {
 // MARK: - HMAccessoryDelegate (garage door state changes)
 
 extension HomeKitManager: HMAccessoryDelegate {
+    /// Camera recovery: the instant a dropped camera comes back, clear its
+    /// offline mark and pull a fresh snapshot instead of waiting for a timer.
+    func accessoryDidUpdateReachability(_ accessory: HMAccessory) {
+        guard let entry = cameras.first(where: { $0.accessory.uniqueIdentifier == accessory.uniqueIdentifier }) else { return }
+        let name = entry.accessory.name
+        if accessory.isReachable {
+            print("HomeKit: camera '\(name)' reachable — refreshing snapshot")
+            markCameraAvailable(name)
+            if let control = entry.profile.snapshotControl {
+                control.delegate = self
+                control.takeSnapshot()
+            }
+        } else {
+            print("HomeKit: camera '\(name)' unreachable — tile falls back to last frame")
+        }
+    }
+
     func accessory(_ accessory: HMAccessory, service: HMService, didUpdateValueFor characteristic: HMCharacteristic) {
         // Update garage door state when characteristics change
         if service.serviceType == HMServiceTypeGarageDoorOpener {

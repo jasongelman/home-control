@@ -134,7 +134,7 @@ class UsageTracker {
     /// Room usage scores for the given time bucket
     func roomScores(for bucket: TimeBucket) -> [String: Int] {
         let bucketEvents = events.filter { e in
-            guard let room = e.room else { return false }
+            guard e.room != nil else { return false }
             return TimeBucket.current(date: Date(timeIntervalSince1970: e.timestamp)) == bucket
         }
         var scores: [String: Int] = [:]

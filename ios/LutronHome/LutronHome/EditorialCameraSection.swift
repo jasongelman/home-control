@@ -6,22 +6,31 @@ struct EditorialCameraSection: View {
     @State private var showDetail = false
 
     var body: some View {
-        if !homeKit.cameras.isEmpty {
+        let cameras = homeKit.cameras
+        if !cameras.isEmpty {
+            // Offline cameras keep their tile (last frame + badge) instead of
+            // disappearing — a dropped feed is a state worth showing.
+            let offline = homeKit.unavailableCameras
+            let liveCount = cameras.filter { !offline.contains($0.accessory.name) }.count
+
             VStack(alignment: .leading, spacing: EditorialTheme.gridSpacing) {
                 EditorialSectionHeader(
                     title: "CAMERAS",
-                    trailing: "\(homeKit.cameras.count) FEEDS"
+                    trailing: liveCount == cameras.count
+                        ? "\(cameras.count) FEEDS"
+                        : "\(liveCount)/\(cameras.count) LIVE"
                 )
 
                 LazyVGrid(
                     columns: [GridItem(.flexible()), GridItem(.flexible())],
                     spacing: EditorialTheme.gridSpacing
                 ) {
-                    ForEach(Array(homeKit.cameras.enumerated()), id: \.offset) { index, camera in
+                    ForEach(Array(cameras.enumerated()), id: \.offset) { index, camera in
                         LiveCameraTile(
                             cameraIndex: index,
                             name: camera.accessory.name,
-                            hasMotion: homeKit.motionDetectedCameras.contains(camera.accessory.name)
+                            hasMotion: homeKit.motionDetectedCameras.contains(camera.accessory.name),
+                            isOffline: offline.contains(camera.accessory.name)
                         ) {
                             homeKit.selectCamera(index: index)
                             showDetail = true
@@ -43,20 +52,45 @@ private struct LiveCameraTile: View {
     let cameraIndex: Int
     let name: String
     let hasMotion: Bool
+    let isOffline: Bool
     let onTap: () -> Void
 
     @State private var refreshTimer: Timer?
 
     var body: some View {
+        let snapshotControl = homeKit.cameras[safe: cameraIndex]?.profile.snapshotControl
+        let hasLiveSnapshot = snapshotControl?.mostRecentSnapshot != nil
+
         Button(action: onTap) {
             ZStack(alignment: .bottomLeading) {
-                // Live HMCameraView rendering the snapshot
-                HMCameraViewRepresentable(
-                    snapshotControl: homeKit.cameras[safe: cameraIndex]?.profile.snapshotControl,
-                    generation: homeKit.snapshotGeneration
-                )
-                .frame(height: 100)
-                .clipped()
+                if hasLiveSnapshot && !isOffline {
+                    // Live HMCameraView rendering the snapshot
+                    HMCameraViewRepresentable(
+                        snapshotControl: snapshotControl,
+                        generation: homeKit.snapshotGeneration
+                    )
+                    .frame(height: 100)
+                    .clipped()
+                } else if let lastFrame = homeKit.cachedImages[name] {
+                    // Last known frame, desaturated, so the tile is never black
+                    Image(uiImage: lastFrame)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(height: 100)
+                        .clipped()
+                        .saturation(0)
+                        .overlay(Color.black.opacity(0.35))
+                } else {
+                    Rectangle()
+                        .fill(Color.black)
+                        .frame(height: 100)
+                        .overlay(
+                            Text("NO SIGNAL")
+                                .font(.system(size: 8, weight: .semibold))
+                                .tracking(0.8)
+                                .foregroundStyle(.white.opacity(0.6))
+                        )
+                }
 
                 // Name label
                 Text(name.uppercased())
@@ -67,6 +101,19 @@ private struct LiveCameraTile: View {
                     .padding(.vertical, 3)
                     .background(.black.opacity(0.5))
                     .padding(6)
+
+                // Status badge when showing a stale frame
+                if !hasLiveSnapshot || isOffline {
+                    Text(staleBadgeText)
+                        .font(.system(size: 7, weight: .bold))
+                        .tracking(0.6)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(.black.opacity(0.5))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .padding(6)
+                }
 
                 // Motion dot
                 if hasMotion {
@@ -94,6 +141,16 @@ private struct LiveCameraTile: View {
             refreshTimer?.invalidate()
             refreshTimer = nil
         }
+    }
+
+    private var staleBadgeText: String {
+        let time = homeKit.cachedImageDates[name].map {
+            $0.formatted(date: .omitted, time: .shortened).uppercased()
+        }
+        if isOffline {
+            return time.map { "OFFLINE · \($0)" } ?? "OFFLINE"
+        }
+        return time.map { "LAST · \($0)" } ?? "CONNECTING"
     }
 }
 

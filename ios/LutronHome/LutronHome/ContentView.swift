@@ -75,6 +75,7 @@ struct CategoryTab: View {
     let showAlarmZones: Bool
     let showKeypads: Bool
     @State private var selectedRoom: String?
+    @State private var roomExpandOverrides: [String: Bool] = [:]
 
     init(category: DeviceCategory) {
         self.categories = [category]
@@ -98,8 +99,20 @@ struct CategoryTab: View {
     }
 
     private var isLightsTab: Bool { categories == [.light] }
-    private var isLightsOrShadesTab: Bool {
-        categories.count == 1 && (categories[0] == .light || categories[0] == .shadesAndDrapes)
+    private var isShadesTab: Bool {
+        Set(categories) == Set([.shadesAndDrapes, .window]) || categories == [.shadesAndDrapes]
+    }
+    private var isLightsOrShadesTab: Bool { isLightsTab || isShadesTab }
+
+    /// Default-expanded if any device in the room is on; collapsed if all are off.
+    /// User taps override this default per-session via roomExpandOverrides.
+    private func isRoomExpanded(_ room: (name: String, devices: [DeviceState])) -> Bool {
+        if let override = roomExpandOverrides[room.name] { return override }
+        return room.devices.contains { $0.level > 0 }
+    }
+
+    private func toggleRoomExpanded(_ room: (name: String, devices: [DeviceState])) {
+        roomExpandOverrides[room.name] = !isRoomExpanded(room)
     }
 
     /// Floors that actually have rooms in this category
@@ -244,43 +257,58 @@ struct CategoryTab: View {
 
             if isLightsOrShadesTab {
                 // Lights & shades: masonry 2-column, each room kept together
-                MasonryTwoColumn(spacing: EditorialTheme.gridSpacing) {
+                MasonryTwoColumn(spacing: EditorialTheme.gridSpacing * 2) {
                     ForEach(rooms, id: \.name) { room in
+                        let expanded = isRoomExpanded(room)
                         VStack(alignment: .leading, spacing: EditorialTheme.gridSpacing) {
-                            HStack(spacing: 0) {
-                                Button { selectedRoom = room.name } label: {
-                                    HStack(spacing: 4) {
-                                        Text(roomIcon(for: room.name))
-                                            .font(.system(size: 12))
-                                        Text(room.name.uppercased())
-                                            .font(.system(size: 9, weight: .medium))
-                                            .tracking(0.8)
-                                            .foregroundStyle(EditorialTheme.secondaryText)
+                            if expanded {
+                                HStack(spacing: 6) {
+                                    Button { toggleRoomExpanded(room) } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "chevron.right")
+                                                .font(.system(size: 8, weight: .bold))
+                                                .foregroundStyle(EditorialTheme.secondaryText)
+                                                .rotationEffect(.degrees(90))
+                                            Text(roomIcon(for: room.name))
+                                                .font(.system(size: 12))
+                                            Text(room.name.uppercased())
+                                                .font(.system(size: 9, weight: .medium))
+                                                .tracking(0.8)
+                                                .foregroundStyle(EditorialTheme.secondaryText)
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    Spacer(minLength: 4)
+
+                                    Button { selectedRoom = room.name } label: {
                                         Image(systemName: "chevron.right")
                                             .font(.system(size: 7, weight: .semibold))
                                             .foregroundStyle(EditorialTheme.tertiaryText)
+                                            .padding(.horizontal, 4)
                                     }
+                                    .buttonStyle(.plain)
+
+                                    roomHeaderQuickActions(room: room)
                                 }
-                                .buttonStyle(.plain)
 
-                                Spacer(minLength: 4)
-
-                                Button { turnOffRoom(room.name, devices: room.devices) } label: {
-                                    Image(systemName: "lightbulb.slash")
-                                        .font(.system(size: 10, weight: .medium))
-                                        .foregroundStyle(EditorialTheme.secondaryText)
+                                ForEach(room.devices) { device in
+                                    let fade: Double? = device.category == .shadesAndDrapes ? 2 : nil
+                                    DimmablePill(device: device, fadeTime: fade)
                                 }
-                                .buttonStyle(.plain)
-                            }
 
-                            ForEach(room.devices) { device in
-                                let fade: Double? = device.category == .shadesAndDrapes ? 2 : nil
-                                DimmablePill(device: device, fadeTime: fade)
-                            }
-
-                            // Colors keypad for this room (if any)
-                            if let colorEntry = store.colorKeypads.first(where: { $0.room == room.name }) {
-                                ColorKeypadPill(entry: colorEntry)
+                                // Colors keypad for this room (if any)
+                                if let colorEntry = store.colorKeypads.first(where: { $0.room == room.name }) {
+                                    ColorKeypadPill(entry: colorEntry)
+                                }
+                            } else {
+                                RoomGroupSlider(
+                                    room: room,
+                                    icon: roomIcon(for: room.name),
+                                    summary: collapsedSummary(for: room),
+                                    onTap: { toggleRoomExpanded(room) }
+                                )
                             }
                         }
                     }
@@ -309,6 +337,50 @@ struct CategoryTab: View {
         // Press keypad off button (covers color fixtures + non-zone lights)
         for entry in store.keypadOffButtons where entry.room == name {
             store.pressKeypadButton(entry.buttonId)
+        }
+    }
+
+    private func setRoomShades(_ devices: [DeviceState], level: Double) {
+        for d in devices where d.category == .shadesAndDrapes || d.category == .window {
+            store.setLevel(d.integrationId, level: level, fadeTime: 2)
+        }
+    }
+
+    private func collapsedSummary(for room: (name: String, devices: [DeviceState])) -> String {
+        let total = room.devices.count
+        let on = room.devices.filter { $0.level > 0 }.count
+        // Empty for the fully-off cases; the slider bar already conveys that.
+        // Partial / all-on states get a count so the user sees what's still lit when collapsed.
+        if on == 0 { return "" }
+        if on == total { return "· ALL ON" }
+        return "· \(on)/\(total) ON"
+    }
+
+    @ViewBuilder
+    private func roomHeaderQuickActions(room: (name: String, devices: [DeviceState])) -> some View {
+        let hasShade = room.devices.contains { $0.category == .shadesAndDrapes || $0.category == .window }
+        if hasShade {
+            HStack(spacing: 10) {
+                Button { setRoomShades(room.devices, level: 0) } label: {
+                    Image(systemName: "arrow.down.to.line")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(EditorialTheme.secondaryText)
+                }
+                .buttonStyle(.plain)
+                Button { setRoomShades(room.devices, level: 100) } label: {
+                    Image(systemName: "arrow.up.to.line")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(EditorialTheme.secondaryText)
+                }
+                .buttonStyle(.plain)
+            }
+        } else {
+            Button { turnOffRoom(room.name, devices: room.devices) } label: {
+                Image(systemName: "lightbulb.slash")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(EditorialTheme.secondaryText)
+            }
+            .buttonStyle(.plain)
         }
     }
 

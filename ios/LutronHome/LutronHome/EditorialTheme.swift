@@ -80,15 +80,27 @@ extension View {
 struct EditorialSectionHeader: View {
     let title: String
     var trailing: String? = nil
+    var actionLabel: String? = nil
+    var action: (() -> Void)? = nil
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(title)
                 .font(EditorialTheme.sectionLabel())
                 .tracking(1.2)
                 .textCase(.uppercase)
                 .foregroundStyle(EditorialTheme.primaryText)
             Spacer()
+            if let actionLabel, let action {
+                Button(action: action) {
+                    Text(actionLabel)
+                        .font(EditorialTheme.sectionLabel(size: 10))
+                        .tracking(0.8)
+                        .textCase(.uppercase)
+                        .foregroundStyle(EditorialTheme.accent)
+                }
+                .buttonStyle(.plain)
+            }
             if let trailing {
                 Text(trailing)
                     .font(EditorialTheme.sectionLabel(size: 10))
