@@ -17,7 +17,9 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { useLutron } from '../context/LutronContext.js';
 import { GarageDoorControl } from './devices/GarageDoorControl.js';
 import { AppliancesSection } from './AppliancesSection.js';
+import { KeypadsSection } from './KeypadsSection.js';
 import { AlarmControl } from './AlarmControl.js';
+
 
 import { RoomDetail } from './RoomDetail.js';
 import { SceneEditor } from './SceneEditor.js';
@@ -134,11 +136,18 @@ function LightOnPill({ device, displayName, onTurnOff, onSetLevel }: {
         onSetLevel(Math.round(pct / 5) * 5);
       }
     } else if (pointerDownX.current !== null) {
-      onTurnOff();
+      // A lingering off pill acts as undo: tap turns it back on.
+      if (device.level > 0) {
+        onTurnOff();
+      } else {
+        onSetLevel(100);
+      }
     }
     pointerDownX.current = null;
     isDragging.current = false;
   };
+
+  const isOff = localLevel === 0 && !isDragging.current;
 
   return (
     <Box
@@ -151,7 +160,8 @@ function LightOnPill({ device, displayName, onTurnOff, onSetLevel }: {
         height: 36,
         borderRadius: 1.5,
         overflow: 'hidden',
-        border: '1px solid rgba(245,166,35,0.25)',
+        border: isOff ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(245,166,35,0.25)',
+        transition: 'border-color 0.25s cubic-bezier(0.4,0,0.2,1)',
         cursor: 'pointer',
         userSelect: 'none',
         bgcolor: 'rgba(255,255,255,0.04)',
@@ -168,11 +178,11 @@ function LightOnPill({ device, displayName, onTurnOff, onSetLevel }: {
         }}
       />
       <Box sx={{ position: 'relative', display: 'flex', alignItems: 'center', height: '100%', px: 1, gap: 0.75 }}>
-        <LightbulbIcon sx={{ fontSize: 11, color: 'primary.main', flexShrink: 0 }} />
-        <Typography variant="body2" sx={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, fontWeight: 500, color: 'primary.main' }}>
+        <LightbulbIcon sx={{ fontSize: 11, color: isOff ? 'text.disabled' : 'primary.main', flexShrink: 0, transition: 'color 0.25s cubic-bezier(0.4,0,0.2,1)' }} />
+        <Typography variant="body2" sx={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, fontWeight: 500, color: isOff ? 'text.disabled' : 'primary.main', transition: 'color 0.25s cubic-bezier(0.4,0,0.2,1)' }}>
           {displayName}
         </Typography>
-        <Typography variant="caption" sx={{ fontSize: 10, fontWeight: 600, color: 'rgba(245,166,35,0.7)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
+        <Typography variant="caption" sx={{ fontSize: 10, fontWeight: 600, color: isOff ? 'text.disabled' : 'rgba(245,166,35,0.7)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
           {Math.round(localLevel)}%
         </Typography>
       </Box>
@@ -189,7 +199,7 @@ const QUICK_ACTIONS = [
 ];
 
 export function Dashboard({ onSetup }: { onSetup?: () => void }) {
-  const { devices, connectionStatus, processorConnected, setLevel, trackDevice, trackScene: trackSceneAction, getUsageEvents, doors, myqConnected, triggerGarage, dishwashers, laundry, heatPumps, panels, alarmConnected } = useLutron();
+  const { devices, connectionStatus, processorConnected, setLevel, trackDevice, trackScene: trackSceneAction, getUsageEvents, doors, myqConnected, triggerGarage, dishwashers, laundry, heatPumps, panels, alarmConnected, chargers, chargePointConnected, refrigerators, ovens, subZeroLinked } = useLutron();
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
   const { scenes, createScene, updateScene, deleteScene, activateScene, captureCurrentState } = useScenes();
   const [editorOpen, setEditorOpen] = useState(false);
@@ -214,21 +224,82 @@ export function Dashboard({ onSetup }: { onSetup?: () => void }) {
   const visiblePatterns = detectedPatterns.filter((p) => !dismissedPatterns.has(p.hash));
 
   // Get all lights that are currently on, grouped by room
-  const lightsOn = useMemo(() => {
-    return Array.from(devices.values())
-      .filter((d) => d.type === 'light' && d.level > 0)
-      .sort((a, b) => a.room.localeCompare(b.room) || a.name.localeCompare(b.name));
+  const allLights = useMemo(() => {
+    return Array.from(devices.values()).filter((d) => d.type === 'light');
   }, [devices]);
 
-  const lightsOnByRoom = useMemo(() => {
-    const map = new Map<string, typeof lightsOn>();
-    for (const d of lightsOn) {
+  const lightsOn = useMemo(() => {
+    return allLights
+      .filter((d) => d.level > 0)
+      .sort((a, b) => a.room.localeCompare(b.room) || a.name.localeCompare(b.name));
+  }, [allLights]);
+
+  const lightsOnIds = useMemo(() => new Set(lightsOn.map((d) => d.integrationId)), [lightsOn]);
+
+  // Deferred removal: a turned-off light lingers (dimmed) until ~2.5s pass with no
+  // light-level changes, so rapid one-by-one taps don't shift the layout mid-interaction.
+  const [displayedLightIds, setDisplayedLightIds] = useState<Set<number> | null>(null);
+  const lightsSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lightsOnIdsRef = useRef(lightsOnIds);
+
+  // Lights turning on appear immediately; only removals are deferred.
+  useEffect(() => {
+    lightsOnIdsRef.current = lightsOnIds;
+    setDisplayedLightIds((prev) => {
+      if (prev === null) return lightsOnIds.size > 0 ? new Set(lightsOnIds) : null;
+      let changed = false;
+      const next = new Set(prev);
+      for (const id of lightsOnIds) {
+        if (!next.has(id)) {
+          next.add(id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [lightsOnIds]);
+
+  const displayedLights = useMemo(() => {
+    const ids = displayedLightIds ?? lightsOnIds;
+    return allLights
+      .filter((d) => ids.has(d.integrationId) || lightsOnIds.has(d.integrationId))
+      .sort((a, b) => a.room.localeCompare(b.room) || a.name.localeCompare(b.name));
+  }, [allLights, displayedLightIds, lightsOnIds]);
+
+  const displayedLightsByRoom = useMemo(() => {
+    const map = new Map<string, typeof displayedLights>();
+    for (const d of displayedLights) {
       const list = map.get(d.room) ?? [];
       list.push(d);
       map.set(d.room, list);
     }
     return map;
-  }, [lightsOn]);
+  }, [displayedLights]);
+
+  // Any level change restarts the settle timer; compaction happens only once idle.
+  const lightLevelsFingerprint = useMemo(
+    () => displayedLights.map((d) => `${d.integrationId}:${d.level}`).join('|'),
+    [displayedLights]
+  );
+
+  useEffect(() => {
+    if (lightsSettleTimer.current) {
+      clearTimeout(lightsSettleTimer.current);
+      lightsSettleTimer.current = null;
+    }
+    const hasOff = lightLevelsFingerprint.split('|').some((entry) => entry.endsWith(':0'));
+    if (!hasOff) return;
+    lightsSettleTimer.current = setTimeout(() => {
+      const on = lightsOnIdsRef.current;
+      setDisplayedLightIds(on.size > 0 ? new Set(on) : null);
+    }, 2500);
+  }, [lightLevelsFingerprint]);
+
+  useEffect(() => {
+    return () => {
+      if (lightsSettleTimer.current) clearTimeout(lightsSettleTimer.current);
+    };
+  }, []);
 
   const handleQuickAction = useCallback(async (actionId: string) => {
     // Find the matching scene
@@ -450,9 +521,28 @@ export function Dashboard({ onSetup }: { onSetup?: () => void }) {
               color: lightsOn.length > 0 ? 'primary.main' : 'text.secondary',
             }}
           />
+          {lightsOn.length > 0 && (
+            <Button
+              size="small"
+              onClick={() => lightsOn.forEach((d) => handleTurnOff(d.integrationId))}
+              sx={{
+                minWidth: 0,
+                ml: 0.5,
+                px: 1,
+                py: 0.25,
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: '0.04em',
+                color: 'text.secondary',
+                '&:hover': { color: 'primary.main', bgcolor: 'rgba(245,166,35,0.08)' },
+              }}
+            >
+              All Off
+            </Button>
+          )}
         </Box>
 
-        {lightsOn.length === 0 ? (
+        {displayedLights.length === 0 ? (
           <Paper
             sx={{
               p: 4,
@@ -467,7 +557,7 @@ export function Dashboard({ onSetup }: { onSetup?: () => void }) {
           </Paper>
         ) : (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {Array.from(lightsOnByRoom.entries()).map(([room, roomLights]) => {
+            {Array.from(displayedLightsByRoom.entries()).map(([room, roomLights]) => {
               const stripRoomPrefix = (name: string) => {
                 if (name.toLowerCase().startsWith(room.toLowerCase())) {
                   const stripped = name.slice(room.length).trimStart();
@@ -482,7 +572,7 @@ export function Dashboard({ onSetup }: { onSetup?: () => void }) {
                       {getRoomIcon(room)} {room}
                     </Typography>
                     <Chip
-                      label={roomLights.length}
+                      label={roomLights.filter((l) => l.level > 0).length}
                       size="small"
                       sx={{ height: 16, fontSize: 10, fontWeight: 700, bgcolor: 'rgba(245,166,35,0.15)', color: 'primary.main', '& .MuiChip-label': { px: 0.75 } }}
                     />
@@ -526,8 +616,11 @@ export function Dashboard({ onSetup }: { onSetup?: () => void }) {
           </>
         )}
 
-        {/* Appliances — dishwasher, laundry, heat pump */}
-        <AppliancesSection dishwashers={dishwashers} laundry={laundry} heatPumps={heatPumps} />
+        {/* Appliances — dishwasher, laundry, heat pump, EV charging */}
+        <AppliancesSection dishwashers={dishwashers} laundry={laundry} heatPumps={heatPumps} chargers={chargers} chargePointConnected={chargePointConnected} refrigerators={refrigerators} ovens={ovens} subZeroLinked={subZeroLinked} />
+
+        {/* Keypads — physical Lutron keypad LEDs */}
+        <KeypadsSection />
 
         {/* Alarm */}
         {(alarmConnected || panels.size > 0) && (

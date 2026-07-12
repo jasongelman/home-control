@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, Tabs, Tab, Box, Typography,
-  LinearProgress, Chip, IconButton, Button, Paper, TextField, Switch, FormControlLabel, Alert,
+  LinearProgress, Chip, IconButton, Button, Paper, TextField, Switch, FormControlLabel, Alert, CircularProgress,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
@@ -12,6 +12,8 @@ import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import SecurityIcon from '@mui/icons-material/Security';
+import EvStationIcon from '@mui/icons-material/EvStation';
+import KitchenIcon from '@mui/icons-material/Kitchen';
 
 import { useLutron } from '../context/LutronContext.js';
 import { useScenes } from '../hooks/useScenes.js';
@@ -1023,6 +1025,229 @@ function AIAssistantSettings() {
   );
 }
 
+// ── ChargePoint / EV Charging settings tab ──────────────────────────────────
+
+function ChargePointSettings() {
+  const { chargers, chargePointConnected } = useLutron();
+  const [accounts, setAccounts] = useState<Array<{ email: string; password: string; nickname: string }>>([
+    { email: '', password: '', nickname: 'Charger 1' },
+    { email: '', password: '', nickname: 'Charger 2' },
+  ]);
+  const [enabled, setEnabled] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveOk, setSaveOk] = useState(false);
+  const [saveError, setSaveError] = useState('');
+
+  useMemo(() => {
+    if (loaded) return;
+    setLoaded(true);
+    fetch('/api/chargepoint/config')
+      .then((r) => r.json())
+      .then((data: { accounts?: Array<{ email?: string; nickname?: string }>; enabled?: boolean }) => {
+        setEnabled(data.enabled ?? false);
+        if (data.accounts && data.accounts.length > 0) {
+          setAccounts(data.accounts.map((a, i) => ({
+            email: a.email ?? '',
+            password: '',
+            nickname: a.nickname ?? `Charger ${i + 1}`,
+          })));
+        }
+      })
+      .catch(() => {});
+  }, [loaded]);
+
+  const updateAccount = (index: number, field: 'email' | 'password' | 'nickname', value: string) => {
+    setAccounts((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+  };
+
+  const handleSave = async () => {
+    setSaving(true); setSaveOk(false); setSaveError('');
+    try {
+      const body = {
+        enabled,
+        accounts: accounts
+          .filter((a) => a.email)
+          .map((a) => ({
+            email: a.email,
+            password: a.password || undefined,
+            nickname: a.nickname,
+          })),
+      };
+      const res = await fetch('/api/chargepoint/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setSaveOk(true);
+      setAccounts((prev) => prev.map((a) => ({ ...a, password: '' })));
+      setTimeout(() => setSaveOk(false), 3000);
+    } catch (err) {
+      setSaveError(String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
+        <EvStationIcon sx={{ fontSize: 18, color: chargePointConnected ? 'success.main' : 'text.disabled' }} />
+        <Chip
+          size="small"
+          label={chargePointConnected ? `Connected — ${chargers.length} charger${chargers.length !== 1 ? 's' : ''}` : 'Not connected'}
+          color={chargePointConnected ? 'success' : 'default'}
+          variant="outlined"
+        />
+      </Box>
+
+      {chargers.length > 0 && (
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mb: 1, textTransform: 'uppercase', letterSpacing: 1 }}>
+            Chargers
+          </Typography>
+          {chargers.map((c) => (
+            <Box key={c.chargerId} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.75, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+              <Typography variant="body2">{c.nickname}</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'capitalize' }}>{c.status}</Typography>
+            </Box>
+          ))}
+        </Box>
+      )}
+
+      <FormControlLabel
+        control={<Switch checked={enabled} onChange={(e) => setEnabled(e.target.checked)} size="small" />}
+        label={<Typography variant="body2">Enable ChargePoint integration</Typography>}
+        sx={{ mb: 2, ml: 0 }}
+      />
+
+      {accounts.map((account, i) => (
+        <Box key={i} sx={{ mb: 3 }}>
+          <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mb: 1.5, textTransform: 'uppercase', letterSpacing: 1 }}>
+            Account {i + 1}
+          </Typography>
+          <TextField
+            label="Nickname"
+            value={account.nickname}
+            onChange={(e) => updateAccount(i, 'nickname', e.target.value)}
+            fullWidth
+            size="small"
+            sx={{ mb: 1.5 }}
+            disabled={saving}
+          />
+          <TextField
+            label="Email"
+            value={account.email}
+            onChange={(e) => updateAccount(i, 'email', e.target.value)}
+            fullWidth
+            size="small"
+            sx={{ mb: 1.5 }}
+            disabled={saving}
+          />
+          <TextField
+            label="Password"
+            type="password"
+            value={account.password}
+            onChange={(e) => updateAccount(i, 'password', e.target.value)}
+            fullWidth
+            size="small"
+            placeholder={chargePointConnected ? '(saved — enter to change)' : ''}
+            helperText="Leave blank to keep existing password"
+            sx={{ mb: 1 }}
+            disabled={saving}
+          />
+        </Box>
+      ))}
+
+      {saveError && <Alert severity="error" sx={{ mb: 1.5, fontSize: 12 }}>{saveError}</Alert>}
+      {saveOk && <Alert severity="success" sx={{ mb: 1.5, fontSize: 12 }}>Saved — ChargePoint will connect shortly.</Alert>}
+
+      <Box sx={{ display: 'flex', gap: 1 }}>
+        <Button
+          variant="contained"
+          onClick={handleSave}
+          disabled={saving || !accounts.some((a) => a.email)}
+          sx={{ textTransform: 'none' }}
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </Button>
+        {chargePointConnected && (
+          <Button
+            variant="outlined"
+            color="error"
+            onClick={() => fetch('/api/chargepoint/unlink', { method: 'POST' }).then(() => { setEnabled(false); setAccounts([{ email: '', password: '', nickname: 'Charger 1' }, { email: '', password: '', nickname: 'Charger 2' }]); })}
+            sx={{ textTransform: 'none' }}
+          >
+            Unlink
+          </Button>
+        )}
+      </Box>
+    </Box>
+  );
+}
+
+// ── Sub-Zero / Wolf settings tab ─────────────────────────────────────────────
+
+function SubZeroSettings() {
+  const [linked, setLinked] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/subzero/config')
+      .then((r) => r.json())
+      .then((data) => { setLinked(data.linked ?? false); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const handleLink = () => {
+    window.open('/api/subzero/oauth/start', '_blank', 'width=500,height=700');
+  };
+
+  const handleUnlink = async () => {
+    await fetch('/api/subzero/unlink', { method: 'POST' });
+    setLinked(false);
+  };
+
+  if (loading) return <Box sx={{ p: 2, textAlign: 'center' }}><CircularProgress size={24} /></Box>;
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <Typography variant="body2" color="text.secondary">
+        Link your Sub-Zero Group Owner&apos;s App account to view refrigerator temperatures, door states, and Wolf oven status.
+      </Typography>
+
+      {linked ? (
+        <>
+          <Alert severity="success" sx={{ fontSize: 12 }}>
+            Sub-Zero / Wolf account is linked. Appliances will appear on the dashboard.
+          </Alert>
+          <Button
+            variant="outlined"
+            color="error"
+            onClick={handleUnlink}
+            sx={{ textTransform: 'none', alignSelf: 'flex-start' }}
+          >
+            Unlink Sub-Zero / Wolf
+          </Button>
+        </>
+      ) : (
+        <Button
+          variant="contained"
+          onClick={handleLink}
+          sx={{ textTransform: 'none', alignSelf: 'flex-start' }}
+        >
+          Link Sub-Zero / Wolf Account
+        </Button>
+      )}
+    </Box>
+  );
+}
+
 // ── Main dialog export ───────────────────────────────────────────────────────
 
 export function SettingsDialog({
@@ -1077,6 +1302,8 @@ export function SettingsDialog({
         <Tab label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><AcUnitIcon sx={{ fontSize: 12 }} />Heat Pump</Box>} sx={{ minHeight: 40, fontSize: 12 }} />
         <Tab label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><ChatBubbleOutlineIcon sx={{ fontSize: 12 }} />AI Assistant</Box>} sx={{ minHeight: 40, fontSize: 12 }} />
         <Tab label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><SecurityIcon sx={{ fontSize: 12 }} />Alarm</Box>} sx={{ minHeight: 40, fontSize: 12 }} />
+        <Tab label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><EvStationIcon sx={{ fontSize: 12 }} />EV Charging</Box>} sx={{ minHeight: 40, fontSize: 12 }} />
+        <Tab label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><KitchenIcon sx={{ fontSize: 12 }} />Sub-Zero</Box>} sx={{ minHeight: 40, fontSize: 12 }} />
         <Tab label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><AutoAwesomeIcon sx={{ fontSize: 12 }} />For You</Box>} sx={{ minHeight: 40, fontSize: 12 }} />
       </Tabs>
 
@@ -1127,8 +1354,14 @@ export function SettingsDialog({
         {/* Alarm / Total Connect tab */}
         {tab === 6 && <AlarmSettings />}
 
+        {/* ChargePoint / EV Charging tab */}
+        {tab === 7 && <ChargePointSettings />}
+
+        {/* Sub-Zero / Wolf tab */}
+        {tab === 8 && <SubZeroSettings />}
+
         {/* Personalization tab */}
-        {tab === 7 && (
+        {tab === 9 && (
           <PersonalizationInsights
             events={events}
             devices={devices}

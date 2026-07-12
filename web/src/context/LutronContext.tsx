@@ -1,7 +1,7 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket.js';
 import { useUsageTracker } from '../hooks/useUsageTracker.js';
-import type { DeviceState, ConnectionStatus, MyQDoor, DishwasherStatus, LaundryAppliance, HeatPumpStatus, AlarmPanel } from '../types/index.js';
+import type { DeviceState, ConnectionStatus, MyQDoor, DishwasherStatus, LaundryAppliance, HeatPumpStatus, AlarmPanel, ChargePointCharger, SubZeroRefrigerator, WolfOven, KeypadInfo } from '../types/index.js';
 import type { UsageEvent } from '../hooks/useUsageTracker.js';
 
 interface LutronContextValue {
@@ -23,6 +23,15 @@ interface LutronContextValue {
   panels: Map<string, AlarmPanel>;
   alarmConnected: boolean;
   triggerAlarm: (locationId: string, action: 'armAway' | 'armHome' | 'armNight' | 'disarm') => void;
+  chargers: ChargePointCharger[];
+  chargePointConnected: boolean;
+  setChargerAmperage: (chargerId: string, amps: number) => void;
+  refrigerators: SubZeroRefrigerator[];
+  ovens: WolfOven[];
+  subZeroLinked: boolean;
+  subZeroCommand: (applianceId: string, action: string, value: unknown) => void;
+  keypads: KeypadInfo[];
+  setLEDState: (ledId: number, state: 'On' | 'Off') => void;
   trackDevice: (id: number, action: UsageEvent['action'], room?: string, level?: number) => void;
   trackScene: (id: string, name?: string) => void;
   getUsageEvents: () => UsageEvent[];

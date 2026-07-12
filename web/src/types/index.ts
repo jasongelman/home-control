@@ -5,6 +5,25 @@ export interface KeypadComponent {
   name: string;
 }
 
+// Physical Lutron keypad with per-button LED state (mirrors server LEAPKeypad).
+export interface KeypadButtonInfo {
+  id: number;
+  buttonNumber: number;
+  name: string;
+  engraving: string;
+  ledId: number | null;
+  ledState: 'On' | 'Off' | 'Unknown';
+}
+
+export interface KeypadInfo {
+  deviceId: number;
+  name: string;
+  deviceType: string;
+  modelNumber: string;
+  areaName: string;
+  buttons: KeypadButtonInfo[];
+}
+
 export interface DeviceState {
   integrationId: number;
   name: string;
@@ -113,6 +132,84 @@ export interface AlarmZone {
   lowBattery: boolean;
 }
 
+// ── ChargePoint / EV Charging ────────────────────────────────────────────────
+
+export type ChargingStatus = 'idle' | 'pluggedIn' | 'charging' | 'complete' | 'error' | 'unknown';
+
+export interface ChargePointCharger {
+  chargerId: string;
+  accountIndex: number;
+  nickname: string;
+  status: ChargingStatus;
+  isPluggedIn: boolean;
+  powerKw: number | null;
+  energyKwh: number | null;
+  amperage: number;
+  maxAmperage: number;
+  lastUpdated: number;
+}
+
+export interface ChargePointSession {
+  sessionId: string;
+  chargerId: string;
+  startTime: number;
+  endTime: number | null;
+  energyKwh: number;
+  cost: number | null;
+  milesAdded: number | null;
+}
+
+// ── Sub-Zero / Wolf ─────────────────────────────────────────────────────────
+
+export type RefrigeratorMode = 'normal' | 'vacation' | 'sabbath' | 'night' | 'unknown';
+
+export type OvenMode =
+  | 'off' | 'bake' | 'broil' | 'convection' | 'convection_roast'
+  | 'roast' | 'warm' | 'proof' | 'dehydrate' | 'stone'
+  | 'gourmet' | 'gourmet_plus' | 'self_clean' | 'sous_vide'
+  | 'steam' | 'convection_steam' | 'convection_humid'
+  | 'unknown';
+
+export interface SubZeroRefrigerator {
+  applianceId: string;
+  applianceName: string;
+  model: string;
+  online: boolean;
+  fridgeTemp: number | null;
+  freezerTemp: number | null;
+  fridgeSetpoint: number | null;
+  freezerSetpoint: number | null;
+  crisperSetpoint: number | null;
+  fridgeDoorOpen: boolean;
+  freezerDoorOpen: boolean;
+  iceMakerOn: boolean;
+  maxIceOn: boolean;
+  mode: RefrigeratorMode;
+  nightMode: boolean;
+  lightOn: boolean;
+  waterFilterPct: number | null;
+  airPurificationPct: number | null;
+  humidityControl: string | null;
+  lastUpdated: number;
+}
+
+export interface WolfOven {
+  applianceId: string;
+  applianceName: string;
+  model: string;
+  online: boolean;
+  unitOn: boolean;
+  currentTemp: number | null;
+  targetTemp: number | null;
+  cookMode: OvenMode;
+  probeTemp: number | null;
+  probeTargetTemp: number | null;
+  timerRemaining: number | null;
+  remoteReady: boolean;
+  lightOn: boolean;
+  lastUpdated: number;
+}
+
 // ── WebSocket messages ────────────────────────────────────────────────────────
 
 export type ServerMessage =
@@ -130,13 +227,23 @@ export type ServerMessage =
       myUplinkLinked: boolean;
       panels: AlarmPanel[];
       alarmConnected: boolean;
+      chargers: ChargePointCharger[];
+      chargePointConnected: boolean;
+      refrigerators: SubZeroRefrigerator[];
+      ovens: WolfOven[];
+      subZeroLinked: boolean;
+      keypads: KeypadInfo[];
     }
+  | { type: 'keypadsState'; keypads: KeypadInfo[] }
+  | { type: 'ledState'; keypadId: number; ledId: number; state: 'On' | 'Off' }
   | { type: 'state'; deviceId: number; level: number; timestamp: number }
   | { type: 'connected'; processorIp: string }
   | { type: 'disconnected'; reason: string }
   | { type: 'garageState'; doors: MyQDoor[]; myqConnected: boolean }
   | { type: 'applianceState'; dishwashers: DishwasherStatus[]; laundry: LaundryAppliance[]; heatPumps: HeatPumpStatus[] }
   | { type: 'alarmState'; panels: AlarmPanel[]; alarmConnected: boolean }
+  | { type: 'chargerState'; chargers: ChargePointCharger[]; chargePointConnected: boolean }
+  | { type: 'subZeroState'; refrigerators: SubZeroRefrigerator[]; ovens: WolfOven[]; subZeroLinked: boolean }
   | { type: 'error'; message: string }
   | { type: 'pong' };
 
@@ -147,6 +254,9 @@ export type ClientMessage =
   | { type: 'queryDevice'; deviceId: number }
   | { type: 'garageAction'; serial: string; action: 'open' | 'close' }
   | { type: 'alarmAction'; locationId: string; action: 'armAway' | 'armHome' | 'armNight' | 'disarm' }
+  | { type: 'chargerAction'; chargerId: string; action: 'setAmperage'; value: number }
+  | { type: 'subZeroAction'; applianceId: string; action: 'setFridgeTemp' | 'setFreezerTemp' | 'setCrisperTemp' | 'setIceMaker' | 'setMaxIce' | 'setNightMode' | 'setHumidityControl' | 'toggleLight' | 'toggleOvenLight' | 'setProperty' | 'refresh'; property?: string; value?: unknown }
+  | { type: 'setLEDState'; ledId: number; state: 'On' | 'Off' }
   | { type: 'ping' };
 
 // ── Scenes ──────────────────────────────────────────────────────────────────

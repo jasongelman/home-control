@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
-import type { ServerMessage, ClientMessage, DeviceState, ConnectionStatus, MyQDoor, DishwasherStatus, LaundryAppliance, HeatPumpStatus, AlarmPanel } from '../types/index.js';
+import type { ServerMessage, ClientMessage, DeviceState, ConnectionStatus, MyQDoor, DishwasherStatus, LaundryAppliance, HeatPumpStatus, AlarmPanel, ChargePointCharger, SubZeroRefrigerator, WolfOven, KeypadInfo } from '../types/index.js';
 
 const RECONNECT_DELAY = 3000;
 const PING_INTERVAL = 30000;
@@ -22,6 +22,12 @@ export function useWebSocket() {
   const [myUplinkLinked, setMyUplinkLinked] = useState(false);
   const [panels, setPanels] = useState<Map<string, AlarmPanel>>(new Map());
   const [alarmConnected, setAlarmConnected] = useState(false);
+  const [chargers, setChargers] = useState<ChargePointCharger[]>([]);
+  const [chargePointConnected, setChargePointConnected] = useState(false);
+  const [refrigerators, setRefrigerators] = useState<SubZeroRefrigerator[]>([]);
+  const [ovens, setOvens] = useState<WolfOven[]>([]);
+  const [subZeroLinked, setSubZeroLinked] = useState(false);
+  const [keypads, setKeypads] = useState<KeypadInfo[]>([]);
 
   const send = useCallback((msg: ClientMessage) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -39,6 +45,27 @@ export function useWebSocket() {
   const triggerAlarm = useCallback(
     (locationId: string, action: 'armAway' | 'armHome' | 'armNight' | 'disarm') => {
       send({ type: 'alarmAction', locationId, action });
+    },
+    [send],
+  );
+
+  const setChargerAmperage = useCallback(
+    (chargerId: string, amps: number) => {
+      send({ type: 'chargerAction', chargerId, action: 'setAmperage', value: amps });
+    },
+    [send],
+  );
+
+  const subZeroCommand = useCallback(
+    (applianceId: string, action: string, value: unknown) => {
+      send({ type: 'subZeroAction', applianceId, action: action as 'setFridgeTemp', value });
+    },
+    [send],
+  );
+
+  const setLEDState = useCallback(
+    (ledId: number, state: 'On' | 'Off') => {
+      send({ type: 'setLEDState', ledId, state });
     },
     [send],
   );
@@ -118,6 +145,12 @@ export function useWebSocket() {
             setMyUplinkLinked(msg.myUplinkLinked ?? false);
             setPanels(new Map(msg.panels.map((p) => [p.locationId, p])));
             setAlarmConnected(msg.alarmConnected);
+            setChargers(msg.chargers ?? []);
+            setChargePointConnected(msg.chargePointConnected ?? false);
+            setRefrigerators(msg.refrigerators ?? []);
+            setOvens(msg.ovens ?? []);
+            setSubZeroLinked(msg.subZeroLinked ?? false);
+            setKeypads(msg.keypads ?? []);
             break;
 
           case 'state':
@@ -153,6 +186,30 @@ export function useWebSocket() {
           case 'alarmState':
             setPanels(new Map(msg.panels.map((p) => [p.locationId, p])));
             setAlarmConnected(msg.alarmConnected);
+            break;
+
+          case 'chargerState':
+            setChargers(msg.chargers);
+            setChargePointConnected(msg.chargePointConnected);
+            break;
+
+          case 'subZeroState':
+            setRefrigerators(msg.refrigerators);
+            setOvens(msg.ovens);
+            setSubZeroLinked(msg.subZeroLinked);
+            break;
+
+          case 'keypadsState':
+            setKeypads(msg.keypads ?? []);
+            break;
+
+          case 'ledState':
+            setKeypads((prev) => prev.map((kp) =>
+              kp.deviceId !== msg.keypadId ? kp : {
+                ...kp,
+                buttons: kp.buttons.map((b) => b.ledId === msg.ledId ? { ...b, ledState: msg.state } : b),
+              },
+            ));
             break;
 
         }
@@ -199,5 +256,14 @@ export function useWebSocket() {
     panels,
     alarmConnected,
     triggerAlarm,
+    chargers,
+    chargePointConnected,
+    setChargerAmperage,
+    refrigerators,
+    ovens,
+    subZeroLinked,
+    subZeroCommand,
+    keypads,
+    setLEDState,
   };
 }
