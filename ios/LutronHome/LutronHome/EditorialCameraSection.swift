@@ -7,25 +7,42 @@ struct EditorialCameraSection: View {
 
     var body: some View {
         let cameras = homeKit.cameras
-        if !cameras.isEmpty {
-            // Offline cameras keep their tile (last frame + badge) instead of
-            // disappearing — a dropped feed is a state worth showing.
-            let offline = homeKit.unavailableCameras
-            let liveCount = cameras.filter { !offline.contains($0.accessory.name) }.count
+        let offline = homeKit.unavailableCameras
+
+        // A tile is shown only when the camera currently has a real live snapshot
+        // AND isn't marked offline. We deliberately do NOT fall back to a cached
+        // frame: HMCameraView's offscreen render can produce an all-black image
+        // (see the note on HMCameraViewRepresentable), and a camera that never
+        // connects to HomeKit ends up caching exactly that black frame — which then
+        // renders as a permanent black "OFFLINE" tile. Keying on the live snapshot
+        // instead hides such a camera entirely, and keeps it hidden through the
+        // foreground `unavailableCameras.removeAll()` re-try window since it never
+        // gains a snapshot. Indices are into `homeKit.cameras` and preserved so each
+        // tile's `cameraIndex` resolves to the right snapshot control / selection.
+        let visibleIndices = cameras.indices.filter { i in
+            let cam = cameras[i]
+            let hasSnapshot = cam.profile.snapshotControl?.mostRecentSnapshot != nil
+            return hasSnapshot && !offline.contains(cam.accessory.name)
+        }
+
+        if !visibleIndices.isEmpty {
+            let visibleCount = visibleIndices.count
+            let liveCount = visibleIndices.filter { !offline.contains(cameras[$0].accessory.name) }.count
 
             VStack(alignment: .leading, spacing: EditorialTheme.gridSpacing) {
                 EditorialSectionHeader(
                     title: "CAMERAS",
-                    trailing: liveCount == cameras.count
-                        ? "\(cameras.count) FEEDS"
-                        : "\(liveCount)/\(cameras.count) LIVE"
+                    trailing: liveCount == visibleCount
+                        ? "\(visibleCount) FEEDS"
+                        : "\(liveCount)/\(visibleCount) LIVE"
                 )
 
                 LazyVGrid(
                     columns: [GridItem(.flexible()), GridItem(.flexible())],
                     spacing: EditorialTheme.gridSpacing
                 ) {
-                    ForEach(Array(cameras.enumerated()), id: \.offset) { index, camera in
+                    ForEach(visibleIndices, id: \.self) { index in
+                        let camera = cameras[index]
                         LiveCameraTile(
                             cameraIndex: index,
                             name: camera.accessory.name,
