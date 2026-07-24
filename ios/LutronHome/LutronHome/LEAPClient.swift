@@ -5,6 +5,18 @@ import Network
 /// Low-level LEAP protocol client using NWConnection with TLS + mTLS.
 /// LEAP sends newline-delimited JSON over TLS on port 8081.
 class LEAPClient: @unchecked Sendable {
+    /// Gate for the high-volume per-message wire logs (TX/RX/dispatch), which
+    /// flood the console on every reconnect (one line per zone/LED read).
+    /// Connection-state changes, timeouts, and errors always log regardless.
+    /// Off by default; flip in `UserDefaults` (key `leapVerboseLogging`) — no
+    /// rebuild needed — or set `LEAPClient.verboseLogging = true` from lldb.
+    static var verboseLogging = UserDefaults.standard.bool(forKey: "leapVerboseLogging")
+
+    /// Log a verbose wire-level message only when `verboseLogging` is enabled.
+    private func logVerbose(_ message: @autoclosure () -> String) {
+        if Self.verboseLogging { print(message()) }
+    }
+
     private var connection: NWConnection?
     private var dataBuffer = Data()
     private var tagCounter = 0
@@ -161,12 +173,14 @@ class LEAPClient: @unchecked Sendable {
 
             if trimmedData.isEmpty { continue }
 
-            // Log message for debugging (abbreviated)
-            if trimmedData.count < 500, let preview = String(data: trimmedData, encoding: .utf8) {
-                print("LEAP RX: \(preview)")
-            } else {
-                let preview = String(data: trimmedData.prefix(150), encoding: .utf8) ?? "?"
-                print("LEAP RX (\(trimmedData.count) bytes): \(preview)...")
+            // Log message for debugging (abbreviated) — verbose-gated
+            if Self.verboseLogging {
+                if trimmedData.count < 500, let preview = String(data: trimmedData, encoding: .utf8) {
+                    print("LEAP RX: \(preview)")
+                } else {
+                    let preview = String(data: trimmedData.prefix(150), encoding: .utf8) ?? "?"
+                    print("LEAP RX (\(trimmedData.count) bytes): \(preview)...")
+                }
             }
 
             do {
@@ -200,7 +214,7 @@ class LEAPClient: @unchecked Sendable {
 
     private func dispatch(_ msg: LEAPMessage) {
         let tag = msg.Header.ClientTag ?? "none"
-        print("LEAP dispatch: tag=\(tag) url=\(msg.Header.Url) status=\(msg.Header.StatusCode ?? "nil") bodyType=\(msg.Header.MessageBodyType ?? "nil")")
+        logVerbose("LEAP dispatch: tag=\(tag) url=\(msg.Header.Url) status=\(msg.Header.StatusCode ?? "nil") bodyType=\(msg.Header.MessageBodyType ?? "nil")")
 
         if let tag = msg.Header.ClientTag, let handler = pending.removeValue(forKey: tag) {
             handler(.success(msg))
@@ -225,8 +239,10 @@ class LEAPClient: @unchecked Sendable {
         }
         var payload = data
         payload.append(contentsOf: "\r\n".utf8)
-        let preview = String(data: data, encoding: .utf8)?.prefix(300) ?? "?"
-        print("LEAP TX: \(preview)")
+        if Self.verboseLogging {
+            let preview = String(data: data, encoding: .utf8)?.prefix(300) ?? "?"
+            print("LEAP TX: \(preview)")
+        }
         conn.send(content: payload, completion: .contentProcessed { error in
             if let error {
                 print("LEAP write error: \(error)")
