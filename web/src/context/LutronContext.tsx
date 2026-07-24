@@ -9,7 +9,6 @@ interface LutronContextValue {
   connectionStatus: ConnectionStatus;
   processorConnected: boolean;
   setLevel: (deviceId: number, level: number, fadeTime?: number) => void;
-  setColor: (deviceId: number, hue: number, saturation: number, level?: number) => void;
   pressButton: (deviceId: number, component: number) => void;
   releaseButton: (deviceId: number, component: number) => void;
   doors: Map<string, MyQDoor>;

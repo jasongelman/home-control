@@ -74,20 +74,6 @@ export interface LEAPKeypad {
 
 const RECONNECT_DELAYS = [5_000, 10_000, 20_000, 40_000, 60_000];
 
-/**
- * Rooms whose light zones are full-RGB color fixtures (driven by a physical
- * "Colors" keypad). These use raw LEAP area names. The QSX processor advertises
- * these zones as plain `Dimmed` and does not report color in zone status, so
- * color capability cannot be detected from LEAP alone — it is domain knowledge,
- * matching the iOS app's color-keypad rooms.
- */
-export const COLOR_ROOMS = new Set(['Gym', 'Playroom', 'Safe Room']);
-
-/** True if a light zone in this (raw) room accepts full RGB color commands. */
-export function isColorRoom(room: string): boolean {
-  return COLOR_ROOMS.has(room);
-}
-
 export class LEAPConnection extends EventEmitter {
   private client: LEAPClient | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
@@ -152,45 +138,6 @@ export class LEAPConnection extends EventEmitter {
           CommandType: 'GoToLevel',
           Parameter: [{ Type: 'Level', Value: level }],
           ...(fade ? { FadeTime: fade } : {}),
-        },
-      },
-    });
-  }
-
-  /**
-   * Set a color-capable zone to an arbitrary HSV color at a given level.
-   * Hue 0–360, Saturation 0–100, Level 0–100.
-   *
-   * Uses the LEAP `GoToSpectrumTuningLevel` command. The exact body shape was
-   * verified live against the QSX processor:
-   *   Command.SpectrumTuningLevelParameters = {
-   *     Level, ColorTuningStatus: { HSVTuningLevel: { Hue, Saturation } }
-   *   }
-   * The processor echoes the HSV back in the CreateResponse but does not persist
-   * it in `/zone/{id}/status`, so callers track the last color themselves.
-   */
-  async setColor(
-    zoneId: number,
-    hue: number,
-    saturation: number,
-    level: number,
-  ): Promise<void> {
-    this.assertConnected();
-    await this.client!.send({
-      CommuniqueType: 'CreateRequest',
-      Header: { Url: `/zone/${zoneId}/commandprocessor` },
-      Body: {
-        Command: {
-          CommandType: 'GoToSpectrumTuningLevel',
-          SpectrumTuningLevelParameters: {
-            Level: level,
-            ColorTuningStatus: {
-              HSVTuningLevel: {
-                Hue: Math.round(hue),
-                Saturation: Math.round(saturation),
-              },
-            },
-          },
         },
       },
     });

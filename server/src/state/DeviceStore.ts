@@ -1,6 +1,5 @@
 import { EventEmitter } from 'events';
 import type { DeviceConfig, DeviceState } from '../lutron/types.js';
-import { isColorRoom } from '../lutron/LEAPConnection.js';
 
 export class DeviceStore extends EventEmitter {
   private devices = new Map<number, DeviceState>();
@@ -14,8 +13,6 @@ export class DeviceStore extends EventEmitter {
         type: config.type,
         room: config.room,
         level: 0,
-        colorCapable: config.type === 'light' && isColorRoom(config.room),
-        hsv: null,
         components: config.components,
         lastUpdated: Date.now(),
       });
@@ -28,15 +25,6 @@ export class DeviceStore extends EventEmitter {
       device.level = level;
       device.lastUpdated = Date.now();
       this.emit('stateChange', integrationId, level);
-    }
-  }
-
-  /** Record the last color set on a color-capable zone (optimistic). */
-  updateColor(integrationId: number, hue: number, saturation: number): void {
-    const device = this.devices.get(integrationId);
-    if (device) {
-      device.hsv = { hue, saturation };
-      device.lastUpdated = Date.now();
     }
   }
 
