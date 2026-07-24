@@ -13,9 +13,15 @@ struct DimmablePill: View {
     @State private var dragLevel: Double = 0
     @State private var lastSentLevel: Double = -1
     @State private var lastSendTime: Date = .distantPast
+    @State private var showColorSheet = false
 
     private var displayLevel: Double { isDragging ? dragLevel : device.level }
     private var isOn: Bool { displayLevel > 0 }
+    private var isColorCapable: Bool { store.isColorCapable(device) }
+    private var swatchColor: Color {
+        let hsv = store.deviceHSV[device.integrationId] ?? HSVColor(hue: 210, saturation: 80)
+        return Color(hue: hsv.hue / 360, saturation: hsv.saturation / 100, brightness: 1)
+    }
 
     private func sendIfNeeded(_ level: Double) {
         let snapped = (level / 5).rounded() * 5
@@ -59,6 +65,16 @@ struct DimmablePill: View {
 
                     Spacer(minLength: 4)
 
+                    if isColorCapable {
+                        Button { showColorSheet = true } label: {
+                            Circle()
+                                .fill(swatchColor)
+                                .frame(width: 16, height: 16)
+                                .overlay(Circle().stroke(EditorialTheme.cardBorder, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+
                     Text("\(Int(displayLevel))%")
                         .font(EditorialTheme.monoValue(size: 12))
                         .foregroundStyle(isOn ? EditorialTheme.accent : EditorialTheme.secondaryText)
@@ -101,6 +117,103 @@ struct DimmablePill: View {
             )
         }
         .frame(height: 40)
+        .sheet(isPresented: $showColorSheet) {
+            ColorLightSheet(device: device)
+                .presentationDetents([.medium])
+        }
+    }
+}
+
+// MARK: - Color Light Sheet (full RGB color wheel + brightness)
+
+struct ColorLightSheet: View {
+    @Environment(LutronStore.self) var store
+    @Environment(\.dismiss) private var dismiss
+    let device: DeviceState
+
+    @State private var pickerColor: Color = .blue
+    @State private var brightness: Double = 100
+
+    // Preset shortcuts mirror the physical "Colors" keypad palette.
+    private static let presets: [(name: String, hue: Double, saturation: Double)] = [
+        ("Red", 0, 100), ("Orange", 30, 100), ("Yellow", 55, 100),
+        ("Green", 120, 100), ("Aqua", 180, 100), ("Blue", 220, 100),
+        ("Purple", 275, 100), ("Pink", 320, 90), ("White", 0, 0),
+    ]
+
+    private func hueSat(from color: Color) -> (hue: Double, saturation: Double) {
+        let ui = UIColor(color)
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        ui.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        return (Double(h) * 360, Double(s) * 100)
+    }
+
+    private func presetColor(_ hue: Double, _ sat: Double) -> Color {
+        Color(hue: hue / 360, saturation: sat / 100, brightness: 1)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack {
+                Text("\(device.room.uppercased()) · \(device.name.uppercased())")
+                    .font(.system(size: 12, weight: .semibold))
+                    .tracking(0.8)
+                    .foregroundStyle(EditorialTheme.secondaryText)
+                Spacer()
+                Button("Done") { dismiss() }
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(EditorialTheme.accent)
+            }
+
+            ColorPicker("Color", selection: $pickerColor, supportsOpacity: false)
+                .font(.system(size: 14, weight: .medium))
+                .onChange(of: pickerColor) { _, newColor in
+                    let hs = hueSat(from: newColor)
+                    store.setColor(device.integrationId, hue: hs.hue, saturation: hs.saturation,
+                                   level: brightness)
+                }
+
+            // Preset shortcuts
+            HStack(spacing: 8) {
+                ForEach(Self.presets, id: \.name) { preset in
+                    Button {
+                        pickerColor = presetColor(preset.hue, preset.saturation)
+                        store.setColor(device.integrationId, hue: preset.hue,
+                                       saturation: preset.saturation, level: brightness)
+                    } label: {
+                        Circle()
+                            .fill(presetColor(preset.hue, preset.saturation))
+                            .frame(width: 28, height: 28)
+                            .overlay(Circle().stroke(EditorialTheme.cardBorder, lineWidth: 0.5))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            // Brightness slider
+            VStack(alignment: .leading, spacing: 6) {
+                Text("BRIGHTNESS · \(Int(brightness))%")
+                    .font(.system(size: 10, weight: .medium))
+                    .tracking(0.8)
+                    .foregroundStyle(EditorialTheme.secondaryText)
+                Slider(value: $brightness, in: 0...100, step: 1) { editing in
+                    guard !editing else { return }
+                    let hs = hueSat(from: pickerColor)
+                    store.setColor(device.integrationId, hue: hs.hue, saturation: hs.saturation,
+                                   level: brightness)
+                }
+                .tint(EditorialTheme.accent)
+            }
+
+            Spacer()
+        }
+        .padding(20)
+        .background(EditorialTheme.background.ignoresSafeArea())
+        .onAppear {
+            let hsv = store.deviceHSV[device.integrationId] ?? HSVColor(hue: 210, saturation: 80)
+            pickerColor = Color(hue: hsv.hue / 360, saturation: hsv.saturation / 100, brightness: 1)
+            brightness = device.level > 0 ? device.level : 100
+        }
     }
 }
 

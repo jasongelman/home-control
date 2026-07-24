@@ -21,12 +21,22 @@ export interface DeviceConfig {
   components?: KeypadComponent[];
 }
 
+/** HSV color for a color-capable (RGB) light zone. Hue 0–360, Saturation 0–100. */
+export interface HSVColor {
+  hue: number;
+  saturation: number;
+}
+
 export interface DeviceState {
   integrationId: number;
   name: string;
   type: DeviceType;
   room: string;
   level: number;
+  /** True for zones that accept full RGB (GoToSpectrumTuningLevel) — the color-keypad rooms. */
+  colorCapable?: boolean;
+  /** Last color set on this zone (optimistic; the QSX processor does not report color back). */
+  hsv?: HSVColor | null;
   components?: KeypadComponent[];
   lastUpdated: number;
 }
@@ -173,6 +183,7 @@ export type ServerMessage =
   | { type: 'keypadsState'; keypads: import('./LEAPConnection.js').LEAPKeypad[] }
   | { type: 'ledState'; keypadId: number; ledId: number; state: 'On' | 'Off' }
   | { type: 'state'; deviceId: number; level: number; timestamp: number }
+  | { type: 'colorState'; deviceId: number; hue: number; saturation: number; level: number; timestamp: number }
   | { type: 'connected'; processorIp: string }
   | { type: 'disconnected'; reason: string }
   | { type: 'garageState'; doors: MyQDoor[]; myqConnected: boolean }
@@ -185,12 +196,13 @@ export type ServerMessage =
 
 export type ClientMessage =
   | { type: 'setLevel'; deviceId: number; level: number; fadeTime?: number }
+  | { type: 'setColor'; deviceId: number; hue: number; saturation: number; level?: number }
   | { type: 'pressButton'; deviceId: number; component: number }
   | { type: 'releaseButton'; deviceId: number; component: number }
   | { type: 'queryDevice'; deviceId: number }
   | { type: 'garageAction'; serial: string; action: 'open' | 'close' }
   | { type: 'alarmAction'; locationId: string; action: 'armAway' | 'armHome' | 'armNight' | 'disarm' }
   | { type: 'chargerAction'; chargerId: string; action: 'setAmperage'; value: number }
-  | { type: 'subZeroAction'; applianceId: string; action: 'setFridgeTemp' | 'setFreezerTemp' | 'setCrisperTemp' | 'setIceMaker' | 'setMaxIce' | 'setNightMode' | 'setHumidityControl' | 'toggleLight' | 'toggleOvenLight' | 'setProperty' | 'refresh'; property?: string; value?: unknown }
+  | { type: 'subZeroAction'; applianceId: string; action: 'setFridgeTemp' | 'setFreezerTemp' | 'setCrisperTemp' | 'setIceMaker' | 'setMaxIce' | 'setNightMode' | 'setHumidityControl' | 'toggleLight' | 'toggleOvenLight' | 'setKitchenTimer' | 'cancelKitchenTimer' | 'setProperty' | 'refresh'; property?: string; value?: unknown }
   | { type: 'setLEDState'; ledId: number; state: 'On' | 'Off' }
   | { type: 'ping' };

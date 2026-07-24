@@ -57,7 +57,7 @@ private struct EVChargerCard: View {
                         .lineLimit(1)
                 }
 
-                Text(charger.status.label.uppercased())
+                Text(statusLabel.uppercased())
                     .font(.system(size: 9, weight: .semibold))
                     .tracking(0.6)
                     .foregroundStyle(statusColor)
@@ -90,20 +90,44 @@ private struct EVChargerCard: View {
         switch charger.status {
         case .charging:  return .green
         case .pluggedIn: return .blue
+        case .scheduled: return .indigo
         case .complete:  return .green
         case .error:     return .red
         default:         return EditorialTheme.secondaryText
         }
     }
 
-    /// Compact "7.2kW · 12.4kWh · 48A" readout for the single-row card.
+    /// Status text, with the scheduled start time appended when waiting.
+    private var statusLabel: String {
+        if charger.status == .scheduled, let t = charger.scheduledFor {
+            return "Starts \(t)"
+        }
+        return charger.status.label
+    }
+
+    /// Compact "12.4kWh · 1h 20m · 48A" readout for the single-row card. Leads
+    /// with the live session energy, then whatever extras exist.
     private var inlineStats: String? {
-        guard charger.status == .charging || charger.isPluggedIn else { return nil }
+        guard charger.isPluggedIn else { return nil }
         var parts: [String] = []
-        if let kw = charger.powerKw, kw > 0 { parts.append(String(format: "%.1fkW", kw)) }
-        if let kwh = charger.energyKwh, kwh > 0 { parts.append(String(format: "%.1fkWh", kwh)) }
+        if let s = charger.liveSession {
+            if s.energyKwh > 0 { parts.append(String(format: "%.1fkWh", s.energyKwh)) }
+            if s.durationSeconds > 0 { parts.append(EVFormat.duration(s.durationSeconds)) }
+        } else if let kw = charger.powerKw, kw > 0 {
+            parts.append(String(format: "%.1fkW", kw))
+        }
         if charger.amperage > 0 { parts.append("\(charger.amperage)A") }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+}
+
+/// Shared formatting helpers for EV session stats.
+enum EVFormat {
+    static func duration(_ seconds: Double) -> String {
+        let total = Int(seconds)
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        return h > 0 ? "\(h)h \(m)m" : "\(m)m"
     }
 }
 
@@ -153,15 +177,36 @@ struct EVChargerDetailView: View {
                     .font(.system(size: 80, weight: .regular))
                     .foregroundStyle(chargerArtworkColor)
                     .padding(.vertical, 8)
-                if charger.status == .charging || charger.isPluggedIn {
+                if charger.isPluggedIn, let s = charger.liveSession {
+                    // Live session stats — total energy first, then extras.
                     HStack(spacing: 24) {
-                        if let kw = charger.powerKw, kw > 0 {
-                            statBlock(label: "POWER", value: String(format: "%.1f kW", kw))
+                        statBlock(label: "ENERGY", value: String(format: "%.1f kWh", s.energyKwh))
+                        if s.durationSeconds > 0 {
+                            statBlock(label: "TIME", value: EVFormat.duration(s.durationSeconds))
                         }
-                        if let kwh = charger.energyKwh, kwh > 0 {
-                            statBlock(label: "SESSION", value: String(format: "%.1f kWh", kwh))
+                        if let avg = avgPowerKw(s) {
+                            statBlock(label: "AVG POWER", value: String(format: "%.1f kW", avg))
                         }
                     }
+                    if s.cost != nil || s.milesAdded != nil {
+                        HStack(spacing: 24) {
+                            if let cost = s.cost {
+                                statBlock(label: "COST", value: String(format: "$%.2f", cost))
+                            }
+                            if let miles = s.milesAdded {
+                                statBlock(label: "RANGE", value: String(format: "%.0f mi", miles))
+                            }
+                        }
+                    }
+                } else if charger.isPluggedIn, let kw = charger.powerKw, kw > 0 {
+                    HStack(spacing: 24) {
+                        statBlock(label: "POWER", value: String(format: "%.1f kW", kw))
+                    }
+                }
+                if let avg = charger.weeklyAvgKwh, avg > 0 {
+                    Text(String(format: "Avg %.1f kWh / week", avg))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -169,6 +214,14 @@ struct EVChargerDetailView: View {
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets())
         }
+    }
+
+    /// Average power over the session — there is no live-telemetry endpoint, so
+    /// energy / elapsed time is the best available "power" figure.
+    private func avgPowerKw(_ s: ChargePointSessionStats) -> Double? {
+        let hours = s.durationSeconds / 3600
+        guard hours > 0.02, s.energyKwh > 0 else { return nil }
+        return s.energyKwh / hours
     }
 
     private var actionSection: some View {
@@ -254,7 +307,7 @@ struct EVChargerDetailView: View {
     // MARK: Subviews
 
     private var statusPill: some View {
-        Text(charger.status.label)
+        Text(statusLabel)
             .font(.system(size: 16, weight: .semibold))
             .foregroundStyle(.white)
             .padding(.horizontal, 20)
@@ -276,10 +329,19 @@ struct EVChargerDetailView: View {
 
     // MARK: Colors
 
+    /// Status text, with the scheduled start time appended when waiting.
+    private var statusLabel: String {
+        if charger.status == .scheduled, let t = charger.scheduledFor {
+            return "Starts \(t)"
+        }
+        return charger.status.label
+    }
+
     private var statusPillColor: Color {
         switch charger.status {
         case .charging:  return .blue
         case .pluggedIn: return .blue
+        case .scheduled: return .indigo
         case .complete:  return .green
         case .error:     return .red
         default:         return .gray

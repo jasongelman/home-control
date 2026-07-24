@@ -463,14 +463,6 @@ class SubZeroManager: @unchecked Sendable {
                 let model = item["model"] as? String ?? item["modelNumber"] as? String ?? ""
                 let online = item["online"] as? Bool ?? item["connected"] as? Bool ?? true
 
-                // Debug: log raw device JSON for first device
-                if newMeta.isEmpty {
-                    if let jsonData = try? JSONSerialization.data(withJSONObject: item, options: .prettyPrinted),
-                       let jsonStr = String(data: jsonData, encoding: .utf8) {
-                        print("SubZero raw device JSON:\n\(jsonStr.prefix(2000))")
-                    }
-                }
-
                 // Classify by name: "oven"/"range" → oven; otherwise fridge (a beverage center is a fridge).
                 let nameLower = name.lowercased()
                 let isOven = nameLower.contains("oven") || nameLower.contains("range")
@@ -901,10 +893,18 @@ class SubZeroManager: @unchecked Sendable {
     func toggleLight(applianceId: String, on: Bool) async { await setProperty(applianceId, "light_on", on) }
     func toggleOvenLight(applianceId: String, on: Bool) async { await setProperty(applianceId, "cav_light_on", on) }
 
+    // Kitchen timer commands — confirmed by static decompile of the Owner's app v4.6.0
+    // (blutter): KitchenTimerOverlayController.onActionButtonTap / handleCancelTimerButtonPress
+    // send the property `kitchen_timer_duration` (an Int in MINUTES) via the executeAPICmd
+    // set path. The picker is Hours+Minutes and the app writes hours*60+minutes. Setting the
+    // duration to 0 cancels a running timer. (`kitchen_timer_end_time`/`kitchen_timer_active`
+    // are only mutated locally in the app's demo mode — they are read-only device state.)
+    func setKitchenTimer(applianceId: String, minutes: Int) async { await setProperty(applianceId, "kitchen_timer_duration", minutes) }
+    func cancelKitchenTimer(applianceId: String) async { await setProperty(applianceId, "kitchen_timer_duration", 0) }
+
     // Property names below are NOT yet confirmed against a live device (transport is correct;
     // names are best-effort from the SignalR ploads). Verify before relying on them.
     func setMode(applianceId: String, mode: String) async { await setProperty(applianceId, "mode", mode) }
-    func setKitchenTimer(applianceId: String, seconds: Int) async { await setProperty(applianceId, "kitchen_timer_end_time", seconds) }
     func preheatOven(applianceId: String, temp: Int, mode: String) async {
         do {
             try await sendDirectMethod(deviceId: applianceId, pload: ["cmd": "set", "params": ["cav_set_temp": temp, "cav_cook_mode": mode, "cav_unit_on": true]])

@@ -589,6 +589,20 @@ export class SubZeroManager extends EventEmitter {
     await this.setProperty(applianceId, 'cav_light_on', on);
   }
 
+  // Kitchen timer commands — confirmed by static decompile of the Owner's app v4.6.0
+  // (blutter): KitchenTimerOverlayController.onActionButtonTap / handleCancelTimerButtonPress
+  // send the property `kitchen_timer_duration` (an int in MINUTES) via the executeAPICmd set
+  // path. The picker is Hours+Minutes and the app writes hours*60+minutes. Setting the
+  // duration to 0 cancels a running timer. (`kitchen_timer_end_time`/`kitchen_timer_active`
+  // are only mutated locally in the app's demo mode — they are read-only device state.)
+  async setKitchenTimer(applianceId: string, minutes: number): Promise<void> {
+    await this.setProperty(applianceId, 'kitchen_timer_duration', minutes);
+  }
+
+  async cancelKitchenTimer(applianceId: string): Promise<void> {
+    await this.setProperty(applianceId, 'kitchen_timer_duration', 0);
+  }
+
   // ── Polling ─────────────────────────────────────────────────────────────
 
   // ── Endpoint probe (discover actual APIM paths) ─────────────────────

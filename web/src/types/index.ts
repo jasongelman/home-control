@@ -24,12 +24,21 @@ export interface KeypadInfo {
   buttons: KeypadButtonInfo[];
 }
 
+export interface HSVColor {
+  hue: number;        // 0–360
+  saturation: number; // 0–100
+}
+
 export interface DeviceState {
   integrationId: number;
   name: string;
   type: DeviceType;
   room: string;
   level: number;
+  /** True for full-RGB color zones (the color-keypad rooms). */
+  colorCapable?: boolean;
+  /** Last color set (optimistic; processor does not report color back). */
+  hsv?: HSVColor | null;
   components?: KeypadComponent[];
   lastUpdated: number;
 }
@@ -134,7 +143,7 @@ export interface AlarmZone {
 
 // ── ChargePoint / EV Charging ────────────────────────────────────────────────
 
-export type ChargingStatus = 'idle' | 'pluggedIn' | 'charging' | 'complete' | 'error' | 'unknown';
+export type ChargingStatus = 'idle' | 'pluggedIn' | 'scheduled' | 'charging' | 'complete' | 'error' | 'unknown';
 
 export interface ChargePointCharger {
   chargerId: string;
@@ -142,11 +151,26 @@ export interface ChargePointCharger {
   nickname: string;
   status: ChargingStatus;
   isPluggedIn: boolean;
+  scheduledFor?: string | null;
   powerKw: number | null;
   energyKwh: number | null;
   amperage: number;
   maxAmperage: number;
+  /** Live/most-recent session while plugged in; null when unplugged. */
+  liveSession?: ChargePointSessionStats | null;
+  /** Rolling average kWh per week from persisted history. */
+  weeklyAvgKwh?: number | null;
   lastUpdated: number;
+}
+
+export interface ChargePointSessionStats {
+  energyKwh: number;
+  cost: number | null;
+  milesAdded: number | null;
+  startTime: number;
+  /** null => session still in progress. */
+  endTime: number | null;
+  durationSeconds: number;
 }
 
 export interface ChargePointSession {
@@ -157,6 +181,13 @@ export interface ChargePointSession {
   energyKwh: number;
   cost: number | null;
   milesAdded: number | null;
+}
+
+export interface ChargePointWeeklyStats {
+  weeklyAvgKwh: number;
+  weeks: number;
+  totalKwh: number;
+  sessionCount: number;
 }
 
 // ── Sub-Zero / Wolf ─────────────────────────────────────────────────────────
@@ -237,6 +268,7 @@ export type ServerMessage =
   | { type: 'keypadsState'; keypads: KeypadInfo[] }
   | { type: 'ledState'; keypadId: number; ledId: number; state: 'On' | 'Off' }
   | { type: 'state'; deviceId: number; level: number; timestamp: number }
+  | { type: 'colorState'; deviceId: number; hue: number; saturation: number; level: number; timestamp: number }
   | { type: 'connected'; processorIp: string }
   | { type: 'disconnected'; reason: string }
   | { type: 'garageState'; doors: MyQDoor[]; myqConnected: boolean }
@@ -249,13 +281,14 @@ export type ServerMessage =
 
 export type ClientMessage =
   | { type: 'setLevel'; deviceId: number; level: number; fadeTime?: number }
+  | { type: 'setColor'; deviceId: number; hue: number; saturation: number; level?: number }
   | { type: 'pressButton'; deviceId: number; component: number }
   | { type: 'releaseButton'; deviceId: number; component: number }
   | { type: 'queryDevice'; deviceId: number }
   | { type: 'garageAction'; serial: string; action: 'open' | 'close' }
   | { type: 'alarmAction'; locationId: string; action: 'armAway' | 'armHome' | 'armNight' | 'disarm' }
   | { type: 'chargerAction'; chargerId: string; action: 'setAmperage'; value: number }
-  | { type: 'subZeroAction'; applianceId: string; action: 'setFridgeTemp' | 'setFreezerTemp' | 'setCrisperTemp' | 'setIceMaker' | 'setMaxIce' | 'setNightMode' | 'setHumidityControl' | 'toggleLight' | 'toggleOvenLight' | 'setProperty' | 'refresh'; property?: string; value?: unknown }
+  | { type: 'subZeroAction'; applianceId: string; action: 'setFridgeTemp' | 'setFreezerTemp' | 'setCrisperTemp' | 'setIceMaker' | 'setMaxIce' | 'setNightMode' | 'setHumidityControl' | 'toggleLight' | 'toggleOvenLight' | 'setKitchenTimer' | 'cancelKitchenTimer' | 'setProperty' | 'refresh'; property?: string; value?: unknown }
   | { type: 'setLEDState'; ledId: number; state: 'On' | 'Off' }
   | { type: 'ping' };
 

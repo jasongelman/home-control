@@ -1314,6 +1314,11 @@ struct KitchenTimerPickerSheet: View {
     @State private var hours: Int = 0
     @State private var minutes: Int = 30
 
+    private var isTimerRunning: Bool {
+        if let remaining = oven.timerRemaining, remaining > 0 { return true }
+        return false
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -1362,9 +1367,9 @@ struct KitchenTimerPickerSheet: View {
                 Spacer()
 
                 Button {
-                    let totalSeconds = hours * 3600 + minutes * 60
+                    let totalMinutes = hours * 60 + minutes
                     Task {
-                        await subZero.setKitchenTimer(applianceId: oven.applianceId, seconds: totalSeconds)
+                        await subZero.setKitchenTimer(applianceId: oven.applianceId, minutes: totalMinutes)
                         isPresented = false
                     }
                 } label: {
@@ -1378,7 +1383,26 @@ struct KitchenTimerPickerSheet: View {
                 .tint(.primary)
                 .disabled(hours == 0 && minutes == 0)
                 .padding(.horizontal, 24)
-                .padding(.bottom, 32)
+                .padding(.bottom, isTimerRunning ? 8 : 32)
+
+                if isTimerRunning {
+                    Button(role: .destructive) {
+                        Task {
+                            await subZero.cancelKitchenTimer(applianceId: oven.applianceId)
+                            isPresented = false
+                        }
+                    } label: {
+                        Text("TURN OFF TIMER")
+                            .font(.system(size: 16, weight: .semibold))
+                            .tracking(0.5)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 32)
+                }
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

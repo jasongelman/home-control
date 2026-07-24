@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import type { ChargePointCharger, ChargePointConfig, ChargePointSession } from './types.js';
-import { login, getHomeChargers, setAmperage, getSessionHistory, type ChargePointSessionInfo } from './ChargePointClient.js';
+import { login, getHomeChargers, setAmperage, getSessionHistory, pickLiveSession, type ChargePointSessionInfo } from './ChargePointClient.js';
+import { recordSessions, weeklyStats } from './sessionStore.js';
 
 const POLL_INTERVAL = 180_000; // 3 minutes
 const TOKEN_TTL = 20 * 60 * 1000; // 20 minutes
@@ -74,6 +75,11 @@ export class ChargePointPoller extends EventEmitter {
     this.emit('stateChange', this.getChargers());
   }
 
+  /** Rolling weekly-average energy stats from the persisted on-disk history. */
+  getWeeklyStats(chargerId: string) {
+    return weeklyStats(chargerId);
+  }
+
   async getHistory(chargerId: string): Promise<ChargePointSession[]> {
     const charger = this.chargers.get(chargerId);
     if (!charger) throw new Error(`Unknown charger: ${chargerId}`);
@@ -113,6 +119,23 @@ export class ChargePointPoller extends EventEmitter {
         try {
           const session = await this.getAccountSession(i);
           const chargers = await getHomeChargers(session, i, account.nickname);
+
+          // Pull the account's charging-activities once and use it to (a) persist
+          // completed sessions for long-term stats and (b) surface the live/most-
+          // recent session energy on each charger. The /status endpoint carries
+          // no telemetry, so this feed is the only source of session energy.
+          let activities: Awaited<ReturnType<typeof getSessionHistory>> = [];
+          try {
+            activities = await getSessionHistory(session, '');
+            recordSessions(activities);
+          } catch (histErr) {
+            console.warn(`ChargePoint account ${i}: history fetch failed:`, (histErr as Error).message);
+          }
+
+          for (const charger of chargers) {
+            charger.liveSession = pickLiveSession(activities, charger.chargerId, charger.isPluggedIn);
+            charger.weeklyAvgKwh = weeklyStats(charger.chargerId).weeklyAvgKwh || null;
+          }
           allChargers.push(...chargers);
         } catch (err) {
           // Invalidate session on auth errors
@@ -125,7 +148,9 @@ export class ChargePointPoller extends EventEmitter {
       for (const charger of allChargers) {
         const prev = this.chargers.get(charger.chargerId);
         if (!prev || prev.status !== charger.status || prev.amperage !== charger.amperage ||
-            prev.powerKw !== charger.powerKw || prev.energyKwh !== charger.energyKwh) {
+            prev.powerKw !== charger.powerKw || prev.energyKwh !== charger.energyKwh ||
+            (prev.liveSession?.energyKwh ?? null) !== (charger.liveSession?.energyKwh ?? null) ||
+            (prev.liveSession?.endTime ?? null) !== (charger.liveSession?.endTime ?? null)) {
           changed = true;
         }
         this.chargers.set(charger.chargerId, charger);

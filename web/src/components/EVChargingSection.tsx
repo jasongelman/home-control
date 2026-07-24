@@ -11,6 +11,7 @@ import type { ChargePointCharger, ChargePointSession } from '../types/index.js';
 const STATUS_LABELS: Record<string, string> = {
   idle:      'Idle',
   pluggedIn: 'Plugged In',
+  scheduled: 'Scheduled',
   charging:  'Charging',
   complete:  'Complete',
   error:     'Error',
@@ -20,11 +21,19 @@ const STATUS_LABELS: Record<string, string> = {
 const STATUS_COLORS: Record<string, 'success' | 'warning' | 'error' | 'default' | 'info'> = {
   idle:      'default',
   pluggedIn: 'info',
+  scheduled: 'info',
   charging:  'success',
   complete:  'success',
   error:     'error',
   unknown:   'default',
 };
+
+function formatDuration(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
 
 function ChargerCard({ charger }: { charger: ChargePointCharger }) {
   const { setChargerAmperage } = useLutron();
@@ -48,6 +57,21 @@ function ChargerCard({ charger }: { charger: ChargePointCharger }) {
 
   const isCharging = charger.status === 'charging';
   const color = STATUS_COLORS[charger.status] ?? 'default';
+
+  // Live session readout — total energy first, then whatever extras exist.
+  const liveStats: Array<{ label: string; value: string }> = [];
+  const s = charger.liveSession;
+  if (s) {
+    liveStats.push({ label: 'Energy', value: `${s.energyKwh.toFixed(1)} kWh` });
+    if (s.durationSeconds > 0) liveStats.push({ label: 'Duration', value: formatDuration(s.durationSeconds) });
+    // Average power over the session (no live-telemetry endpoint exists).
+    const hours = s.durationSeconds / 3600;
+    if (hours > 0.02 && s.energyKwh > 0) liveStats.push({ label: 'Avg Power', value: `${(s.energyKwh / hours).toFixed(1)} kW` });
+    if (s.cost != null) liveStats.push({ label: 'Cost', value: `$${s.cost.toFixed(2)}` });
+    if (s.milesAdded != null) liveStats.push({ label: 'Range', value: `${s.milesAdded.toFixed(0)} mi` });
+  } else if (charger.powerKw != null && charger.powerKw > 0) {
+    liveStats.push({ label: 'Power', value: `${charger.powerKw.toFixed(1)} kW` });
+  }
 
   return (
     <Box
@@ -73,29 +97,32 @@ function ChargerCard({ charger }: { charger: ChargePointCharger }) {
         </Typography>
         <Chip
           size="small"
-          label={STATUS_LABELS[charger.status] ?? charger.status}
+          label={charger.status === 'scheduled' && charger.scheduledFor
+            ? `Starts ${charger.scheduledFor}`
+            : (STATUS_LABELS[charger.status] ?? charger.status)}
           color={color}
           variant="outlined"
           sx={{ fontWeight: 600, fontSize: 11 }}
         />
       </Box>
 
-      {/* Live stats when charging or plugged in */}
-      {(isCharging || charger.isPluggedIn) && (
-        <Box sx={{ display: 'flex', gap: 2, mb: 1.5, flexWrap: 'wrap' }}>
-          {charger.powerKw != null && charger.powerKw > 0 && (
-            <Box>
-              <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10 }}>Power</Typography>
-              <Typography variant="body2" fontWeight={700}>{charger.powerKw.toFixed(1)} kW</Typography>
+      {/* Live session stats — shown while plugged in, cleared when unplugged */}
+      {charger.isPluggedIn && liveStats.length > 0 && (
+        <Box sx={{ display: 'flex', gap: 2.5, mb: 1.5, flexWrap: 'wrap' }}>
+          {liveStats.map((stat) => (
+            <Box key={stat.label}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10 }}>{stat.label}</Typography>
+              <Typography variant="body2" fontWeight={700}>{stat.value}</Typography>
             </Box>
-          )}
-          {charger.energyKwh != null && charger.energyKwh > 0 && (
-            <Box>
-              <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10 }}>Session</Typography>
-              <Typography variant="body2" fontWeight={700}>{charger.energyKwh.toFixed(1)} kWh</Typography>
-            </Box>
-          )}
+          ))}
         </Box>
+      )}
+
+      {/* Long-term stat: rolling weekly average from persisted history */}
+      {charger.weeklyAvgKwh != null && charger.weeklyAvgKwh > 0 && (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontSize: 11 }}>
+          Avg {charger.weeklyAvgKwh.toFixed(1)} kWh/week
+        </Typography>
       )}
 
       {/* Amperage control */}

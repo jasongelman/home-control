@@ -5,12 +5,13 @@ import Security
 // MARK: - Models
 
 enum ChargingStatus: String, Codable {
-    case idle, pluggedIn, charging, complete, error, unknown
+    case idle, pluggedIn, scheduled, charging, complete, error, unknown
 
     var label: String {
         switch self {
         case .idle:      return "Idle"
         case .pluggedIn: return "Plugged In"
+        case .scheduled: return "Scheduled"
         case .charging:  return "Charging"
         case .complete:  return "Complete"
         case .error:     return "Error"
@@ -22,6 +23,7 @@ enum ChargingStatus: String, Codable {
         switch self {
         case .idle:      return "ev.charger"
         case .pluggedIn: return "powerplug.fill"
+        case .scheduled: return "clock.fill"
         case .charging:  return "bolt.fill"
         case .complete:  return "checkmark.circle.fill"
         case .error:     return "exclamationmark.triangle.fill"
@@ -39,11 +41,30 @@ struct ChargePointCharger: Identifiable, Codable {
     let nickname: String
     let status: ChargingStatus
     let isPluggedIn: Bool
+    /// Scheduled start time-of-day (e.g. "12:00 AM") when status is `.scheduled`.
+    var scheduledFor: String?
     let powerKw: Double?
     let energyKwh: Double?
     let amperage: Int
     let maxAmperage: Int
+    /// Live/most-recent session while plugged in; nil the moment `isPluggedIn`
+    /// is false. Sourced from the charging-activities feed since /status carries
+    /// no telemetry.
+    var liveSession: ChargePointSessionStats?
+    /// Rolling average kWh per week from the persisted on-device history.
+    var weeklyAvgKwh: Double?
     let lastUpdated: Date
+}
+
+/// Per-session energy stats surfaced on the charger card while plugged in.
+struct ChargePointSessionStats: Codable, Equatable {
+    let energyKwh: Double
+    let cost: Double?
+    let milesAdded: Double?
+    let startTime: Date
+    /// nil => session still in progress.
+    let endTime: Date?
+    let durationSeconds: Double
 }
 
 struct ChargePointSession: Identifiable, Codable {
@@ -131,6 +152,7 @@ private struct ChargePointEndpoints {
     let driverBffEndpoint: String
     let portalDomainEndpoint: String
     let mapcacheEndpoint: String
+    let webservicesEndpoint: String
     let region: String
 }
 
@@ -156,7 +178,10 @@ class ChargePointManager: @unchecked Sendable {
     private static let userAgent = "ChargePoint/6.0.0 CFNetwork/1568.200.51 Darwin/24.1.0"
     private static let cacheKey = "chargepoint_chargers_cache"
 
-    /// Shared cookie storage so DataDome cookies carry across all sessions.
+    /// Shared cookie storage so DataDome cookies carry across all sessions. The
+    /// per-account *session* cookies (`coulomb_sess` / `auth-session`) are purged
+    /// before each login in `getSession(for:)` so accounts stay isolated — see
+    /// the note there and on `apiSession`.
     @ObservationIgnored
     private let cookieStorage = HTTPCookieStorage.shared
 
@@ -170,11 +195,19 @@ class ChargePointManager: @unchecked Sendable {
     }()
 
     /// Session for all non-login API calls — follows redirects normally.
+    ///
+    /// Cookie handling is DISABLED here on purpose. Every data request carries an
+    /// explicit `Cookie: coulomb_sess=<this account>` via `authHeaders(_:)`. If we
+    /// also let the shared jar auto-attach its coulomb_sess, a multi-account setup
+    /// would send two conflicting `coulomb_sess` values (the jar holds whichever
+    /// account logged in last), and the server could answer with the wrong
+    /// account's data. Explicit header only = each call is unambiguously scoped.
     @ObservationIgnored
     private lazy var apiSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.httpCookieStorage = cookieStorage
         config.httpCookieAcceptPolicy = .always
+        config.httpShouldSetCookies = false
         return URLSession(configuration: config)
     }()
 
@@ -253,9 +286,10 @@ class ChargePointManager: @unchecked Sendable {
                 let old = chargers[idx]
                 chargers[idx] = ChargePointCharger(
                     chargerId: old.chargerId, accountIndex: old.accountIndex, nickname: old.nickname,
-                    status: old.status, isPluggedIn: old.isPluggedIn, powerKw: old.powerKw,
-                    energyKwh: old.energyKwh, amperage: amps, maxAmperage: old.maxAmperage,
-                    lastUpdated: Date()
+                    status: old.status, isPluggedIn: old.isPluggedIn, scheduledFor: old.scheduledFor,
+                    powerKw: old.powerKw, energyKwh: old.energyKwh, amperage: amps,
+                    maxAmperage: old.maxAmperage, liveSession: old.liveSession,
+                    weeklyAvgKwh: old.weeklyAvgKwh, lastUpdated: Date()
                 )
             }
         } catch {
@@ -356,9 +390,6 @@ class ChargePointManager: @unchecked Sendable {
 
     // MARK: - Polling
 
-    @ObservationIgnored
-    private var probedLiveEndpoints = false
-
     private func poll() async {
         var allChargers: [ChargePointCharger] = []
 
@@ -368,14 +399,21 @@ class ChargePointManager: @unchecked Sendable {
             do {
                 let session = try await getSession(for: i)
                 let nickname = getNickname(for: i)
-                let fetched = try await fetchChargers(session: session, accountIndex: i, nickname: nickname)
-                allChargers.append(contentsOf: fetched)
+                var fetched = try await fetchChargers(session: session, accountIndex: i, nickname: nickname)
 
-                // One-shot probe to find the live-charging endpoint.
-                if !probedLiveEndpoints, let chargerId = fetched.first?.chargerId {
-                    probedLiveEndpoints = true
-                    await probeLiveStatusEndpoints(session: session, chargerId: chargerId)
+                // Pull the account's charging-activities once to (a) persist
+                // completed sessions for long-term stats and (b) surface the
+                // live/most-recent session energy — /status has no telemetry.
+                let activities = await fetchHistory(accountIndex: i, chargerId: "")
+                recordSessions(activities)
+                for idx in fetched.indices {
+                    fetched[idx].liveSession = pickLiveSession(
+                        activities, chargerId: fetched[idx].chargerId,
+                        isPluggedIn: fetched[idx].isPluggedIn
+                    )
+                    fetched[idx].weeklyAvgKwh = weeklyAvgKwh(for: fetched[idx].chargerId)
                 }
+                allChargers.append(contentsOf: fetched)
             } catch {
                 accountSessions.removeValue(forKey: i)
                 print("ChargePoint: account \(i) poll error — \(error.localizedDescription)")
@@ -387,104 +425,6 @@ class ChargePointManager: @unchecked Sendable {
             saveCache()
         }
         errorMessage = allChargers.isEmpty && isLinked ? "Failed to connect" : nil
-    }
-
-    // MARK: - Live-Status Endpoint Probe (one-shot diagnostic)
-
-    private func probeLiveStatusEndpoints(session: ChargePointAPISession, chargerId: String) async {
-        // Round 3: every previous body shape returned the same wrapped error,
-        // suggesting either (a) body isn't being read, or (b) error_code 5000
-        // means "no active session." Try wrapped body, query params, and the
-        // mapcache endpoint (python-chargepoint's pattern).
-        let bff = session.endpoints.driverBffEndpoint
-        let mc = session.endpoints.mapcacheEndpoint
-        let uid = session.userId
-        let activeURL = "\(bff)driver-bff/v1/sessions/active"
-
-        struct Attempt {
-            let label: String
-            let method: String
-            let url: String
-            let body: Any?
-            let extraHeaders: [String: String]
-        }
-
-        let attempts: [Attempt] = [
-            // Wrapped body matching response shape
-            Attempt(label: "wrapped-empty", method: "POST", url: activeURL,
-                    body: ["charging_status": [:]], extraHeaders: [:]),
-            Attempt(label: "wrapped-user", method: "POST", url: activeURL,
-                    body: ["charging_status": ["user_id": uid]], extraHeaders: [:]),
-            Attempt(label: "wrapped-device", method: "POST", url: activeURL,
-                    body: ["charging_status": ["device_id": chargerId]], extraHeaders: [:]),
-            Attempt(label: "wrapped-both", method: "POST", url: activeURL,
-                    body: ["charging_status": ["user_id": uid, "device_id": chargerId]], extraHeaders: [:]),
-            Attempt(label: "wrapped-deviceIds", method: "POST", url: activeURL,
-                    body: ["charging_status": ["device_ids": [chargerId]]], extraHeaders: [:]),
-            // Query params
-            Attempt(label: "qp-userId", method: "POST", url: "\(activeURL)?userId=\(uid)",
-                    body: [:] as [String: Any], extraHeaders: [:]),
-            Attempt(label: "qp-deviceId", method: "POST", url: "\(activeURL)?deviceId=\(chargerId)",
-                    body: [:] as [String: Any], extraHeaders: [:]),
-            Attempt(label: "qp-both", method: "POST", url: "\(activeURL)?userId=\(uid)&deviceId=\(chargerId)",
-                    body: [:] as [String: Any], extraHeaders: [:]),
-            // Mobile-app fingerprint header (some endpoints gate on this)
-            Attempt(label: "with-app-ver", method: "POST", url: activeURL,
-                    body: ["charging_status": ["user_id": uid]],
-                    extraHeaders: ["cp-app-version": "6.0.0", "cp-platform": "ios"]),
-            // Mapcache POST — python-chargepoint pattern
-            Attempt(label: "mapcache-user-status", method: "POST", url: "\(mc)v3",
-                    body: ["user_status": ["user_id": uid]], extraHeaders: [:]),
-            Attempt(label: "mapcache-user-status-deviceId", method: "POST", url: "\(mc)v3",
-                    body: ["user_status": ["user_id": uid, "device_id": chargerId]], extraHeaders: [:]),
-        ]
-
-        for a in attempts {
-            guard let u = URL(string: a.url) else { continue }
-            var req = URLRequest(url: u)
-            req.httpMethod = a.method
-            var headers = authHeaders(session)
-            for (k, v) in a.extraHeaders { headers[k] = v }
-            req.allHTTPHeaderFields = headers
-            if let body = a.body {
-                req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-            }
-            do {
-                let (data, response) = try await apiSession.data(for: req)
-                let code = (response as? HTTPURLResponse)?.statusCode ?? -1
-                let preview = String(data: data.prefix(500), encoding: .utf8) ?? "<non-utf8>"
-                print("ChargePoint: PROBE [\(a.label)] \(code) \(a.method) \(a.url) — \(preview)")
-            } catch {
-                print("ChargePoint: PROBE [\(a.label)] error \(a.method) \(a.url) — \(error.localizedDescription)")
-            }
-        }
-        print("ChargePoint: PROBE round 3 done")
-    }
-
-    private func dumpDiscoveryResponse(session: ChargePointAPISession) async {
-        // Re-fetch discovery so we can see the raw response and identify any
-        // endpoint bases we don't already use.
-        guard let email = ChargePointKeychain.load(key: "email_0") else { return }
-        let url = URL(string: Self.discoveryURL)!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["username": email])
-        do {
-            let (data, _) = try await apiSession.data(for: request)
-            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let endpoints = (json["endPoints"] ?? json["endpoints"]) as? [String: [String: Any]] {
-                let keyList = endpoints.keys.sorted()
-                print("ChargePoint: DISCOVERY endpoint keys = \(keyList)")
-                for k in keyList {
-                    let v = endpoints[k]?["value"] as? String ?? "?"
-                    print("ChargePoint: DISCOVERY \(k) = \(v)")
-                }
-            }
-        } catch {
-            print("ChargePoint: DISCOVERY dump failed — \(error.localizedDescription)")
-        }
     }
 
     // MARK: - API
@@ -503,6 +443,15 @@ class ChargePointManager: @unchecked Sendable {
         print("ChargePoint: [account \(accountIndex)] starting discovery...")
         let endpoints = try await discoverEndpoints(username: email)
         print("ChargePoint: [account \(accountIndex)] discovery OK — sso=\(endpoints.ssoEndpoint)")
+
+        // Isolate accounts before logging in. The shared jar is deliberately kept
+        // (DataDome cookies must carry across sessions), but a `coulomb_sess` /
+        // `auth-session` left behind by a *different* account would ride this login
+        // POST and the SSO would silently hand back that prior session — collapsing
+        // every configured account onto one userId. Drop only the session cookies.
+        for cookie in (cookieStorage.cookies ?? []) where cookie.name == "coulomb_sess" || cookie.name == "auth-session" {
+            cookieStorage.deleteCookie(cookie)
+        }
 
         // Login
         print("ChargePoint: [account \(accountIndex)] logging in...")
@@ -745,6 +694,7 @@ class ChargePointManager: @unchecked Sendable {
             driverBffEndpoint: getValue("internal_api_gateway_endpoint"),
             portalDomainEndpoint: getValue("portal_domain_endpoint"),
             mapcacheEndpoint: getValue("mapcache_endpoint"),
+            webservicesEndpoint: getValue("webservices_endpoint"),
             region: json["region"] as? String ?? "NA"
         )
     }
@@ -842,21 +792,104 @@ class ChargePointManager: @unchecked Sendable {
         let powerKw = json["power_kw"] as? Double ?? json["powerKw"] as? Double
         let energyKwh = json["energy_kwh"] as? Double ?? json["energyKwh"] as? Double
 
-        // Diagnostic: remove once charging status + amperage are confirmed working.
-        print("ChargePoint: charger \(chargerId) rawStatus=\"\(rawStatus)\" plugged=\(isPlugged) amps=\(amperage)/\(maxAmp) ampSettings=\(ampSettings ?? [:])")
+        // Live state comes straight from this endpoint — the ChargePoint app itself
+        // polls exactly this `/status` call (confirmed by intercepting it), so its
+        // `chargingStatus` is authoritative: it drives the app's own "Charging" /
+        // "Charging complete" text. We trust it for the terminal states and only
+        // fall back to `isPluggedIn` + the schedule to distinguish plugged-and-
+        // waiting ("Scheduled · Starts X") from plain plugged-in.
+        //
+        // NOTE: `isDuringScheduledTime` means "inside a scheduled *window*", NOT
+        // "actively charging" — a completed charge still sits inside the window, so
+        // using it to infer charging mislabels "Charging complete" as "Charging".
+        // It's kept only for diagnostics below.
+        let isDuringScheduled = (json["isDuringScheduledTime"] as? Bool)
+            ?? (json["is_during_scheduled_time"] as? Bool) ?? false
+        let isConnected = (json["isConnected"] as? Bool)
+            ?? (json["is_connected"] as? Bool) ?? true
+
+        // TEMP diagnostic — dumps the fields that decide status so we can confirm
+        // the exact `chargingStatus` values for charging vs. complete on-device.
+        print("ChargePoint: status \(chargerId) chargingStatus=\(rawStatus) plugged=\(isPlugged) duringScheduled=\(isDuringScheduled) connected=\(isConnected)")
+
+        let base = parseStatus(rawStatus)
+        let liveStatus: ChargingStatus
+        var scheduledFor: String? = nil
+        if !isConnected {
+            liveStatus = .error
+        } else if base == .charging {
+            liveStatus = .charging
+        } else if base == .complete {
+            liveStatus = .complete
+        } else if base == .error {
+            liveStatus = .error
+        } else if isPlugged {
+            let schedule = await fetchSchedule(session: session, chargerId: chargerId)
+            if schedule.enabled, let start = schedule.startTime {
+                liveStatus = .scheduled
+                scheduledFor = formatScheduleTime(start)
+            } else {
+                liveStatus = .pluggedIn
+            }
+        } else {
+            liveStatus = .idle
+        }
 
         return ChargePointCharger(
             chargerId: chargerId,
             accountIndex: accountIndex,
             nickname: nickname,
-            status: parseStatus(rawStatus),
+            status: liveStatus,
             isPluggedIn: isPlugged,
+            scheduledFor: scheduledFor,
             powerKw: powerKw,
             energyKwh: energyKwh,
             amperage: amperage,
             maxAmperage: maxAmp,
             lastUpdated: Date()
         )
+    }
+
+    /// Charging schedule for a home charger — same host/auth as the `/status` call:
+    /// `GET {hcm}api/v1/schedule/charger/{id}/schedule` →
+    /// `{ scheduleEnabled, defaultSchedule: { weekdays|weekends: { startTime "HH:mm" } } }`.
+    /// Returns whether a schedule is enabled and the start time for today's day-type.
+    private func fetchSchedule(session: ChargePointAPISession, chargerId: String) async -> (enabled: Bool, startTime: String?) {
+        guard let url = URL(string: "\(session.endpoints.hcmEndpoint)api/v1/schedule/charger/\(chargerId)/schedule") else {
+            return (false, nil)
+        }
+        var request = URLRequest(url: url)
+        request.allHTTPHeaderFields = authHeaders(session)
+        do {
+            let (data, response) = try await apiSession.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200,
+                  let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return (false, nil)
+            }
+            let enabled = (json["scheduleEnabled"] as? Bool) ?? false
+            // Pick the start time that applies to today (weekday vs weekend).
+            let def = json["defaultSchedule"] as? [String: Any]
+            let weekday = Calendar.current.component(.weekday, from: Date()) // 1=Sun ... 7=Sat
+            let isWeekend = (weekday == 1 || weekday == 7)
+            let slot = (isWeekend ? def?["weekends"] : def?["weekdays"]) as? [String: Any]
+            return (enabled, slot?["startTime"] as? String)
+        } catch {
+            return (false, nil)
+        }
+    }
+
+    /// Format a schedule start time ("HH:mm" or ISO) into a friendly local time.
+    private func formatScheduleTime(_ raw: String?) -> String? {
+        guard let raw = raw, !raw.isEmpty else { return nil }
+        let out = DateFormatter()
+        out.dateFormat = "h:mm a"
+        out.locale = Locale(identifier: "en_US_POSIX")
+        let hm = DateFormatter()
+        hm.dateFormat = "HH:mm"
+        hm.locale = Locale(identifier: "en_US_POSIX")
+        if let d = hm.date(from: String(raw.prefix(5))) { return out.string(from: d) }
+        if let d = ISO8601DateFormatter().date(from: raw) { return out.string(from: d) }
+        return raw
     }
 
     private func parseStatus(_ raw: String) -> ChargingStatus {
@@ -906,5 +939,83 @@ class ChargePointManager: @unchecked Sendable {
         if let data = try? JSONEncoder().encode(chargers) {
             UserDefaults.standard.set(data, forKey: Self.cacheKey)
         }
+    }
+
+    // MARK: - Session history persistence (long-term stats)
+
+    /// On-device JSON store of completed charging sessions, kept in the app
+    /// container so long-term stats (weekly average) survive after sessions age
+    /// out of ChargePoint's charging-activities window.
+    private static var sessionStoreURL: URL {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return dir.appendingPathComponent("chargepoint-sessions.json")
+    }
+
+    private static let weekSeconds: TimeInterval = 7 * 24 * 3600
+    private static let statsWindow: TimeInterval = 26 * weekSeconds
+
+    private func loadStoredSessions() -> [ChargePointSession] {
+        guard let data = try? Data(contentsOf: Self.sessionStoreURL),
+              let sessions = try? JSONDecoder().decode([ChargePointSession].self, from: data) else {
+            return []
+        }
+        return sessions
+    }
+
+    /// Merge freshly-fetched completed sessions into the on-disk store, keyed by
+    /// sessionId (later fetches win). In-progress sessions are not persisted.
+    private func recordSessions(_ sessions: [ChargePointSession]) {
+        let completed = sessions.filter { $0.endTime != nil && $0.energyKwh > 0 && !$0.sessionId.isEmpty }
+        guard !completed.isEmpty else { return }
+
+        var byId: [String: ChargePointSession] = [:]
+        for s in loadStoredSessions() { byId[s.sessionId] = s }
+        for s in completed { byId[s.sessionId] = s }
+        let merged = byId.values.sorted { $0.startTime < $1.startTime }
+
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        if let data = try? JSONEncoder().encode(Array(merged)) {
+            try? data.write(to: Self.sessionStoreURL)
+        }
+    }
+
+    /// Live/most-recent session for a charger from the account-wide activities.
+    /// Returns nil when unplugged so the card clears its live stats.
+    private func pickLiveSession(_ sessions: [ChargePointSession], chargerId: String, isPluggedIn: Bool) -> ChargePointSessionStats? {
+        guard isPluggedIn else { return nil }
+        var candidates = sessions.filter { $0.chargerId == chargerId }
+        if candidates.isEmpty { candidates = sessions }
+        guard let latest = candidates.max(by: { $0.startTime < $1.startTime }) else { return nil }
+        let end = latest.endTime
+        let duration = (end ?? Date()).timeIntervalSince(latest.startTime)
+        return ChargePointSessionStats(
+            energyKwh: latest.energyKwh,
+            cost: latest.cost,
+            milesAdded: latest.milesAdded,
+            startTime: latest.startTime,
+            endTime: end,
+            durationSeconds: max(0, duration.rounded())
+        )
+    }
+
+    /// Rolling weekly-average energy from the persisted store. Prefers this
+    /// charger's sessions; falls back to all (session device_id can differ from
+    /// the configuration id, same reason pickLiveSession falls back).
+    private func weeklyAvgKwh(for chargerId: String) -> Double? {
+        let cutoff = Date().addingTimeInterval(-Self.statsWindow)
+        let inWindow = loadStoredSessions().filter { $0.startTime >= cutoff }
+        var rows = inWindow.filter { $0.chargerId == chargerId }
+        if rows.isEmpty { rows = inWindow }
+        guard !rows.isEmpty else { return nil }
+
+        var buckets = Set<Int>()
+        var total = 0.0
+        for s in rows {
+            total += s.energyKwh
+            buckets.insert(Int(s.startTime.timeIntervalSince1970 / Self.weekSeconds))
+        }
+        let weeks = max(1, buckets.count)
+        return total / Double(weeks)
     }
 }

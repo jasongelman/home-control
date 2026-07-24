@@ -810,6 +810,16 @@ export function createRoutes(
     }
   });
 
+  /** GET /api/chargepoint/stats/:chargerId — rolling weekly energy averages
+   *  from the persisted on-disk session history (survives poller restarts). */
+  router.get('/chargepoint/stats/:chargerId', (req, res) => {
+    if (!chargePointPoller) {
+      res.status(503).json({ error: 'ChargePoint not connected' });
+      return;
+    }
+    res.json(chargePointPoller.getWeeklyStats(req.params.chargerId));
+  });
+
   // ── Sub-Zero / Wolf ──────────────────────────────────────────────────────
 
   /** GET /api/subzero/status — Sub-Zero connection status + appliances */
@@ -905,6 +915,12 @@ export function createRoutes(
           break;
         case 'toggleOvenLight':
           await subZero.toggleOvenLight(applianceId, value as boolean);
+          break;
+        case 'setKitchenTimer':
+          await subZero.setKitchenTimer(applianceId, value as number);
+          break;
+        case 'cancelKitchenTimer':
+          await subZero.cancelKitchenTimer(applianceId);
           break;
         case 'setProperty':
           if (!property) { res.status(400).json({ error: 'setProperty requires a property name' }); return; }

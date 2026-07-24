@@ -1,4 +1,4 @@
-import { Box, Typography, Chip, LinearProgress, Paper, Slider, Collapse, List, ListItem, ListItemText, CircularProgress, IconButton } from '@mui/material';
+import { Box, Typography, Chip, LinearProgress, Paper, Slider, Collapse, List, ListItem, ListItemText, CircularProgress, IconButton, Button } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import AddIcon from '@mui/icons-material/Add';
 import RemoveIcon from '@mui/icons-material/Remove';
@@ -473,8 +473,8 @@ function RefrigeratorCard({ fridge }: { fridge: SubZeroRefrigerator }) {
 }
 
 // ── Wolf Oven card ──────────────────────────────────────────────────────────
-// READ-ONLY: displays live oven state. No start/preheat/timer controls — the
-// command backend is a separate unsolved problem.
+// Displays live oven state. A running kitchen timer can be turned off (the
+// executeAPICmd command channel is solved — see SubZeroManager.cancelKitchenTimer).
 
 // timerRemaining is in SECONDS; format as a kitchen-timer m:ss (e.g. 3:05).
 function fmtOvenTimer(seconds: number | null): string {
@@ -494,6 +494,7 @@ function OvenStatRow({ label, value }: { label: string; value: string | null }) 
 }
 
 function WolfOvenCard({ oven }: { oven: WolfOven }) {
+  const { subZeroCommand } = useLutron();
   const isProbing = oven.probeTemp !== null;
   const cookMode = oven.unitOn && oven.cookMode !== 'off' && oven.cookMode !== 'unknown'
     ? oven.cookMode.replace(/_/g, ' ')
@@ -541,11 +542,23 @@ function WolfOvenCard({ oven }: { oven: WolfOven }) {
           />
         )}
         {oven.timerRemaining != null && oven.timerRemaining > 0 && (
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.25 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.25 }}>
             <Typography variant="caption" color="text.secondary">Timer</Typography>
-            <Typography variant="caption" fontWeight={700} color="warning.main" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-              {fmtOvenTimer(oven.timerRemaining)}
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+              <Typography variant="caption" fontWeight={700} color="warning.main" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                {fmtOvenTimer(oven.timerRemaining)}
+              </Typography>
+              <Button
+                size="small"
+                variant="text"
+                color="error"
+                disabled={!oven.online}
+                onClick={() => subZeroCommand(oven.applianceId, 'cancelKitchenTimer', null)}
+                sx={{ minWidth: 0, px: 0.75, py: 0, fontSize: 10, fontWeight: 700, lineHeight: 1.6 }}
+              >
+                Turn off
+              </Button>
+            </Box>
           </Box>
         )}
         <OvenStatRow label="Light" value={oven.lightOn ? 'On' : null} />

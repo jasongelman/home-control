@@ -370,6 +370,9 @@ struct LEAPCommand: Encodable {
     var CommandType: String
     var Parameter: [[String: AnyCodable]]?
     var FadeTime: String?
+    /// For GoToSpectrumTuningLevel (full RGB color). Nested shape:
+    /// { Level, ColorTuningStatus: { HSVTuningLevel: { Hue, Saturation } } }
+    var SpectrumTuningLevelParameters: [String: AnyCodable]?
 }
 
 struct LEAPLogin: Encodable {

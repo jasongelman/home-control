@@ -77,6 +77,32 @@ export function handleWebSocket(
         }
         break;
 
+      case 'setColor':
+        if (!connection.isConnected) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Not connected to processor' }));
+          return;
+        }
+        try {
+          const device = deviceStore.getDevice(msg.deviceId);
+          // Apply color at the requested level, or the current level, or full-on if off.
+          const level =
+            msg.level ?? (device && device.level > 0 ? device.level : 100);
+          await connection.setColor(msg.deviceId, msg.hue, msg.saturation, level);
+          deviceStore.updateColor(msg.deviceId, msg.hue, msg.saturation);
+          deviceStore.updateLevel(msg.deviceId, level);
+          stateSync.broadcast({
+            type: 'colorState',
+            deviceId: msg.deviceId,
+            hue: msg.hue,
+            saturation: msg.saturation,
+            level,
+            timestamp: Date.now(),
+          });
+        } catch (err) {
+          ws.send(JSON.stringify({ type: 'error', message: String(err) }));
+        }
+        break;
+
       case 'setLEDState':
         if (!connection.isConnected) {
           ws.send(JSON.stringify({ type: 'error', message: 'Not connected to processor' }));
@@ -199,6 +225,12 @@ export function handleWebSocket(
               break;
             case 'toggleOvenLight':
               await subZero.toggleOvenLight(msg.applianceId, msg.value as boolean);
+              break;
+            case 'setKitchenTimer':
+              await subZero.setKitchenTimer(msg.applianceId, msg.value as number);
+              break;
+            case 'cancelKitchenTimer':
+              await subZero.cancelKitchenTimer(msg.applianceId);
               break;
             case 'setProperty':
               await subZero.setProperty(msg.applianceId, msg.property as string, msg.value);

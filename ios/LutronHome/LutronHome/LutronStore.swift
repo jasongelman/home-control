@@ -582,6 +582,60 @@ class LutronStore: @unchecked Sendable {
         setLevel(deviceId, level: 0, fadeTime: 1)
     }
 
+    // MARK: - Color (full RGB) control
+
+    /// Last color set per zone (optimistic — the QSX processor does not report color back).
+    var deviceHSV: [Int: HSVColor] = [:]
+
+    /// Rooms that have a "Colors" keypad — their light zones accept full RGB.
+    /// Uses the renamed room names already applied to `colorKeypads`.
+    var colorCapableRooms: Set<String> { Set(colorKeypads.map { $0.room }) }
+
+    /// True if this light zone accepts arbitrary HSV color (GoToSpectrumTuningLevel).
+    func isColorCapable(_ device: DeviceState) -> Bool {
+        device.category == .light && colorCapableRooms.contains(device.room)
+    }
+
+    /// Set an arbitrary HSV color on a color-capable zone.
+    /// Hue 0–360, Saturation 0–100. Level defaults to the zone's current level (or full-on if off).
+    func setColor(_ deviceId: Int, hue: Double, saturation: Double, level: Double? = nil) {
+        guard let client = leapClient else { return }
+        let current = devices[deviceId]?.level ?? 0
+        let lvl = level ?? (current > 0 ? current : 100)
+        let h = Int(hue.rounded())
+        let s = Int(saturation.rounded())
+
+        usageTracker?.trackDevice(deviceId, action: lvl == 0 ? .turnOff : .setLevel,
+                                  room: devices[deviceId]?.room, level: lvl)
+
+        Task {
+            do {
+                _ = try await client.send(LEAPMessagePayload(
+                    CommuniqueType: "CreateRequest",
+                    Header: LEAPMessageHeader(Url: "/zone/\(deviceId)/commandprocessor"),
+                    Body: LEAPBodyPayload(Command: LEAPCommand(
+                        CommandType: "GoToSpectrumTuningLevel",
+                        SpectrumTuningLevelParameters: [
+                            "Level": AnyCodable(lvl),
+                            "ColorTuningStatus": AnyCodable([
+                                "HSVTuningLevel": AnyCodable([
+                                    "Hue": AnyCodable(h),
+                                    "Saturation": AnyCodable(s),
+                                ] as [String: AnyCodable]),
+                            ] as [String: AnyCodable]),
+                        ]
+                    ))
+                ))
+            } catch {
+                print("LEAP: setColor failed: \(error)")
+            }
+        }
+        // Optimistic local state
+        deviceHSV[deviceId] = HSVColor(hue: hue, saturation: saturation)
+        devices[deviceId]?.level = lvl
+        syncToAppGroup()
+    }
+
     /// Set all lights in a given room to a level
     func setRoomLights(_ roomName: String, level: Double, fadeTime: Double = 1) {
         let roomLights = devices.values.filter {

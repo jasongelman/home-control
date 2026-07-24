@@ -1,4 +1,4 @@
-import type { ChargingStatus, ChargePointCharger, ChargePointSession } from './types.js';
+import type { ChargingStatus, ChargePointCharger, ChargePointSession, ChargePointSessionStats } from './types.js';
 
 const DISCOVERY_URL = 'https://discovery.chargepoint.com/discovery/v3/globalconfig';
 // Mimic the ChargePoint mobile app so DataDome bot protection doesn't block us.
@@ -17,6 +17,7 @@ interface Endpoints {
   accountsEndpoint: string;
   driverBffEndpoint: string;
   portalDomainEndpoint: string;
+  webservicesEndpoint: string;
   region: string;
 }
 
@@ -76,6 +77,7 @@ async function discoverEndpoints(username: string): Promise<Endpoints> {
     accountsEndpoint: getValue('accounts_endpoint'),
     driverBffEndpoint: getValue('internal_api_gateway_endpoint'),
     portalDomainEndpoint: getValue('portal_domain_endpoint'),
+    webservicesEndpoint: getValue('webservices_endpoint'),
     region: (data.region as string) ?? 'NA',
   };
 }
@@ -212,6 +214,48 @@ function parseChargingStatus(raw: string): ChargingStatus {
   return 'unknown';
 }
 
+/** Format a schedule start time ("HH:mm" or ISO) into a friendly time string. */
+function formatScheduleTime(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const m = raw.match(/^(\d{1,2}):(\d{2})/);
+  if (m) {
+    let h = Number(m[1]);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return `${h}:${m[2]} ${ampm}`;
+  }
+  return raw;
+}
+
+/**
+ * Charging schedule for a home charger — same host/auth as the `/status` call:
+ * GET {hcm}api/v1/schedule/charger/{id}/schedule →
+ * `{ scheduleEnabled, defaultSchedule: { weekdays|weekends: { startTime "HH:mm" } } }`.
+ * Returns whether a schedule is enabled and the start time for today's day-type.
+ */
+async function fetchSchedule(
+  session: ChargePointSessionInfo,
+  chargerId: string,
+): Promise<{ enabled: boolean; startTime: string | null }> {
+  try {
+    const url = `${session.endpoints.hcmEndpoint}api/v1/schedule/charger/${chargerId}/schedule`;
+    const res = await fetch(url, { headers: authHeaders(session) });
+    if (!res.ok) return { enabled: false, startTime: null };
+    const json = await res.json() as {
+      scheduleEnabled?: boolean;
+      defaultSchedule?: { weekdays?: { startTime?: string }; weekends?: { startTime?: string } };
+    };
+    const enabled = json.scheduleEnabled ?? false;
+    // Pick the start time that applies to today (weekday vs weekend).
+    const day = new Date().getDay(); // 0=Sun ... 6=Sat
+    const isWeekend = day === 0 || day === 6;
+    const slot = isWeekend ? json.defaultSchedule?.weekends : json.defaultSchedule?.weekdays;
+    return { enabled, startTime: slot?.startTime ?? null };
+  } catch {
+    return { enabled: false, startTime: null };
+  }
+}
+
 export async function getHomeChargers(
   session: ChargePointSessionInfo,
   accountIndex: number,
@@ -276,6 +320,10 @@ export async function getChargerStatus(
     powerKw?: number;
     energy_kwh?: number;
     energyKwh?: number;
+    isDuringScheduledTime?: boolean;
+    is_during_scheduled_time?: boolean;
+    isConnected?: boolean;
+    is_connected?: boolean;
   };
 
   const amps = data.chargeAmperageSettings;
@@ -283,14 +331,55 @@ export async function getChargerStatus(
   const maxAmperage = possibleAmps.length > 0 ? Math.max(...possibleAmps) : 40;
   const amperage = amps?.chargeLimit ?? amps?.amperageLimit ?? amps?.chargeAmperageLimit ?? data.amperage_limit ?? 0;
 
-  // power_kw / energy_kwh are not returned by this configuration endpoint in
-  // the new API shape — live session telemetry needs a different call.
+  // Live state comes straight from this endpoint — the ChargePoint app itself
+  // polls exactly this `/status` call (confirmed by intercepting it). Beyond
+  // `chargingStatus` is authoritative — this is the app's own `/status` endpoint and
+  // it drives the app's "Charging" / "Charging complete" text — so we trust it for the
+  // terminal states and use `isPluggedIn` + the schedule only to distinguish
+  // plugged-and-waiting ("Scheduled") from plain plugged-in.
+  //
+  // NOTE: `isDuringScheduledTime` means "inside a scheduled *window*", NOT "actively
+  // charging" — a completed charge still sits inside the window, so using it to infer
+  // charging mislabels "Charging complete" as "Charging". Kept for diagnostics only.
+  const isPlugged = data.isPluggedIn ?? data.is_plugged_in ?? false;
+  const isDuringScheduled = data.isDuringScheduledTime ?? data.is_during_scheduled_time ?? false;
+  const isConnected = data.isConnected ?? data.is_connected ?? true;
+  const base = parseChargingStatus(data.chargingStatus ?? data.charging_status ?? '');
+
+  // TEMP diagnostic — confirm exact chargingStatus values for charging vs. complete.
+  console.log(`ChargePoint: status ${chargerId} chargingStatus=${data.chargingStatus ?? data.charging_status ?? ''} plugged=${isPlugged} duringScheduled=${isDuringScheduled} connected=${isConnected}`);
+
+  let status: ChargingStatus;
+  let scheduledFor: string | null = null;
+  if (!isConnected) {
+    status = 'error';
+  } else if (base === 'charging') {
+    status = 'charging';
+  } else if (base === 'complete') {
+    status = 'complete';
+  } else if (base === 'error') {
+    status = 'error';
+  } else if (isPlugged) {
+    const schedule = await fetchSchedule(session, chargerId);
+    if (schedule.enabled && schedule.startTime) {
+      status = 'scheduled';
+      scheduledFor = formatScheduleTime(schedule.startTime);
+    } else {
+      status = 'pluggedIn';
+    }
+  } else {
+    status = 'idle';
+  }
+
+  // power_kw / energy_kwh are not returned by this endpoint in the new API shape —
+  // instantaneous telemetry would need the panda WebSocket.
   return {
     chargerId,
     accountIndex,
     nickname,
-    status: parseChargingStatus(data.chargingStatus ?? data.charging_status ?? ''),
-    isPluggedIn: data.isPluggedIn ?? data.is_plugged_in ?? false,
+    status,
+    isPluggedIn: isPlugged,
+    scheduledFor,
     powerKw: data.powerKw ?? data.power_kw ?? null,
     energyKwh: data.energyKwh ?? data.energy_kwh ?? null,
     amperage,
@@ -314,6 +403,38 @@ export async function setAmperage(
   if (!res.ok) {
     throw new Error(`ChargePoint set amperage failed: ${res.status}`);
   }
+}
+
+/**
+ * Pick the live/most-recent session for a charger from the account-wide
+ * charging-activities feed. Returns null when unplugged (caller clears stats).
+ * Matches by chargerId (device_id); falls back to the account's most-recent
+ * activity when nothing matches (single-charger accounts sometimes report a
+ * different device_id than the configuration `id`).
+ */
+export function pickLiveSession(
+  sessions: ChargePointSession[],
+  chargerId: string,
+  isPluggedIn: boolean,
+): ChargePointSessionStats | null {
+  if (!isPluggedIn) return null;
+
+  let candidates = sessions.filter((s) => s.chargerId === chargerId);
+  if (candidates.length === 0) candidates = sessions;
+  if (candidates.length === 0) return null;
+
+  const latest = candidates.reduce((a, b) => (b.startTime > a.startTime ? b : a));
+  const endTime = latest.endTime;
+  const durationMs = (endTime ?? Date.now()) - latest.startTime;
+
+  return {
+    energyKwh: latest.energyKwh,
+    cost: latest.cost,
+    milesAdded: latest.milesAdded,
+    startTime: latest.startTime,
+    endTime,
+    durationSeconds: Math.max(0, Math.round(durationMs / 1000)),
+  };
 }
 
 export async function getSessionHistory(

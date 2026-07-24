@@ -77,6 +77,26 @@ export function useWebSocket() {
     [send],
   );
 
+  const setColor = useCallback(
+    (deviceId: number, hue: number, saturation: number, level?: number) => {
+      // Optimistic local update so the picker feels immediate.
+      setDevices((prev) => {
+        const next = new Map(prev);
+        const device = next.get(deviceId);
+        if (device) {
+          next.set(deviceId, {
+            ...device,
+            hsv: { hue, saturation },
+            level: level ?? (device.level > 0 ? device.level : 100),
+          });
+        }
+        return next;
+      });
+      send({ type: 'setColor', deviceId, hue, saturation, level });
+    },
+    [send],
+  );
+
   const pressButton = useCallback(
     (deviceId: number, component: number) => {
       send({ type: 'pressButton', deviceId, component });
@@ -164,6 +184,22 @@ export function useWebSocket() {
             });
             break;
 
+          case 'colorState':
+            setDevices((prev) => {
+              const next = new Map(prev);
+              const device = next.get(msg.deviceId);
+              if (device) {
+                next.set(msg.deviceId, {
+                  ...device,
+                  hsv: { hue: msg.hue, saturation: msg.saturation },
+                  level: msg.level,
+                  lastUpdated: msg.timestamp,
+                });
+              }
+              return next;
+            });
+            break;
+
           case 'connected':
             setProcessorConnected(true);
             break;
@@ -242,6 +278,7 @@ export function useWebSocket() {
     connectionStatus,
     processorConnected,
     setLevel,
+    setColor,
     pressButton,
     releaseButton,
     doors,

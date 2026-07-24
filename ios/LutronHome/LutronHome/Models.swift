@@ -66,6 +66,12 @@ struct KeypadComponent: Codable, Identifiable {
     let name: String
 }
 
+/// HSV color for a color-capable (RGB) light zone. Hue 0–360, Saturation 0–100.
+struct HSVColor: Codable, Equatable {
+    var hue: Double
+    var saturation: Double
+}
+
 struct DeviceState: Codable, Identifiable {
     let integrationId: Int
     var name: String
