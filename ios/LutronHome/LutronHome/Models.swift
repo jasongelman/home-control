@@ -102,6 +102,7 @@ enum Floor: String, CaseIterable {
         "Playroom": .upstairs,
         "Secret Room": .upstairs,
         "Upper Level": .upstairs,
+        "Hallway And Stairs": .upstairs,  // holds the Attic Stairs fixtures — attic level
         // Main Floor
         "Dining Room": .mainFloor,
         "Family Room": .mainFloor,
@@ -119,7 +120,6 @@ enum Floor: String, CaseIterable {
         // Downstairs
         "Ronan's Room": .downstairs,
         "Sebastian's Room": .downstairs,
-        "Hallway And Stairs": .downstairs,
         "Laundry": .downstairs,
         "Master Suite": .downstairs,
         "Primary Bedroom": .downstairs,
