@@ -399,14 +399,16 @@ export class SubZeroManager extends EventEmitter {
     return 'normal';
   }
 
-  /** Seconds remaining on the oven's active kitchen timer, else null. */
-  private ovenTimerRemaining(props: Record<string, unknown>): number | null {
-    const end = props.kitchen_timer_end_time;
-    if (props.kitchen_timer_active && typeof end === 'string') {
+  /** Seconds remaining on kitchen timer `timer` (1 or 2), else null. Timer 2 uses
+   *  the parallel `kitchen_timer2_*` properties. */
+  private ovenTimerRemaining(props: Record<string, unknown>, timer: 1 | 2 = 1): number | null {
+    const suffix = timer === 2 ? '2' : '';
+    const end = props[`kitchen_timer${suffix}_end_time`];
+    if (props[`kitchen_timer${suffix}_active`] && typeof end === 'string') {
       const secs = Math.round((new Date(end).getTime() - Date.now()) / 1000);
       return secs > 0 ? secs : 0;
     }
-    return this.numOrNull(props.timerRemaining ?? props.timer_remaining);
+    return timer === 2 ? null : this.numOrNull(props.timerRemaining ?? props.timer_remaining);
   }
 
   private buildRefrigerator(id: string, name: string, model: string, online: boolean, raw: Record<string, unknown>): SubZeroRefrigerator {
@@ -456,7 +458,8 @@ export class SubZeroManager extends EventEmitter {
             : (props.cook_mode ?? props.cookMode ?? 'off')),
       probeTemp: this.numOrNull(props.cav_probe_temp ?? props.probe_temp),
       probeTargetTemp: this.numOrNull(props.cav_probe_set_temp ?? props.probe_target_temp),
-      timerRemaining: this.ovenTimerRemaining(props),
+      timerRemaining: this.ovenTimerRemaining(props, 1),
+      timer2Remaining: this.ovenTimerRemaining(props, 2),
       remoteReady: Boolean(props.cav_remote_ready ?? props.remote_ready ?? props.remoteReady ?? false),
       lightOn: Boolean(props.cav_light_on ?? props.light_on ?? props.lightOn ?? false),
       lastUpdated: Date.now(),
@@ -595,12 +598,17 @@ export class SubZeroManager extends EventEmitter {
   // path. The picker is Hours+Minutes and the app writes hours*60+minutes. Setting the
   // duration to 0 cancels a running timer. (`kitchen_timer_end_time`/`kitchen_timer_active`
   // are only mutated locally in the app's demo mode — they are read-only device state.)
-  async setKitchenTimer(applianceId: string, minutes: number): Promise<void> {
-    await this.setProperty(applianceId, 'kitchen_timer_duration', minutes);
+  // Timer 2 uses the parallel `kitchen_timer2_duration` property.
+  private timerDurationKey(timer: 1 | 2): string {
+    return `kitchen_timer${timer === 2 ? '2' : ''}_duration`;
   }
 
-  async cancelKitchenTimer(applianceId: string): Promise<void> {
-    await this.setProperty(applianceId, 'kitchen_timer_duration', 0);
+  async setKitchenTimer(applianceId: string, minutes: number, timer: 1 | 2 = 1): Promise<void> {
+    await this.setProperty(applianceId, this.timerDurationKey(timer), minutes);
+  }
+
+  async cancelKitchenTimer(applianceId: string, timer: 1 | 2 = 1): Promise<void> {
+    await this.setProperty(applianceId, this.timerDurationKey(timer), 0);
   }
 
   // ── Polling ─────────────────────────────────────────────────────────────

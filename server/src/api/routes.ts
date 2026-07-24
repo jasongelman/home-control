@@ -884,8 +884,8 @@ export function createRoutes(
       res.status(503).json({ error: 'Sub-Zero not linked' });
       return;
     }
-    const { applianceId, action, value, property } = req.body as {
-      applianceId: string; action: string; value?: unknown; property?: string;
+    const { applianceId, action, value, property, timer } = req.body as {
+      applianceId: string; action: string; value?: unknown; property?: string; timer?: number;
     };
     try {
       switch (action) {
@@ -917,10 +917,10 @@ export function createRoutes(
           await subZero.toggleOvenLight(applianceId, value as boolean);
           break;
         case 'setKitchenTimer':
-          await subZero.setKitchenTimer(applianceId, value as number);
+          await subZero.setKitchenTimer(applianceId, value as number, timer === 2 ? 2 : 1);
           break;
         case 'cancelKitchenTimer':
-          await subZero.cancelKitchenTimer(applianceId);
+          await subZero.cancelKitchenTimer(applianceId, timer === 2 ? 2 : 1);
           break;
         case 'setProperty':
           if (!property) { res.status(400).json({ error: 'setProperty requires a property name' }); return; }

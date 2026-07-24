@@ -57,6 +57,7 @@ export interface WolfOven {
   probeTemp: number | null;
   probeTargetTemp: number | null;
   timerRemaining: number | null;
+  timer2Remaining: number | null;
   remoteReady: boolean;
   lightOn: boolean;
   lastUpdated: number;

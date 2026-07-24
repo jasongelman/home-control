@@ -541,26 +541,31 @@ function WolfOvenCard({ oven }: { oven: WolfOven }) {
               : `${Math.round(oven.probeTemp as number)}°F`}
           />
         )}
-        {oven.timerRemaining != null && oven.timerRemaining > 0 && (
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.25 }}>
-            <Typography variant="caption" color="text.secondary">Timer</Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-              <Typography variant="caption" fontWeight={700} color="warning.main" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                {fmtOvenTimer(oven.timerRemaining)}
-              </Typography>
-              <Button
-                size="small"
-                variant="text"
-                color="error"
-                disabled={!oven.online}
-                onClick={() => subZeroCommand(oven.applianceId, 'cancelKitchenTimer', null)}
-                sx={{ minWidth: 0, px: 0.75, py: 0, fontSize: 10, fontWeight: 700, lineHeight: 1.6 }}
-              >
-                Turn off
-              </Button>
+        {([
+          { n: 1, remaining: oven.timerRemaining },
+          { n: 2, remaining: oven.timer2Remaining },
+        ] as const).map(({ n, remaining }) => (
+          remaining != null && remaining > 0 ? (
+            <Box key={n} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.25 }}>
+              <Typography variant="caption" color="text.secondary">Timer {n}</Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                <Typography variant="caption" fontWeight={700} color="warning.main" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                  {fmtOvenTimer(remaining)}
+                </Typography>
+                <Button
+                  size="small"
+                  variant="text"
+                  color="error"
+                  disabled={!oven.online}
+                  onClick={() => subZeroCommand(oven.applianceId, 'cancelKitchenTimer', null, n)}
+                  sx={{ minWidth: 0, px: 0.75, py: 0, fontSize: 10, fontWeight: 700, lineHeight: 1.6 }}
+                >
+                  Turn off
+                </Button>
+              </Box>
             </Box>
-          </Box>
-        )}
+          ) : null
+        ))}
         <OvenStatRow label="Light" value={oven.lightOn ? 'On' : null} />
       </Box>
     </ApplianceCard>

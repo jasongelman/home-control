@@ -227,10 +227,10 @@ export function handleWebSocket(
               await subZero.toggleOvenLight(msg.applianceId, msg.value as boolean);
               break;
             case 'setKitchenTimer':
-              await subZero.setKitchenTimer(msg.applianceId, msg.value as number);
+              await subZero.setKitchenTimer(msg.applianceId, msg.value as number, msg.timer === 2 ? 2 : 1);
               break;
             case 'cancelKitchenTimer':
-              await subZero.cancelKitchenTimer(msg.applianceId);
+              await subZero.cancelKitchenTimer(msg.applianceId, msg.timer === 2 ? 2 : 1);
               break;
             case 'setProperty':
               await subZero.setProperty(msg.applianceId, msg.property as string, msg.value);

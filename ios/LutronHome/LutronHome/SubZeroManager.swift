@@ -69,12 +69,19 @@ struct WolfOven: Identifiable, Codable {
     let probeTemp: Double?
     let probeTargetTemp: Double?
     let timerRemaining: Int?
+    let timer2Remaining: Int?
     let remoteReady: Bool
     let lightOn: Bool
     let lastUpdated: Date
 
-    var timerFormatted: String? {
-        guard let seconds = timerRemaining, seconds > 0 else { return nil }
+    var timerFormatted: String? { Self.formatTimer(timerRemaining) }
+    var timer2Formatted: String? { Self.formatTimer(timer2Remaining) }
+
+    /// Remaining seconds for kitchen timer `index` (1 or 2).
+    func remaining(forTimer index: Int) -> Int? { index == 2 ? timer2Remaining : timerRemaining }
+
+    static func formatTimer(_ seconds: Int?) -> String? {
+        guard let seconds, seconds > 0 else { return nil }
         let h = seconds / 3600
         let m = (seconds % 3600) / 60
         if h > 0 { return "\(h)h \(m)m" }
@@ -530,7 +537,8 @@ class SubZeroManager: @unchecked Sendable {
             cookMode: ovenCookMode(props),
             probeTemp: doubleVal(props, "cav_probe_temp", "probe_temperature", "probeTemp"),
             probeTargetTemp: doubleVal(props, "cav_probe_set_temp", "probe_target_temperature", "probeTargetTemp"),
-            timerRemaining: ovenTimerRemaining(props),
+            timerRemaining: ovenTimerRemaining(props, timer: 1),
+            timer2Remaining: ovenTimerRemaining(props, timer: 2),
             remoteReady: boolVal(props, "cav_remote_ready", "remote_ready", "remoteReady"),
             lightOn: boolVal(props, "cav_light_on", "light_on", "lightOn"),
             lastUpdated: Date()
@@ -558,15 +566,17 @@ class SubZeroManager: @unchecked Sendable {
         return parseOvenMode(props["cook_mode"] ?? props["cookMode"])
     }
 
-    /// Seconds remaining on the oven's active kitchen timer, else nil.
-    private func ovenTimerRemaining(_ props: [String: Any]) -> Int? {
-        if boolVal(props, "kitchen_timer_active"),
-           let end = props["kitchen_timer_end_time"] as? String,
+    /// Seconds remaining on kitchen timer `timer` (1 or 2), else nil. Timer 2 uses
+    /// the parallel `kitchen_timer2_*` properties.
+    private func ovenTimerRemaining(_ props: [String: Any], timer: Int) -> Int? {
+        let suffix = timer == 2 ? "2" : ""
+        if boolVal(props, "kitchen_timer\(suffix)_active"),
+           let end = props["kitchen_timer\(suffix)_end_time"] as? String,
            let endDate = Self.parseISO8601(end) {
             let secs = Int(endDate.timeIntervalSinceNow.rounded())
             return max(secs, 0)
         }
-        return intVal(props, "timer_remaining", "timerRemaining")
+        return timer == 2 ? nil : intVal(props, "timer_remaining", "timerRemaining")
     }
 
     private static let iso8601Fractional: ISO8601DateFormatter = {
@@ -899,8 +909,10 @@ class SubZeroManager: @unchecked Sendable {
     // set path. The picker is Hours+Minutes and the app writes hours*60+minutes. Setting the
     // duration to 0 cancels a running timer. (`kitchen_timer_end_time`/`kitchen_timer_active`
     // are only mutated locally in the app's demo mode — they are read-only device state.)
-    func setKitchenTimer(applianceId: String, minutes: Int) async { await setProperty(applianceId, "kitchen_timer_duration", minutes) }
-    func cancelKitchenTimer(applianceId: String) async { await setProperty(applianceId, "kitchen_timer_duration", 0) }
+    // Timer 2 uses the parallel `kitchen_timer2_duration` property.
+    private func timerDurationKey(_ timer: Int) -> String { "kitchen_timer\(timer == 2 ? "2" : "")_duration" }
+    func setKitchenTimer(applianceId: String, minutes: Int, timer: Int = 1) async { await setProperty(applianceId, timerDurationKey(timer), minutes) }
+    func cancelKitchenTimer(applianceId: String, timer: Int = 1) async { await setProperty(applianceId, timerDurationKey(timer), 0) }
 
     // Property names below are NOT yet confirmed against a live device (transport is correct;
     // names are best-effort from the SignalR ploads). Verify before relying on them.

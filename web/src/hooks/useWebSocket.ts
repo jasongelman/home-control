@@ -57,8 +57,8 @@ export function useWebSocket() {
   );
 
   const subZeroCommand = useCallback(
-    (applianceId: string, action: string, value: unknown) => {
-      send({ type: 'subZeroAction', applianceId, action: action as 'setFridgeTemp', value });
+    (applianceId: string, action: string, value: unknown, timer?: number) => {
+      send({ type: 'subZeroAction', applianceId, action: action as 'setFridgeTemp', value, timer });
     },
     [send],
   );

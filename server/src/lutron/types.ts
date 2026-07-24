@@ -203,6 +203,6 @@ export type ClientMessage =
   | { type: 'garageAction'; serial: string; action: 'open' | 'close' }
   | { type: 'alarmAction'; locationId: string; action: 'armAway' | 'armHome' | 'armNight' | 'disarm' }
   | { type: 'chargerAction'; chargerId: string; action: 'setAmperage'; value: number }
-  | { type: 'subZeroAction'; applianceId: string; action: 'setFridgeTemp' | 'setFreezerTemp' | 'setCrisperTemp' | 'setIceMaker' | 'setMaxIce' | 'setNightMode' | 'setHumidityControl' | 'toggleLight' | 'toggleOvenLight' | 'setKitchenTimer' | 'cancelKitchenTimer' | 'setProperty' | 'refresh'; property?: string; value?: unknown }
+  | { type: 'subZeroAction'; applianceId: string; action: 'setFridgeTemp' | 'setFreezerTemp' | 'setCrisperTemp' | 'setIceMaker' | 'setMaxIce' | 'setNightMode' | 'setHumidityControl' | 'toggleLight' | 'toggleOvenLight' | 'setKitchenTimer' | 'cancelKitchenTimer' | 'setProperty' | 'refresh'; property?: string; value?: unknown; timer?: number }
   | { type: 'setLEDState'; ledId: number; state: 'On' | 'Off' }
   | { type: 'ping' };

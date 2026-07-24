@@ -30,7 +30,7 @@ interface LutronContextValue {
   refrigerators: SubZeroRefrigerator[];
   ovens: WolfOven[];
   subZeroLinked: boolean;
-  subZeroCommand: (applianceId: string, action: string, value: unknown) => void;
+  subZeroCommand: (applianceId: string, action: string, value: unknown, timer?: number) => void;
   keypads: KeypadInfo[];
   setLEDState: (ledId: number, state: 'On' | 'Off') => void;
   trackDevice: (id: number, action: UsageEvent['action'], room?: string, level?: number) => void;

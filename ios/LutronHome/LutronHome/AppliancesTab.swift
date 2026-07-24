@@ -1142,6 +1142,7 @@ struct WolfOvenDetailView: View {
     @State private var showRemoteReadyInstructions = false
     @State private var showStartOven = false
     @State private var showTimerPicker = false
+    @State private var pickerTimerIndex = 1
 
     var body: some View {
         List {
@@ -1200,33 +1201,8 @@ struct WolfOvenDetailView: View {
 
             // Kitchen Timers
             Section("Kitchen Timers") {
-                Button { showTimerPicker = true } label: {
-                    HStack {
-                        Image(systemName: "clock")
-                            .foregroundStyle(.secondary)
-                        Text("Kitchen Timer 1")
-                            .foregroundStyle(.primary)
-                        Spacer()
-                        if let time = oven.timerFormatted {
-                            Text(time)
-                                .foregroundStyle(.orange)
-                        } else {
-                            Text("Off")
-                                .foregroundStyle(.secondary)
-                        }
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-                HStack {
-                    Image(systemName: "clock")
-                        .foregroundStyle(.secondary)
-                    Text("Kitchen Timer 2")
-                    Spacer()
-                    Text("Off")
-                        .foregroundStyle(.secondary)
-                }
+                kitchenTimerRow(index: 1, remaining: oven.timerFormatted)
+                kitchenTimerRow(index: 2, remaining: oven.timer2Formatted)
             }
 
             // Upper Oven
@@ -1287,7 +1263,30 @@ struct WolfOvenDetailView: View {
             StartOvenSheet(oven: oven, isPresented: $showStartOven)
         }
         .sheet(isPresented: $showTimerPicker) {
-            KitchenTimerPickerSheet(oven: oven, isPresented: $showTimerPicker)
+            KitchenTimerPickerSheet(oven: oven, timerIndex: pickerTimerIndex, isPresented: $showTimerPicker)
+        }
+    }
+
+    private func kitchenTimerRow(index: Int, remaining: String?) -> some View {
+        Button {
+            pickerTimerIndex = index
+            showTimerPicker = true
+        } label: {
+            HStack {
+                Image(systemName: "clock")
+                    .foregroundStyle(.secondary)
+                Text("Kitchen Timer \(index)")
+                    .foregroundStyle(.primary)
+                Spacer()
+                if let remaining {
+                    Text(remaining).foregroundStyle(.orange)
+                } else {
+                    Text("Off").foregroundStyle(.secondary)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
         }
     }
 
@@ -1309,20 +1308,21 @@ struct WolfOvenDetailView: View {
 
 struct KitchenTimerPickerSheet: View {
     let oven: WolfOven
+    var timerIndex: Int = 1
     @Binding var isPresented: Bool
     @Environment(SubZeroManager.self) var subZero
     @State private var hours: Int = 0
     @State private var minutes: Int = 30
 
     private var isTimerRunning: Bool {
-        if let remaining = oven.timerRemaining, remaining > 0 { return true }
+        if let remaining = oven.remaining(forTimer: timerIndex), remaining > 0 { return true }
         return false
     }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Text("Kitchen Timer 1")
+                Text("Kitchen Timer \(timerIndex)")
                     .font(.title.bold())
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 24)
@@ -1369,7 +1369,7 @@ struct KitchenTimerPickerSheet: View {
                 Button {
                     let totalMinutes = hours * 60 + minutes
                     Task {
-                        await subZero.setKitchenTimer(applianceId: oven.applianceId, minutes: totalMinutes)
+                        await subZero.setKitchenTimer(applianceId: oven.applianceId, minutes: totalMinutes, timer: timerIndex)
                         isPresented = false
                     }
                 } label: {
@@ -1388,7 +1388,7 @@ struct KitchenTimerPickerSheet: View {
                 if isTimerRunning {
                     Button(role: .destructive) {
                         Task {
-                            await subZero.cancelKitchenTimer(applianceId: oven.applianceId)
+                            await subZero.cancelKitchenTimer(applianceId: oven.applianceId, timer: timerIndex)
                             isPresented = false
                         }
                     } label: {
