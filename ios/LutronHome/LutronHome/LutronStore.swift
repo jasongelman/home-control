@@ -549,14 +549,18 @@ class LutronStore: @unchecked Sendable {
 
     // MARK: - Actions
 
-    func setLevel(_ deviceId: Int, level: Double, fadeTime: Double? = nil) {
+    /// `track: false` for intermediate levels sent mid-drag, so only the level the user
+    /// settles on lands in the usage log that feeds suggestions.
+    func setLevel(_ deviceId: Int, level: Double, fadeTime: Double? = nil, track: Bool = true) {
         guard let client = leapClient else { return }
         let fade = fadeTime.map { fadeDuration($0) }
 
         // Track usage
-        let room = devices[deviceId]?.room
-        let action: UsageEvent.Action = level == 0 ? .turnOff : .setLevel
-        usageTracker?.trackDevice(deviceId, action: action, room: room, level: level)
+        if track && !suppressTracking {
+            let room = devices[deviceId]?.room
+            let action: UsageEvent.Action = level == 0 ? .turnOff : .setLevel
+            usageTracker?.trackDevice(deviceId, action: action, room: room, level: level)
+        }
 
         Task {
             do {
@@ -576,6 +580,21 @@ class LutronStore: @unchecked Sendable {
         // Optimistically update App Group
         devices[deviceId]?.level = level
         syncToAppGroup()
+    }
+
+    private var suppressTracking = false
+
+    /// Run a multi-device action and log it as ONE usage event (label/room) instead of one per
+    /// light, so bulk "all off"-style actions don't swamp the per-light habits behind suggestions.
+    /// Nested calls (e.g. a preset that calls turnOffAllLights) log only the outermost label.
+    func performBulk(_ label: String, room: String? = nil, action: UsageEvent.Action = .activate, _ body: () -> Void) {
+        let outermost = !suppressTracking
+        suppressTracking = true
+        body()
+        if outermost {
+            suppressTracking = false
+            usageTracker?.trackBulk(label, room: room, action: action)
+        }
     }
 
     func turnOff(_ deviceId: Int) {
@@ -609,88 +628,96 @@ class LutronStore: @unchecked Sendable {
 
     /// Activate the Evening scene
     func activateEveningScene() {
-        // 1. Dining Room: chandelier 50%, off cove accent & recessed
-        setDeviceLevel(room: "Dining Room", name: "Chandelier", level: 50)
-        setDeviceLevel(room: "Dining Room", name: "Cove Accent", level: 0)
-        setDeviceLevel(room: "Dining Room", name: "Recessed", level: 0)
+        performBulk("evening", action: .activate) {
+            // 1. Dining Room: chandelier 50%, off cove accent & recessed
+            setDeviceLevel(room: "Dining Room", name: "Chandelier", level: 50)
+            setDeviceLevel(room: "Dining Room", name: "Cove Accent", level: 0)
+            setDeviceLevel(room: "Dining Room", name: "Recessed", level: 0)
 
-        // 2. Family Room: peak coves & wall coves 25%, spots 12%
-        setDeviceLevel(room: "Family Room", name: "Peak Cove A", level: 25)
-        setDeviceLevel(room: "Family Room", name: "Peak Cove B", level: 25)
-        setDeviceLevel(room: "Family Room", name: "Wall Cove A", level: 25)
-        setDeviceLevel(room: "Family Room", name: "Wall Cove B", level: 25)
-        setDeviceLevel(room: "Family Room", name: "Spots", level: 12)
+            // 2. Family Room: peak coves & wall coves 25%, spots 12%
+            setDeviceLevel(room: "Family Room", name: "Peak Cove A", level: 25)
+            setDeviceLevel(room: "Family Room", name: "Peak Cove B", level: 25)
+            setDeviceLevel(room: "Family Room", name: "Wall Cove A", level: 25)
+            setDeviceLevel(room: "Family Room", name: "Wall Cove B", level: 25)
+            setDeviceLevel(room: "Family Room", name: "Spots", level: 12)
 
-        // 3. Jason Office: all off
-        setRoomLights("Jason Office", level: 0)
+            // 3. Jason Office: all off
+            setRoomLights("Jason Office", level: 0)
 
-        // 4. Living Room: all off
-        setRoomLights("Living Room", level: 0)
+            // 4. Living Room: all off
+            setRoomLights("Living Room", level: 0)
 
-        // 5. Kitchen: specific off, pendant B & undercabinet 50%
-        setDeviceLevel(room: "Kitchen", name: "Island Pendant A", level: 0)
-        setDeviceLevel(room: "Kitchen", name: "Breakfast Chandelier", level: 0)
-        setDeviceLevel(room: "Kitchen", name: "Breakfast Recessed", level: 0)
-        setDeviceLevel(room: "Kitchen", name: "Breakfast Undercabinet", level: 0)
-        setDeviceLevel(room: "Kitchen", name: "Kitchen Recessed", level: 0)
-        setDeviceLevel(room: "Kitchen", name: "Pantry Chandelier", level: 0)
-        setDeviceLevel(room: "Kitchen", name: "Pantry Undercabinet", level: 0)
-        setDeviceLevel(room: "Kitchen", name: "Island Pendant B", level: 50)
-        setDeviceLevel(room: "Kitchen", name: "Kitchen Undercabinet", level: 50)
+            // 5. Kitchen: specific off, pendant B & undercabinet 50%
+            setDeviceLevel(room: "Kitchen", name: "Island Pendant A", level: 0)
+            setDeviceLevel(room: "Kitchen", name: "Breakfast Chandelier", level: 0)
+            setDeviceLevel(room: "Kitchen", name: "Breakfast Recessed", level: 0)
+            setDeviceLevel(room: "Kitchen", name: "Breakfast Undercabinet", level: 0)
+            setDeviceLevel(room: "Kitchen", name: "Kitchen Recessed", level: 0)
+            setDeviceLevel(room: "Kitchen", name: "Pantry Chandelier", level: 0)
+            setDeviceLevel(room: "Kitchen", name: "Pantry Undercabinet", level: 0)
+            setDeviceLevel(room: "Kitchen", name: "Island Pendant B", level: 50)
+            setDeviceLevel(room: "Kitchen", name: "Kitchen Undercabinet", level: 50)
 
-        // 6. Main Entry: all off except hall track 25%
-        setRoomLights("Main Entry", level: 0)
-        setDeviceLevel(room: "Main Entry", name: "Hall Track", level: 25)
+            // 6. Main Entry: all off except hall track 25%
+            setRoomLights("Main Entry", level: 0)
+            setDeviceLevel(room: "Main Entry", name: "Hall Track", level: 25)
 
-        // 7. Main Hall: stairs accent 30%
-        setDeviceLevel(room: "Main Hall", name: "Stairs Accent", level: 30)
+            // 7. Main Hall: stairs accent 30%
+            setDeviceLevel(room: "Main Hall", name: "Stairs Accent", level: 30)
 
-        // 8. Mudroom Entry: sconces off, recessed 25%
-        setDeviceLevel(room: "Mudroom Entry", name: "Sconces", level: 0)
-        setDeviceLevel(room: "Mudroom Entry", name: "Recessed", level: 25)
+            // 8. Mudroom Entry: sconces off, recessed 25%
+            setDeviceLevel(room: "Mudroom Entry", name: "Sconces", level: 0)
+            setDeviceLevel(room: "Mudroom Entry", name: "Recessed", level: 25)
+        }
     }
 
     /// Toggle the Dining Shade, Family Room Shades Rear and Shades Side
     func toggleMainShades() {
-        let targetNames = ["dining shade", "shades rear", "shades side"]
-        let targetShades = devices.values.filter { device in
-            device.category == .shadesAndDrapes &&
-            targetNames.contains(where: { device.name.lowercased().contains($0) })
-        }
-        let anyOpen = targetShades.contains { $0.level > 0 }
-        let newLevel: Double = anyOpen ? 0 : 100
-        for shade in targetShades {
-            setLevel(shade.integrationId, level: newLevel, fadeTime: 2)
+        performBulk("main_shades_toggle", action: .activate) {
+            let targetNames = ["dining shade", "shades rear", "shades side"]
+            let targetShades = devices.values.filter { device in
+                device.category == .shadesAndDrapes &&
+                targetNames.contains(where: { device.name.lowercased().contains($0) })
+            }
+            let anyOpen = targetShades.contains { $0.level > 0 }
+            let newLevel: Double = anyOpen ? 0 : 100
+            for shade in targetShades {
+                setLevel(shade.integrationId, level: newLevel, fadeTime: 2)
+            }
         }
     }
 
     /// Turn off all lights on a given floor
     func turnOffLights(on floor: Floor) {
-        let floorDevices = devices.values.filter {
-            $0.category == .light && $0.level > 0 && Floor.floor(for: $0.room) == floor
-        }
-        for device in floorDevices {
-            setLevel(device.integrationId, level: 0, fadeTime: 1)
-        }
-        // Also press keypad off-buttons for rooms on this floor
-        for entry in keypadOffButtons where Floor.floor(for: entry.room) == floor {
-            pressKeypadButton(entry.buttonId)
+        performBulk("floor_off:\(floor.rawValue)", action: .turnOff) {
+            let floorDevices = devices.values.filter {
+                $0.category == .light && $0.level > 0 && Floor.floor(for: $0.room) == floor
+            }
+            for device in floorDevices {
+                setLevel(device.integrationId, level: 0, fadeTime: 1)
+            }
+            // Also press keypad off-buttons for rooms on this floor
+            for entry in keypadOffButtons where Floor.floor(for: entry.room) == floor {
+                pressKeypadButton(entry.buttonId)
+            }
         }
     }
 
     /// Turn off all lights in the house, optionally excluding specific device names
     func turnOffAllLights(excludingNames: Set<String> = [], excludingRooms: Set<String> = []) {
-        let lightsOn = devices.values.filter {
-            $0.category == .light && $0.level > 0
-            && !excludingNames.contains($0.name)
-            && !excludingRooms.contains($0.room)
-        }
-        for device in lightsOn {
-            setLevel(device.integrationId, level: 0, fadeTime: 1)
-        }
-        // Also press keypad off-buttons for all rooms not excluded
-        for entry in keypadOffButtons where !excludingRooms.contains(entry.room) {
-            pressKeypadButton(entry.buttonId)
+        performBulk("all_off", action: .turnOff) {
+            let lightsOn = devices.values.filter {
+                $0.category == .light && $0.level > 0
+                && !excludingNames.contains($0.name)
+                && !excludingRooms.contains($0.room)
+            }
+            for device in lightsOn {
+                setLevel(device.integrationId, level: 0, fadeTime: 1)
+            }
+            // Also press keypad off-buttons for all rooms not excluded
+            for entry in keypadOffButtons where !excludingRooms.contains(entry.room) {
+                pressKeypadButton(entry.buttonId)
+            }
         }
     }
 
@@ -707,7 +734,7 @@ class LutronStore: @unchecked Sendable {
         guard !matches.isEmpty else { return }
 
         for device in matches {
-            setLevel(device.integrationId, level: 100, fadeTime: 0)
+            setLevel(device.integrationId, level: 100, fadeTime: 0, track: false)
         }
         print("Lutron: garage lights ON (\(matches.count) devices)")
 
@@ -716,7 +743,7 @@ class LutronStore: @unchecked Sendable {
         garageLightsOffTimer = Timer.scheduledTimer(withTimeInterval: 5 * 60, repeats: false) { [weak self] _ in
             guard let self else { return }
             for device in matches {
-                self.setLevel(device.integrationId, level: 0, fadeTime: 2)
+                self.setLevel(device.integrationId, level: 0, fadeTime: 2, track: false)
             }
             print("Lutron: garage lights auto-OFF (5 min timer)")
         }
@@ -724,25 +751,29 @@ class LutronStore: @unchecked Sendable {
 
     /// Rise & Shine: raise all downstairs shades to fully open
     func raiseDownstairsShades() {
-        let downstairsShades = devices.values.filter {
-            ($0.category == .shadesAndDrapes || $0.category == .window)
-            && Floor.floor(for: $0.room) == .downstairs
-        }
-        for shade in downstairsShades {
-            setLevel(shade.integrationId, level: 100, fadeTime: 2)
+        performBulk("downstairs_shades_open", action: .activate) {
+            let downstairsShades = devices.values.filter {
+                ($0.category == .shadesAndDrapes || $0.category == .window)
+                && Floor.floor(for: $0.room) == .downstairs
+            }
+            for shade in downstairsShades {
+                setLevel(shade.integrationId, level: 100, fadeTime: 2)
+            }
         }
     }
 
     /// Block Out The Sun: close Family Room rear shades, Dining shades,
     /// and Jason Office rear solar shade
     func blockOutTheSun() {
-        let targetNames = ["shades rear", "dining shade", "rear solar"]
-        let targetShades = devices.values.filter { device in
-            (device.category == .shadesAndDrapes || device.category == .window) &&
-            targetNames.contains(where: { device.name.lowercased().contains($0) })
-        }
-        for shade in targetShades {
-            setLevel(shade.integrationId, level: 0, fadeTime: 2)
+        performBulk("block_sun", action: .activate) {
+            let targetNames = ["shades rear", "dining shade", "rear solar"]
+            let targetShades = devices.values.filter { device in
+                (device.category == .shadesAndDrapes || device.category == .window) &&
+                targetNames.contains(where: { device.name.lowercased().contains($0) })
+            }
+            for shade in targetShades {
+                setLevel(shade.integrationId, level: 0, fadeTime: 2)
+            }
         }
     }
 
@@ -842,13 +873,17 @@ class LutronStore: @unchecked Sendable {
                     name = String(rawName.dropFirst(5))
                 }
             } else if lower.hasPrefix("mbd") {
-                areaName = "Primary Bedroom"
+                areaName = "Primary Suite"
                 // Strip "MBD " prefix
                 if rawName.hasPrefix("MBD ") {
                     name = String(rawName.dropFirst(4))
                 }
             }
-            // Shades (Rear/Side Drapes/Shades) stay in Master Suite or assign to Primary Bedroom
+            // Shades (Rear/Side Drapes/Shades) stay in the suite itself
+        }
+        // The bedroom (MBD lights) and the suite's shades are one room
+        if areaName == "Master Suite" {
+            areaName = "Primary Suite"
         }
 
         // Break Breakfast devices out of Kitchen into Breakfast Nook

@@ -7,6 +7,9 @@ struct UsageEvent: Codable {
     enum EventType: String, Codable {
         case device
         case scene
+        /// One multi-device action (All Off, floor/room off, a preset). Logged once instead of
+        /// once per light so it doesn't read as N separate per-light habits.
+        case bulk
     }
     enum Action: String, Codable {
         case setLevel
@@ -54,9 +57,24 @@ struct DetectedPattern: Identifiable {
 
 @Observable
 class UsageTracker {
+    /// Legacy UserDefaults key; migrated to `fileURL` on first launch.
     private static let storageKey = "lutron_usage_log"
     private static let dismissedKey = "lutron_dismissed_patterns"
-    private static let maxEvents = 2000
+    /// History is capped by size, not age: ~10 MB of JSON at ~111 bytes/event (years of use).
+    private static let maxEvents = 90_000
+    /// Rooms renamed since events were logged; applied on load so habits aren't split.
+    private static let roomRenames: [String: String] = [
+        "Master Suite": "Primary Suite",
+        "Primary Bedroom": "Primary Suite",
+    ]
+    /// The widget only scores the last 30 days, so that's all it gets.
+    private static let widgetWindow: TimeInterval = 30 * 24 * 60 * 60
+    private static let saveQueue = DispatchQueue(label: "UsageTracker.save", qos: .utility)
+
+    private static var fileURL: URL {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return dir.appendingPathComponent("usage_log.json")
+    }
 
     private(set) var events: [UsageEvent] = []
     private(set) var dismissedPatterns: Set<String> = []
@@ -74,6 +92,19 @@ class UsageTracker {
             id: String(deviceId),
             action: action,
             level: level,
+            room: room,
+            timestamp: Date().timeIntervalSince1970
+        )
+        events.append(event)
+        saveEvents()
+    }
+
+    func trackBulk(_ label: String, room: String? = nil, action: UsageEvent.Action = .activate) {
+        let event = UsageEvent(
+            type: .bulk,
+            id: label,
+            action: action,
+            level: nil,
             room: room,
             timestamp: Date().timeIntervalSince1970
         )
@@ -298,21 +329,48 @@ class UsageTracker {
     // MARK: - Persistence
 
     private func loadEvents() {
-        guard let data = UserDefaults.standard.data(forKey: Self.storageKey),
-              let decoded = try? JSONDecoder().decode([UsageEvent].self, from: data) else { return }
-        events = decoded
+        if let data = try? Data(contentsOf: Self.fileURL),
+           let decoded = try? JSONDecoder().decode([UsageEvent].self, from: data) {
+            events = decoded
+            applyRoomRenames()
+            return
+        }
+        // One-time migration from UserDefaults (where the log lived when it was capped at 2,000).
+        if let data = UserDefaults.standard.data(forKey: Self.storageKey),
+           let decoded = try? JSONDecoder().decode([UsageEvent].self, from: data) {
+            events = decoded
+            applyRoomRenames(forceSave: true)
+            UserDefaults.standard.removeObject(forKey: Self.storageKey)
+        }
+    }
+
+    private func applyRoomRenames(forceSave: Bool = false) {
+        var changed = false
+        events = events.map { e in
+            guard let room = e.room, let renamed = Self.roomRenames[room] else { return e }
+            changed = true
+            return UsageEvent(type: e.type, id: e.id, action: e.action, level: e.level,
+                              room: renamed, timestamp: e.timestamp)
+        }
+        if changed || forceSave { saveEvents() }
     }
 
     private func saveEvents() {
-        // Trim to max
         if events.count > Self.maxEvents {
             events = Array(events.suffix(Self.maxEvents))
         }
-        if let data = try? JSONEncoder().encode(events) {
-            UserDefaults.standard.set(data, forKey: Self.storageKey)
+        let snapshot = events
+        let widgetCutoff = Date().timeIntervalSince1970 - Self.widgetWindow
+        Self.saveQueue.async {
+            let url = Self.fileURL
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                     withIntermediateDirectories: true)
+            if let data = try? JSONEncoder().encode(snapshot) {
+                try? data.write(to: url, options: .atomic)
+            }
+            // Sync recent history to App Group for widget
+            AppGroupManager.writeUsageEvents(snapshot.filter { $0.timestamp >= widgetCutoff })
         }
-        // Sync to App Group for widget
-        AppGroupManager.writeUsageEvents(events)
     }
 
     private func loadDismissed() {

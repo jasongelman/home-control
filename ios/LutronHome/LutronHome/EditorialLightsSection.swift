@@ -1,6 +1,51 @@
 import SwiftUI
+import UIKit
 
-private enum DragIntent { case undecided, adjusting, scrolling }
+// MARK: - Horizontal Adjust Gesture
+//
+// Drag-to-dim rows live inside vertical ScrollViews. A SwiftUI DragGesture claims the
+// touch before the scroll view can, so a vertical swipe with a little sideways drift
+// changed light levels. This UIKit pan only *begins* when the motion is clearly
+// horizontal, and the enclosing scroll view's pan is made to wait for it to fail —
+// so vertical swipes always scroll and never touch a light.
+
+struct HorizontalAdjustGesture: UIGestureRecognizerRepresentable {
+    /// Called with the touch's x position in the view's local space while adjusting.
+    var onChanged: (CGFloat) -> Void
+    var onEnded: (CGFloat) -> Void
+    var onCancelled: () -> Void = {}
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let pan = UIPanGestureRecognizer()
+        pan.delegate = context.coordinator
+        return pan
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        let x = context.converter.localLocation.x
+        switch recognizer.state {
+        case .began, .changed: onChanged(x)
+        case .ended: onEnded(x)
+        case .cancelled, .failed: onCancelled()
+        default: break
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
+            let t = pan.translation(in: pan.view)
+            return abs(t.x) > abs(t.y) * 2
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
+            other is UIPanGestureRecognizer && other.view is UIScrollView
+        }
+    }
+}
 
 struct DimmablePill: View {
     @Environment(LutronStore.self) var store
@@ -8,7 +53,6 @@ struct DimmablePill: View {
     var fadeTime: Double? = nil
     var dimsWhenOff: Bool = false
 
-    @State private var dragIntent: DragIntent = .undecided
     @State private var isDragging = false
     @State private var dragLevel: Double = 0
     @State private var lastSentLevel: Double = -1
@@ -24,7 +68,7 @@ struct DimmablePill: View {
               now.timeIntervalSince(lastSendTime) >= 0.1 else { return }
         lastSentLevel = snapped
         lastSendTime = now
-        store.setLevel(device.integrationId, level: snapped, fadeTime: fadeTime ?? 0)
+        store.setLevel(device.integrationId, level: snapped, fadeTime: fadeTime ?? 0, track: false)
     }
 
     var body: some View {
@@ -51,7 +95,7 @@ struct DimmablePill: View {
                     .stroke(EditorialTheme.cardBorder, lineWidth: 0.5)
 
                 HStack(spacing: 6) {
-                    Text(device.name.uppercased())
+                    Text(deviceDisplayName(device).uppercased())
                         .font(.system(size: 10, weight: .semibold))
                         .tracking(0.6)
                         .foregroundStyle((dimsWhenOff && !isOn) ? EditorialTheme.tertiaryText : EditorialTheme.primaryText)
@@ -70,37 +114,204 @@ struct DimmablePill: View {
                 let newLevel: Double = device.level > 0 ? 0 : 100
                 store.setLevel(device.integrationId, level: newLevel, fadeTime: fadeTime ?? 1)
             }
-            .gesture(
-                DragGesture(minimumDistance: 8)
-                    .onChanged { value in
-                        if dragIntent == .undecided {
-                            let h = abs(value.translation.width)
-                            let v = abs(value.translation.height)
-                            if h > v * 1.5 { dragIntent = .adjusting }
-                            else if v > h * 1.5 { dragIntent = .scrolling }
-                        }
-                        guard dragIntent == .adjusting else { return }
-                        if !isDragging {
-                            isDragging = true
-                            dragLevel = device.level
-                            lastSentLevel = device.level
-                        }
-                        let pct = max(0, min(100, (value.location.x / geo.size.width) * 100))
-                        dragLevel = pct
-                        sendIfNeeded(pct)
+            .gesture(HorizontalAdjustGesture(
+                onChanged: { x in
+                    if !isDragging {
+                        isDragging = true
+                        dragLevel = device.level
+                        lastSentLevel = device.level
                     }
-                    .onEnded { value in
-                        if dragIntent == .adjusting && isDragging {
-                            let pct = max(0, min(100, (value.location.x / geo.size.width) * 100))
-                            let snapped = (pct / 5).rounded() * 5
-                            store.setLevel(device.integrationId, level: snapped, fadeTime: fadeTime ?? 0)
-                        }
-                        dragIntent = .undecided
-                        isDragging = false
+                    let pct = max(0, min(100, (x / geo.size.width) * 100))
+                    dragLevel = pct
+                    sendIfNeeded(pct)
+                },
+                onEnded: { x in
+                    if isDragging {
+                        let pct = max(0, min(100, (x / geo.size.width) * 100))
+                        let snapped = (pct / 5).rounded() * 5
+                        store.setLevel(device.integrationId, level: snapped, fadeTime: fadeTime ?? 0)
                     }
-            )
+                    isDragging = false
+                },
+                onCancelled: { isDragging = false }
+            ))
         }
         .frame(height: 40)
+    }
+}
+
+// MARK: - Room Card (one bordered card per room so it's obvious which room a control belongs to)
+
+struct RoomCard<Actions: View, Content: View>: View {
+    let name: String
+    let activeCount: Int
+    let total: Int
+    var activeLabel: String = "ON"
+    /// Tapping the room name (e.g. collapse on the Lights tab). Nil = not tappable.
+    var onHeaderTap: (() -> Void)? = nil
+    /// Shows a trailing chevron that opens the room detail page.
+    var onOpenDetail: (() -> Void)? = nil
+    @ViewBuilder var actions: () -> Actions
+    @ViewBuilder var content: () -> Content
+
+    private var isActive: Bool { activeCount > 0 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 4) {
+                Button { onHeaderTap?() } label: {
+                    HStack(spacing: 5) {
+                        if onHeaderTap != nil {
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(EditorialTheme.secondaryText)
+                        }
+                        Text(roomIcon(for: name))
+                            .font(.system(size: 14))
+                        Text(name.uppercased())
+                            .font(.system(size: 11, weight: .bold))
+                            .tracking(0.2)
+                            .foregroundStyle(EditorialTheme.primaryText)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(onHeaderTap == nil)
+                .layoutPriority(1)
+
+                Spacer(minLength: 2)
+
+                // Full "2/4 ON" when the card is wide (Shades tab); "2/4" in half-width cards.
+                ViewThatFits(in: .horizontal) {
+                    statusText(isActive ? "\(activeCount)/\(total) \(activeLabel)" : "OFF")
+                    statusText(isActive ? "\(activeCount)/\(total)" : "OFF")
+                }
+
+                actions()
+
+                if let onOpenDetail {
+                    Button(action: onOpenDetail) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(EditorialTheme.tertiaryText)
+                            .frame(width: 18, height: 22)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            content()
+        }
+        .padding(8)
+        .background(EditorialTheme.background)
+        .overlay(alignment: .leading) {
+            if isActive {
+                Rectangle().fill(EditorialTheme.accent).frame(width: 3)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: EditorialTheme.cardRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: EditorialTheme.cardRadius)
+                .stroke(isActive ? EditorialTheme.accent.opacity(0.45) : EditorialTheme.cardBorder,
+                        lineWidth: isActive ? 1 : 0.5)
+        )
+    }
+}
+
+extension RoomCard {
+    fileprivate func statusText(_ text: String) -> some View {
+        Text(text)
+            .font(EditorialTheme.monoValue(size: 9))
+            .foregroundStyle(activeCount > 0 ? EditorialTheme.accent : EditorialTheme.tertiaryText)
+            .lineLimit(1)
+            .fixedSize()
+    }
+}
+
+extension RoomCard where Actions == EmptyView {
+    init(name: String, activeCount: Int, total: Int, activeLabel: String = "ON",
+         onHeaderTap: (() -> Void)? = nil, onOpenDetail: (() -> Void)? = nil,
+         @ViewBuilder content: @escaping () -> Content) {
+        self.init(name: name, activeCount: activeCount, total: total, activeLabel: activeLabel,
+                  onHeaderTap: onHeaderTap, onOpenDetail: onOpenDetail,
+                  actions: { EmptyView() }, content: content)
+    }
+}
+
+/// Device name without a redundant room prefix ("Kitchen Island" inside the Kitchen card → "Island").
+func deviceDisplayName(_ device: DeviceState) -> String {
+    let name = device.name
+    guard !device.room.isEmpty, name.lowercased().hasPrefix(device.room.lowercased()) else { return name }
+    let stripped = name.dropFirst(device.room.count).trimmingCharacters(in: .whitespaces)
+    return stripped.isEmpty ? name : stripped
+}
+
+// MARK: - Shade Preset Row (Close / 25 / 50 / 75 / Open — no granular slider)
+
+struct ShadePresetRow: View {
+    @Environment(LutronStore.self) var store
+    /// Shades this row drives. One shade = per-device row; several = room-wide "ALL" row.
+    let shades: [DeviceState]
+    let label: String
+
+    private static let presets: [Double] = [0, 25, 50, 75, 100]
+
+    private var level: Double {
+        guard !shades.isEmpty else { return 0 }
+        return shades.reduce(0.0) { $0 + $1.level } / Double(shades.count)
+    }
+
+    private var levelText: String {
+        let l = Int(level.rounded())
+        return l == 0 ? "CLOSED" : l == 100 ? "OPEN" : "\(l)%"
+    }
+
+    private func isSelected(_ preset: Double) -> Bool {
+        shades.allSatisfy { abs($0.level - preset) <= 2 }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(label.uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(0.6)
+                    .foregroundStyle(EditorialTheme.primaryText)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Text(levelText)
+                    .font(EditorialTheme.monoValue(size: 10))
+                    .foregroundStyle(level > 0 ? EditorialTheme.accent : EditorialTheme.secondaryText)
+            }
+
+            HStack(spacing: 4) {
+                ForEach(Self.presets, id: \.self) { preset in
+                    let selected = isSelected(preset)
+                    Button {
+                        for shade in shades {
+                            store.setLevel(shade.integrationId, level: preset, fadeTime: 2)
+                        }
+                    } label: {
+                        Text(preset == 0 ? "CLOSE" : preset == 100 ? "OPEN" : "\(Int(preset))%")
+                            .font(.system(size: 10, weight: .semibold))
+                            .tracking(0.4)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 34)
+                            .background(selected ? EditorialTheme.accent : EditorialTheme.cardBackground)
+                            .foregroundStyle(selected ? Color.white : EditorialTheme.primaryText)
+                            .overlay(
+                                Rectangle().stroke(EditorialTheme.cardBorder, lineWidth: 0.5)
+                            )
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
     }
 }
 
@@ -113,7 +324,6 @@ struct RoomGroupSlider: View {
     let summary: String
     let onTap: () -> Void
 
-    @State private var dragIntent: DragIntent = .undecided
     @State private var isDragging = false
     @State private var dragLevel: Double = 0
     @State private var lastSentLevel: Double = -1
@@ -139,7 +349,7 @@ struct RoomGroupSlider: View {
         lastSentLevel = snapped
         lastSendTime = now
         for device in room.devices {
-            store.setLevel(device.integrationId, level: snapped, fadeTime: fadeTime)
+            store.setLevel(device.integrationId, level: snapped, fadeTime: fadeTime, track: false)
         }
     }
 
@@ -177,15 +387,16 @@ struct RoomGroupSlider: View {
                         .font(.system(size: 8, weight: .bold))
                         .foregroundStyle(EditorialTheme.secondaryText)
                     Text(icon)
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                     Text(room.name.uppercased())
-                        .font(.system(size: 9, weight: .medium))
-                        .tracking(0.8)
-                        .foregroundStyle(EditorialTheme.secondaryText)
+                        .font(.system(size: 11, weight: .bold))
+                        .tracking(0.6)
+                        .foregroundStyle(isOn ? EditorialTheme.primaryText : EditorialTheme.secondaryText)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                     if !summary.isEmpty {
                         Text(summary)
-                            .font(.system(size: 9, weight: .medium))
+                            .font(EditorialTheme.monoValue(size: 9))
                             .tracking(0.6)
                             .foregroundStyle(EditorialTheme.tertiaryText)
                             .lineLimit(1)
@@ -201,36 +412,27 @@ struct RoomGroupSlider: View {
             }
             .contentShape(Rectangle())
             .onTapGesture(perform: onTap)
-            .gesture(
-                DragGesture(minimumDistance: 8)
-                    .onChanged { value in
-                        if dragIntent == .undecided {
-                            let h = abs(value.translation.width)
-                            let v = abs(value.translation.height)
-                            if h > v * 1.5 { dragIntent = .adjusting }
-                            else if v > h * 1.5 { dragIntent = .scrolling }
-                        }
-                        guard dragIntent == .adjusting else { return }
-                        if !isDragging {
-                            isDragging = true
-                            dragLevel = avgLevel
-                            lastSentLevel = avgLevel
-                        }
-                        let pct = max(0, min(100, (value.location.x / geo.size.width) * 100))
-                        dragLevel = pct
-                        sendIfNeeded(pct)
+            .gesture(HorizontalAdjustGesture(
+                onChanged: { x in
+                    if !isDragging {
+                        isDragging = true
+                        dragLevel = avgLevel
+                        lastSentLevel = avgLevel
                     }
-                    .onEnded { value in
-                        if dragIntent == .adjusting && isDragging {
-                            let pct = max(0, min(100, (value.location.x / geo.size.width) * 100))
-                            commit(pct)
-                        }
-                        dragIntent = .undecided
-                        isDragging = false
+                    let pct = max(0, min(100, (x / geo.size.width) * 100))
+                    dragLevel = pct
+                    sendIfNeeded(pct)
+                },
+                onEnded: { x in
+                    if isDragging {
+                        commit(max(0, min(100, (x / geo.size.width) * 100)))
                     }
-            )
+                    isDragging = false
+                },
+                onCancelled: { isDragging = false }
+            ))
         }
-        .frame(height: 32)
+        .frame(height: 38)
     }
 }
 
@@ -340,8 +542,10 @@ struct EditorialLightsSection: View {
                     trailing: "\(onIds.count) ACTIVE",
                     actionLabel: "ALL OFF",
                     action: {
-                        for device in displayed where device.level > 0 {
-                            store.setLevel(device.integrationId, level: 0, fadeTime: 1)
+                        store.performBulk("all_off", action: .turnOff) {
+                            for device in displayed where device.level > 0 {
+                                store.setLevel(device.integrationId, level: 0, fadeTime: 1)
+                            }
                         }
                     }
                 )
@@ -394,14 +598,30 @@ struct EditorialLightsSection: View {
     }
 
     private func roomGroup(room: String, lights: [DeviceState]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(room.uppercased())
-                .font(.system(size: 9, weight: .medium))
-                .tracking(0.8)
-                .foregroundStyle(EditorialTheme.secondaryText)
-
-            ForEach(lights) { device in
-                DimmablePill(device: device, dimsWhenOff: true)
+        let roomLights = store.devices.values.filter { $0.room == room && $0.category == .light }
+        let onCount = roomLights.filter { $0.level > 0 }.count
+        return RoomCard(name: room, activeCount: onCount, total: roomLights.count) {
+            if onCount > 0 {
+                Button {
+                    store.performBulk("room_off", room: room, action: .turnOff) {
+                        for device in roomLights where device.level > 0 {
+                            store.setLevel(device.integrationId, level: 0, fadeTime: 1)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "lightbulb.slash")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(EditorialTheme.secondaryText)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        } content: {
+            VStack(spacing: 6) {
+                ForEach(lights) { device in
+                    DimmablePill(device: device, dimsWhenOff: true)
+                }
             }
         }
     }
@@ -437,8 +657,8 @@ struct EditorialLightsSection: View {
     }
 
     private func estimatedHeight(pillCount: Int) -> CGFloat {
-        // room label + label spacing + 40pt pills with 6pt gaps + inter-group gap
-        12 + 6 + CGFloat(pillCount) * 40 + CGFloat(max(0, pillCount - 1)) * 6 + EditorialTheme.gridSpacing
+        // card padding + header + header spacing + 40pt pills with 6pt gaps + inter-group gap
+        16 + 22 + 8 + CGFloat(pillCount) * 40 + CGFloat(max(0, pillCount - 1)) * 6 + EditorialTheme.gridSpacing
     }
 
     private func persistColumns(_ columns: [String: Int]) {

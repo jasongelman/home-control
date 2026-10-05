@@ -30,10 +30,12 @@ import { usePatternDetector } from '../hooks/usePatternDetector.js';
 import { SceneSuggestion } from './SceneSuggestion.js';
 import type { Scene } from '../types/index.js';
 import { ChatPanel } from './ChatPanel.js';
+import { useHorizontalDrag } from '../hooks/useHorizontalDrag.js';
 
 const ROOM_ICONS: Record<string, string> = {
   'Kitchen': '\u{1F373}',
   'Master Suite': '\u{1F6CF}\u{FE0F}',
+  'Primary Suite': '\u{1F6CF}\u{FE0F}',
   'Master Bedroom': '\u{1F6CF}\u{FE0F}',
   'Master Bath': '\u{1F6C1}',
   'Master Closet': '\u{1F455}',
@@ -100,64 +102,24 @@ function LightOnPill({ device, displayName, onTurnOff, onSetLevel }: {
   onTurnOff: () => void;
   onSetLevel: (v: number) => void;
 }) {
-  const [localLevel, setLocalLevel] = useState(device.level);
-  const pillRef = useRef<HTMLDivElement>(null);
-  const isDragging = useRef(false);
-  const pointerDownX = useRef<number | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { ref: pillRef, localLevel, dragging, handlers } = useHorizontalDrag<HTMLDivElement>(device.level, {
+    min: 1,
+    onAdjust: onSetLevel,
+    onCommit: onSetLevel,
+    // A lingering off pill acts as undo: tap turns it back on.
+    onTap: () => (device.level > 0 ? onTurnOff() : onSetLevel(100)),
+  });
 
-  useEffect(() => {
-    if (!isDragging.current) setLocalLevel(device.level);
-  }, [device.level]);
-
-  const handlePointerDown = (e: React.PointerEvent) => {
-    pointerDownX.current = e.clientX;
-    pillRef.current?.setPointerCapture(e.pointerId);
-  };
-
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (pointerDownX.current === null) return;
-    const rect = pillRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    if (!isDragging.current && Math.abs(e.clientX - pointerDownX.current) < 5) return;
-    isDragging.current = true;
-    const pct = Math.max(1, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-    const snapped = Math.round(pct / 5) * 5;
-    setLocalLevel(snapped);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => onSetLevel(snapped), 50);
-  };
-
-  const handlePointerUp = (e: React.PointerEvent) => {
-    if (isDragging.current) {
-      const rect = pillRef.current?.getBoundingClientRect();
-      if (rect) {
-        const pct = Math.max(1, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-        onSetLevel(Math.round(pct / 5) * 5);
-      }
-    } else if (pointerDownX.current !== null) {
-      // A lingering off pill acts as undo: tap turns it back on.
-      if (device.level > 0) {
-        onTurnOff();
-      } else {
-        onSetLevel(100);
-      }
-    }
-    pointerDownX.current = null;
-    isDragging.current = false;
-  };
-
-  const isOff = localLevel === 0 && !isDragging.current;
+  const isOff = localLevel === 0 && !dragging;
 
   return (
     <Box
       ref={pillRef}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
+      {...handlers}
       sx={{
         position: 'relative',
         height: 36,
+        touchAction: 'pan-y',
         borderRadius: 1.5,
         overflow: 'hidden',
         border: isOff ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(245,166,35,0.25)',
@@ -173,7 +135,7 @@ function LightOnPill({ device, displayName, onTurnOff, onSetLevel }: {
           inset: 0,
           width: `${localLevel}%`,
           bgcolor: 'rgba(245,166,35,0.32)',
-          transition: isDragging.current ? 'none' : 'width 0.15s ease-out',
+          transition: dragging ? 'none' : 'width 0.15s ease-out',
           pointerEvents: 'none',
         }}
       />
@@ -199,7 +161,7 @@ const QUICK_ACTIONS = [
 ];
 
 export function Dashboard({ onSetup }: { onSetup?: () => void }) {
-  const { devices, connectionStatus, processorConnected, setLevel, trackDevice, trackScene: trackSceneAction, getUsageEvents, doors, myqConnected, triggerGarage, dishwashers, laundry, heatPumps, panels, alarmConnected, chargers, chargePointConnected, refrigerators, ovens, subZeroLinked } = useLutron();
+  const { devices, connectionStatus, processorConnected, setLevel, trackDevice, trackBulk, trackScene: trackSceneAction, getUsageEvents, doors, myqConnected, triggerGarage, dishwashers, laundry, heatPumps, panels, alarmConnected, chargers, chargePointConnected, refrigerators, ovens, subZeroLinked } = useLutron();
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
   const { scenes, createScene, updateScene, deleteScene, activateScene, captureCurrentState } = useScenes();
   const [editorOpen, setEditorOpen] = useState(false);
@@ -524,7 +486,11 @@ export function Dashboard({ onSetup }: { onSetup?: () => void }) {
           {lightsOn.length > 0 && (
             <Button
               size="small"
-              onClick={() => lightsOn.forEach((d) => handleTurnOff(d.integrationId))}
+              onClick={() => {
+                // One usage event for the whole action, not one per light
+                lightsOn.forEach((d) => setLevel(d.integrationId, 0, 1));
+                trackBulk('all_off', 'turnOff');
+              }}
               sx={{
                 minWidth: 0,
                 ml: 0.5,
@@ -556,7 +522,7 @@ export function Dashboard({ onSetup }: { onSetup?: () => void }) {
             </Typography>
           </Paper>
         ) : (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
             {Array.from(displayedLightsByRoom.entries()).map(([room, roomLights]) => {
               const stripRoomPrefix = (name: string) => {
                 if (name.toLowerCase().startsWith(room.toLowerCase())) {
@@ -565,17 +531,32 @@ export function Dashboard({ onSetup }: { onSetup?: () => void }) {
                 }
                 return name;
               };
+              const allRoomLights = (rooms.get(room) ?? []).filter((d) => d.type === 'light');
+              const roomTotal = Math.max(allRoomLights.length, roomLights.length);
+              const roomOnCount = allRoomLights.filter((d) => d.level > 0).length;
               return (
-                <Box key={room}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.75 }}>
-                    <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: 10 }}>
-                      {getRoomIcon(room)} {room}
+                <Paper
+                  key={room}
+                  elevation={0}
+                  sx={{
+                    p: 1.25,
+                    borderRadius: 2,
+                    bgcolor: 'background.paper',
+                    border: '1px solid',
+                    borderColor: roomOnCount > 0 ? 'rgba(245,166,35,0.35)' : 'rgba(255,255,255,0.08)',
+                    transition: 'border-color 0.25s cubic-bezier(0.4,0,0.2,1)',
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                    <Typography component="span" sx={{ fontSize: 16, lineHeight: 1, flexShrink: 0 }}>
+                      {getRoomIcon(room)}
                     </Typography>
-                    <Chip
-                      label={roomLights.filter((l) => l.level > 0).length}
-                      size="small"
-                      sx={{ height: 16, fontSize: 10, fontWeight: 700, bgcolor: 'rgba(245,166,35,0.15)', color: 'primary.main', '& .MuiChip-label': { px: 0.75 } }}
-                    />
+                    <Typography sx={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {room}
+                    </Typography>
+                    <Typography sx={{ fontSize: 11, fontWeight: 600, flexShrink: 0, fontVariantNumeric: 'tabular-nums', color: roomOnCount > 0 ? 'primary.main' : 'text.secondary' }}>
+                      {roomOnCount} of {roomTotal} on
+                    </Typography>
                   </Box>
                   <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 0.75 }}>
                     {roomLights.map((device) => (
@@ -588,7 +569,7 @@ export function Dashboard({ onSetup }: { onSetup?: () => void }) {
                       />
                     ))}
                   </Box>
-                </Box>
+                </Paper>
               );
             })}
           </Box>

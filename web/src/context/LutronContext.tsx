@@ -33,6 +33,7 @@ interface LutronContextValue {
   keypads: KeypadInfo[];
   setLEDState: (ledId: number, state: 'On' | 'Off') => void;
   trackDevice: (id: number, action: UsageEvent['action'], room?: string, level?: number) => void;
+  trackBulk: (label: string, action?: UsageEvent['action'], room?: string) => void;
   trackScene: (id: string, name?: string) => void;
   getUsageEvents: () => UsageEvent[];
 }
@@ -41,9 +42,9 @@ const LutronCtx = createContext<LutronContextValue | null>(null);
 
 export function LutronProvider({ children }: { children: ReactNode }) {
   const ws = useWebSocket();
-  const { trackDevice, trackScene, getEvents } = useUsageTracker();
+  const { trackDevice, trackScene, trackBulk, getEvents } = useUsageTracker();
   return (
-    <LutronCtx.Provider value={{ ...ws, trackDevice, trackScene, getUsageEvents: getEvents }}>
+    <LutronCtx.Provider value={{ ...ws, trackDevice, trackScene, trackBulk, getUsageEvents: getEvents }}>
       {children}
     </LutronCtx.Provider>
   );

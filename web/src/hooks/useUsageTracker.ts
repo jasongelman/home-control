@@ -3,7 +3,8 @@ import { useCallback, useRef } from 'react';
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export interface UsageEvent {
-  type: 'device' | 'scene';
+  /** `bulk` = one multi-device action (e.g. All Off), logged once instead of per light. */
+  type: 'device' | 'scene' | 'bulk';
   id: number | string;
   action: 'setLevel' | 'activate' | 'turnOff';
   level?: number;
@@ -28,7 +29,15 @@ interface SceneScore {
 // ── Constants ──────────────────────────────────────────────────────────────
 
 const STORAGE_KEY = 'lutron_usage_log';
-const MAX_EVENTS = 2000;
+/** Rooms renamed since events were logged; applied on load so habits aren't split. */
+const ROOM_RENAMES: Record<string, string> = {
+  'Master Suite': 'Primary Suite',
+  'Primary Bedroom': 'Primary Suite',
+};
+
+/** Keep a year of history; the count cap keeps it under browsers' ~5 MB localStorage limit. */
+const RETENTION_MS = 365 * 24 * 60 * 60 * 1000;
+const MAX_EVENTS = 25_000;
 
 // Time-of-day buckets (hour ranges)
 export type TimeBucket = 'morning' | 'afternoon' | 'evening' | 'night';
@@ -46,18 +55,28 @@ export function getTimeBucket(date: Date = new Date()): TimeBucket {
 function loadEvents(): UsageEvent[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const events: UsageEvent[] = raw ? JSON.parse(raw) : [];
+    for (const e of events) {
+      if (e.room && ROOM_RENAMES[e.room]) e.room = ROOM_RENAMES[e.room];
+    }
+    return events;
   } catch {
     return [];
   }
 }
 
-function saveEvents(events: UsageEvent[]) {
-  // Keep only the most recent events
-  const trimmed = events.length > MAX_EVENTS
-    ? events.slice(events.length - MAX_EVENTS)
-    : events;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+function saveEvents(events: UsageEvent[]): UsageEvent[] {
+  const cutoff = Date.now() - RETENTION_MS;
+  let trimmed = events.filter((e) => e.timestamp >= cutoff);
+  if (trimmed.length > MAX_EVENTS) trimmed = trimmed.slice(trimmed.length - MAX_EVENTS);
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+  } catch {
+    // Quota exceeded: drop the oldest half and retry once.
+    trimmed = trimmed.slice(Math.floor(trimmed.length / 2));
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed)); } catch { /* give up */ }
+  }
+  return trimmed;
 }
 
 // ── Query functions (pure, operate on event arrays) ────────────────────────
@@ -145,8 +164,7 @@ export function useUsageTracker() {
     const fullEvent: UsageEvent = { ...event, timestamp: Date.now() };
     const events = getEvents();
     events.push(fullEvent);
-    eventsRef.current = events;
-    saveEvents(events);
+    eventsRef.current = saveEvents(events);
   }, [getEvents]);
 
   const trackDevice = useCallback((id: number, action: UsageEvent['action'], room?: string, level?: number) => {
@@ -157,10 +175,15 @@ export function useUsageTracker() {
     trackAction({ type: 'scene', id, action: 'activate' });
   }, [trackAction]);
 
+  const trackBulk = useCallback((label: string, action: UsageEvent['action'] = 'activate', room?: string) => {
+    trackAction({ type: 'bulk', id: label, action, room });
+  }, [trackAction]);
+
   return {
     trackAction,
     trackDevice,
     trackScene,
+    trackBulk,
     getEvents,
   };
 }

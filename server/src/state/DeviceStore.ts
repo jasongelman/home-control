@@ -1,6 +1,12 @@
 import { EventEmitter } from 'events';
 import type { DeviceConfig, DeviceState } from '../lutron/types.js';
 
+/** Lutron area names shown under a different name in the app (kept in sync with iOS LutronStore). */
+const ROOM_RENAMES: Record<string, string> = {
+  'Master Suite': 'Primary Suite',
+  'Primary Bedroom': 'Primary Suite',
+};
+
 export class DeviceStore extends EventEmitter {
   private devices = new Map<number, DeviceState>();
 
@@ -11,7 +17,7 @@ export class DeviceStore extends EventEmitter {
         integrationId: config.integrationId,
         name: config.name,
         type: config.type,
-        room: config.room,
+        room: ROOM_RENAMES[config.room] ?? config.room,
         level: 0,
         components: config.components,
         lastUpdated: Date.now(),

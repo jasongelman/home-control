@@ -102,7 +102,6 @@ struct CategoryTab: View {
     private var isShadesTab: Bool {
         Set(categories) == Set([.shadesAndDrapes, .window]) || categories == [.shadesAndDrapes]
     }
-    private var isLightsOrShadesTab: Bool { isLightsTab || isShadesTab }
 
     /// Default-expanded if any device in the room is on; collapsed if all are off.
     /// User taps override this default per-session via roomExpandOverrides.
@@ -164,7 +163,8 @@ struct CategoryTab: View {
                                 emptyState
                             } else {
                                 // Group devices by category when showing multiple categories
-                                if categories.count > 1 {
+                                // (Shades & Windows instead goes by floor with preset room cards)
+                                if categories.count > 1 && !isShadesTab {
                                     ForEach(categories, id: \.self) { cat in
                                         let catRooms = categoryRooms.compactMap { room -> (name: String, devices: [DeviceState])? in
                                             let filtered = room.devices.filter { $0.category == cat }
@@ -255,61 +255,61 @@ struct CategoryTab: View {
                 trailing: "\(rooms.flatMap(\.devices).count) DEVICES"
             )
 
-            if isLightsOrShadesTab {
-                // Lights & shades: masonry 2-column, each room kept together
-                MasonryTwoColumn(spacing: EditorialTheme.gridSpacing * 2) {
+            if isShadesTab {
+                // Shades: full-width room cards, always open, preset buttons only (no slider)
+                VStack(spacing: EditorialTheme.gridSpacing) {
                     ForEach(rooms, id: \.name) { room in
-                        let expanded = isRoomExpanded(room)
-                        VStack(alignment: .leading, spacing: EditorialTheme.gridSpacing) {
-                            if expanded {
-                                HStack(spacing: 6) {
-                                    Button { toggleRoomExpanded(room) } label: {
-                                        HStack(spacing: 4) {
-                                            Image(systemName: "chevron.right")
-                                                .font(.system(size: 8, weight: .bold))
-                                                .foregroundStyle(EditorialTheme.secondaryText)
-                                                .rotationEffect(.degrees(90))
-                                            Text(roomIcon(for: room.name))
-                                                .font(.system(size: 12))
-                                            Text(room.name.uppercased())
-                                                .font(.system(size: 9, weight: .medium))
-                                                .tracking(0.8)
-                                                .foregroundStyle(EditorialTheme.secondaryText)
-                                                .lineLimit(1)
-                                        }
-                                    }
-                                    .buttonStyle(.plain)
-
-                                    Spacer(minLength: 4)
-
-                                    Button { selectedRoom = room.name } label: {
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 7, weight: .semibold))
-                                            .foregroundStyle(EditorialTheme.tertiaryText)
-                                            .padding(.horizontal, 4)
-                                    }
-                                    .buttonStyle(.plain)
-
-                                    roomHeaderQuickActions(room: room)
+                        let shades = room.devices.filter { $0.category == .shadesAndDrapes || $0.category == .window }
+                        RoomCard(
+                            name: room.name,
+                            activeCount: shades.filter { $0.level > 0 }.count,
+                            total: shades.count,
+                            activeLabel: "OPEN",
+                            onOpenDetail: { selectedRoom = room.name }
+                        ) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                if shades.count > 1 {
+                                    ShadePresetRow(shades: shades, label: "All shades")
+                                    Rectangle().fill(EditorialTheme.cardBorder).frame(height: 0.5)
                                 }
-
-                                ForEach(room.devices) { device in
-                                    let fade: Double? = device.category == .shadesAndDrapes ? 2 : nil
-                                    DimmablePill(device: device, fadeTime: fade)
+                                ForEach(shades) { shade in
+                                    ShadePresetRow(shades: [shade], label: deviceDisplayName(shade))
                                 }
-
-                                // Colors keypad for this room (if any)
-                                if let colorEntry = store.colorKeypads.first(where: { $0.room == room.name }) {
-                                    ColorKeypadPill(entry: colorEntry)
-                                }
-                            } else {
-                                RoomGroupSlider(
-                                    room: room,
-                                    icon: roomIcon(for: room.name),
-                                    summary: collapsedSummary(for: room),
-                                    onTap: { toggleRoomExpanded(room) }
-                                )
                             }
+                        }
+                    }
+                }
+            } else if isLightsTab {
+                // Lights: masonry 2-column, one card per room
+                MasonryTwoColumn(spacing: EditorialTheme.gridSpacing) {
+                    ForEach(rooms, id: \.name) { room in
+                        if isRoomExpanded(room) {
+                            RoomCard(
+                                name: room.name,
+                                activeCount: room.devices.filter { $0.level > 0 }.count,
+                                total: room.devices.count,
+                                onHeaderTap: { toggleRoomExpanded(room) },
+                                onOpenDetail: { selectedRoom = room.name }
+                            ) {
+                                roomHeaderQuickActions(room: room)
+                            } content: {
+                                VStack(spacing: 6) {
+                                    ForEach(room.devices) { device in
+                                        DimmablePill(device: device)
+                                    }
+                                    // Colors keypad for this room (if any)
+                                    if let colorEntry = store.colorKeypads.first(where: { $0.room == room.name }) {
+                                        ColorKeypadPill(entry: colorEntry)
+                                    }
+                                }
+                            }
+                        } else {
+                            RoomGroupSlider(
+                                room: room,
+                                icon: roomIcon(for: room.name),
+                                summary: collapsedSummary(for: room),
+                                onTap: { toggleRoomExpanded(room) }
+                            )
                         }
                     }
                 }
@@ -330,13 +330,15 @@ struct CategoryTab: View {
     }
 
     private func turnOffRoom(_ name: String, devices: [DeviceState]) {
-        // Turn off zone devices
-        for d in devices where d.level > 0 {
-            store.setLevel(d.integrationId, level: 0, fadeTime: 1)
-        }
-        // Press keypad off button (covers color fixtures + non-zone lights)
-        for entry in store.keypadOffButtons where entry.room == name {
-            store.pressKeypadButton(entry.buttonId)
+        store.performBulk("room_off", room: name, action: .turnOff) {
+            // Turn off zone devices
+            for d in devices where d.level > 0 {
+                store.setLevel(d.integrationId, level: 0, fadeTime: 1)
+            }
+            // Press keypad off button (covers color fixtures + non-zone lights)
+            for entry in store.keypadOffButtons where entry.room == name {
+                store.pressKeypadButton(entry.buttonId)
+            }
         }
     }
 
@@ -377,8 +379,10 @@ struct CategoryTab: View {
         } else {
             Button { turnOffRoom(room.name, devices: room.devices) } label: {
                 Image(systemName: "lightbulb.slash")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(EditorialTheme.secondaryText)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
@@ -471,6 +475,7 @@ struct DashboardView: View {
                 EditorialHeroSection()
                 EditorialStatsRow()
                 EditorialSuggestedAction()
+                EditorialForYouRow()
                 EditorialStatusGrid()
                 EditorialClimateSection()
                 EditorialCameraSection()
@@ -947,14 +952,14 @@ struct DashboardView: View {
 
         // 5. Room controls fill remaining slots
         let roomIcons: [String: String] = [
-            "Guest Bathroom": "🚿", "Primary Bedroom": "🛏️", "Primary Bathroom": "🛁",
+            "Guest Bathroom": "🚿", "Primary Suite": "🛏️", "Primary Bathroom": "🛁",
             "Kitchen": "🍳", "Family Room": "📺", "Dining Room": "🍽️",
             "Jason Office": "💻", "Living Room": "🛋️", "Main Entry": "🚪",
             "Mudroom": "🚪", "Breakfast Nook": "☕", "Powder Room": "🚿",
             "Ronan's Room": "🧸", "Sebastian's Room": "🧸", "Gym": "🏋️",
             "Laundry": "🧺", "Garage": "🚗", "Guest Bedroom": "🛏️",
         ]
-        let defaultRooms = ["Guest Bathroom", "Primary Bedroom", "Primary Bathroom", "Kitchen", "Family Room", "Dining Room"]
+        let defaultRooms = ["Guest Bathroom", "Primary Suite", "Primary Bathroom", "Kitchen", "Family Room", "Dining Room"]
         let available = store.rooms.map(\.name)
         let sorted = usageTracker.sortedRoomNames(available: available)
         let allRooms = usageTracker.events.isEmpty ? defaultRooms : Array(sorted)
@@ -2072,7 +2077,9 @@ struct RoomControlCard: View {
                     store.setRoomLights(roomName, level: 50)
                 }
                 modeButton(icon: "power", state: .off) {
-                    store.setRoomLights(roomName, level: 0)
+                    store.performBulk("room_off", room: roomName, action: .turnOff) {
+                        store.setRoomLights(roomName, level: 0)
+                    }
                 }
             }
         }
@@ -2345,7 +2352,7 @@ struct DimPill: View {
 // MARK: - Room Icon Lookup
 
 private let roomIcons: [String: String] = [
-    "Kitchen": "🍳", "Master Suite": "🛏️", "Primary Bedroom": "🛏️",
+    "Kitchen": "🍳", "Primary Suite": "🛏️",
     "Primary Bathroom": "🛁", "Rachel Closet": "👗", "Jason Closet": "👔",
     "Living Room": "🛋️", "Family Room": "📺", "Dining Room": "🍽️",
     "Office": "💻", "Jason Office": "💻", "Rachel Office": "💻",
