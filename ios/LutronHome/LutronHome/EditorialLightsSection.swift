@@ -214,8 +214,9 @@ struct RoomCard<Actions: View, Content: View>: View {
         .clipShape(RoundedRectangle(cornerRadius: EditorialTheme.cardRadius))
         .overlay(
             RoundedRectangle(cornerRadius: EditorialTheme.cardRadius)
-                .stroke(isActive ? EditorialTheme.accent.opacity(0.45) : EditorialTheme.cardBorder,
-                        lineWidth: isActive ? 1 : 0.5)
+                // Inactive rooms still get a clearly visible outline (cardBorder is near-invisible on white)
+                .stroke(isActive ? EditorialTheme.accent.opacity(0.45) : Color(UIColor.systemGray3),
+                        lineWidth: 1)
         )
     }
 }

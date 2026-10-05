@@ -158,6 +158,9 @@ struct CategoryTab: View {
                             if isLightsTab && activeFloors.count > 1 {
                                 floorAnchorBar(proxy: proxy)
                             }
+                            if isShadesTab {
+                                roomAnchorGrid(proxy: proxy)
+                            }
 
                             if categoryRooms.isEmpty && !(showAlarmZones && totalConnect.isLinked) && !showKeypads {
                                 emptyState
@@ -214,6 +217,42 @@ struct CategoryTab: View {
                 .refreshable { await store.refresh() }
                 .background(EditorialTheme.background.ignoresSafeArea())
                 .toolbar(.hidden, for: .navigationBar)
+            }
+        }
+    }
+
+    /// Shades tab: every room up top; tap to jump to its card.
+    private func roomAnchorGrid(proxy: ScrollViewProxy) -> some View {
+        let rooms = activeFloors.flatMap { floorRoomsIncludingKeypads(for: $0) }
+        return LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 6)], spacing: 6) {
+            ForEach(rooms, id: \.name) { room in
+                let open = room.devices.contains { $0.level > 0 }
+                Button {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        proxy.scrollTo("room-\(room.name)", anchor: .top)
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(roomIcon(for: room.name))
+                            .font(.system(size: 11))
+                        Text(room.name.uppercased())
+                            .font(.system(size: 9, weight: .semibold))
+                            .tracking(0.4)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .foregroundStyle(EditorialTheme.primaryText)
+                        Spacer(minLength: 0)
+                        Circle()
+                            .fill(open ? EditorialTheme.accent : Color(UIColor.systemGray4))
+                            .frame(width: 5, height: 5)
+                    }
+                    .padding(.horizontal, 8)
+                    .frame(height: 32)
+                    .background(EditorialTheme.cardBackground)
+                    .overlay(Rectangle().stroke(Color(UIColor.systemGray3), lineWidth: 0.5))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -277,6 +316,7 @@ struct CategoryTab: View {
                                 }
                             }
                         }
+                        .id("room-\(room.name)")
                     }
                 }
             } else if isLightsTab {

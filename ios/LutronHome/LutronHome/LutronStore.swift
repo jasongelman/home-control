@@ -95,6 +95,8 @@ class LutronStore: @unchecked Sendable {
         }
         var newDevices: [Int: DeviceState] = [:]
         for var d in cache.devices {
+            // Caches written before the Primary Suite merge still carry the old room names
+            if d.room == "Master Suite" || d.room == "Primary Bedroom" { d.room = "Primary Suite" }
             d.level = 0
             d.lastUpdated = Date().timeIntervalSince1970
             newDevices[d.integrationId] = d
